@@ -1,0 +1,41 @@
+<!doctype html>
+<html><head><title>Senior Software Engineer at Acme</title>
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"JobPosting","title":"Senior Software Engineer","datePosted":"2026-10-30",
+ "hiringOrganization":{"@type":"Organization","name":"Acme Robotics"},
+ "jobLocation":{"@type":"Place","address":{"addressLocality":"San Francisco","addressRegion":"CA","addressCountry":"US"}},
+ "baseSalary":{"@type":"MonetaryAmount","currency":"USD","value":{"@type":"QuantitativeValue","minValue":180000,"maxValue":220000,"unitText":"YEAR"}},
+ "employmentType":"FULL_TIME","description":"<p>We build robots.</p><ul><li>5+ years Python</li><li>Kubernetes</li></ul>"}
+</script></head>
+<body>
+<div class="job__title"><h1>Senior Software Engineer</h1></div>
+<div class="job__location">San Francisco, CA</div>
+<div class="job__description"><p>We build robots.</p><p>Requirements: 5+ years of Python, Kubernetes, AWS.</p></div>
+<form id="application-form">
+  <div class="field"><label for="first_name">First Name<span>*</span></label><input id="first_name" name="job_application[first_name]" required></div>
+  <div class="field"><label for="last_name">Last Name<span>*</span></label><input id="last_name" name="job_application[last_name]" required></div>
+  <div class="field"><label for="email">Email<span>*</span></label><input id="email" type="email" name="job_application[email]" required></div>
+  <div class="field"><label for="phone">Phone</label><input id="phone" name="job_application[phone]"></div>
+  <div class="field"><label for="resume">Resume/CV<span>*</span></label><input id="resume" type="file" name="resume" style="display:none"></div>
+  <div class="field"><label for="q1">LinkedIn Profile</label><input id="q1" name="job_application[answers_attributes][0][text_value]"></div>
+  <div class="field"><label for="q2">Are you legally authorized to work in the United States?*</label>
+    <select id="q2" name="job_application[answers_attributes][1][boolean_value]"><option value="">Select...</option><option value="1">Yes</option><option value="0">No</option></select></div>
+  <div class="field"><label for="q3">Will you now or in the future require sponsorship for employment visa status?*</label>
+    <select id="q3"><option value="">Select...</option><option value="1">Yes</option><option value="0">No</option></select></div>
+  <div class="field"><label for="q4">Why do you want to work at Acme?*</label><textarea id="q4" required></textarea></div>
+  <div class="field"><label for="q5">What is your favorite robot?*</label><input id="q5" required></div>
+  <div class="field"><label for="gender">Gender</label><select id="gender"><option value="">Select...</option><option>Male</option><option>Female</option><option>Decline To Self Identify</option></select></div>
+  <fieldset><legend>Veteran Status</legend>
+    <label><input type="radio" name="veteran" value="1"> I am a protected veteran</label>
+    <label><input type="radio" name="veteran" value="2"> I am not a protected veteran</label>
+    <label><input type="radio" name="veteran" value="3"> I don't wish to answer</label>
+  </fieldset>
+  <div class="field"><label><input type="checkbox" id="consent" required> I agree to the privacy policy</label></div>
+  <button type="submit" id="submit">Submit Application</button>
+</form>
+<script>
+  window.__events = 0;
+  document.addEventListener('input', () => window.__events++, true);
+  document.getElementById('application-form').addEventListener('submit', (e) => { e.preventDefault(); window.__submitted = true; });
+</script>
+</body></html>

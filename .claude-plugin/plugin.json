@@ -1,0 +1,9 @@
+{
+  "name": "job-copilot",
+  "version": "0.1.0",
+  "description": "Find jobs on any portal or the current Chrome tab, tailor your resume, and apply with autofill - working with Claude in Chrome and the Job Copilot extension.",
+  "author": { "name": "krishnayeswanth99" },
+  "repository": "https://github.com/krishnayeswanth99/job-search",
+  "license": "MIT",
+  "keywords": ["jobs", "job-search", "resume", "autofill", "chrome", "claude-in-chrome", "greenhouse", "lever", "workday", "linkedin"]
+}

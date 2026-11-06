@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Job Copilot</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <header>
+      <img src="../icons/icon32.png" alt="" width="20" height="20" />
+      <h1>Job Copilot</h1>
+      <a id="open-options" href="#" title="Profile & settings">Settings</a>
+    </header>
+
+    <section id="status" class="card">
+      <div class="row"><span class="muted">Site</span><strong id="portal">…</strong></div>
+      <div class="row"><span class="muted">Page</span><strong id="page-type">…</strong></div>
+      <div id="login-banner" class="banner warn" hidden></div>
+      <div id="profile-banner" class="banner info" hidden>
+        No profile yet. <a href="#" data-open-options>Add your profile</a> to enable autofill.
+      </div>
+    </section>
+
+    <section class="actions">
+      <button id="btn-autofill" class="primary">Autofill this application</button>
+      <button id="btn-jobs">Find jobs on this tab</button>
+      <button id="btn-job">Read this job posting</button>
+    </section>
+
+    <section id="result" class="card" hidden>
+      <div class="result-head">
+        <strong id="result-title"></strong>
+        <div class="result-tools">
+          <button id="btn-copy" class="small">Copy for Claude</button>
+          <button id="btn-save-all" class="small" hidden>Save all</button>
+        </div>
+      </div>
+      <div id="result-body"></div>
+    </section>
+
+    <footer>
+      <span id="saved-count" class="muted"></span>
+      <span class="muted">Never submits for you.</span>
+    </footer>
+
+    <script src="../src/shared/config.js"></script>
+    <script src="popup.js"></script>
+  </body>
+</html>

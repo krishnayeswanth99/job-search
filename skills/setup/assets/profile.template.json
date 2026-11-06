@@ -1,0 +1,66 @@
+{
+  "version": 1,
+  "personal": {
+    "firstName": "",
+    "lastName": "",
+    "preferredName": "",
+    "pronouns": "",
+    "email": "",
+    "phone": "",
+    "phoneCountryCode": "",
+    "address1": "",
+    "address2": "",
+    "city": "",
+    "state": "",
+    "postalCode": "",
+    "country": ""
+  },
+  "links": {
+    "linkedin": "",
+    "github": "",
+    "portfolio": "",
+    "website": "",
+    "twitter": ""
+  },
+  "work": {
+    "currentTitle": "",
+    "currentCompany": "",
+    "yearsExperience": "",
+    "noticePeriod": "",
+    "earliestStartDate": "",
+    "desiredSalary": "",
+    "salaryCurrency": ""
+  },
+  "education": {
+    "school": "",
+    "degree": "",
+    "fieldOfStudy": "",
+    "graduationYear": "",
+    "gpa": ""
+  },
+  "authorization": {
+    "authorizedToWork": "",
+    "requiresSponsorship": "",
+    "willingToRelocate": "",
+    "remotePreference": "",
+    "over18": "",
+    "citizenship": "",
+    "securityClearance": ""
+  },
+  "eeo": {
+    "gender": "Decline to self-identify",
+    "race": "Decline to self-identify",
+    "hispanicLatino": "Decline to self-identify",
+    "veteran": "Decline to self-identify",
+    "disability": "Decline to self-identify",
+    "sexualOrientation": "Decline to self-identify"
+  },
+  "howDidYouHear": "LinkedIn",
+  "summary": "",
+  "answers": [
+    {
+      "question": "Why are you interested in this role?",
+      "answer": ""
+    }
+  ]
+}

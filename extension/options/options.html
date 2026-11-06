@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Job Copilot settings</title>
+    <link rel="stylesheet" href="../popup/popup.css" />
+    <link rel="stylesheet" href="options.css" />
+  </head>
+  <body>
+    <main>
+      <header>
+        <img src="../icons/icon48.png" alt="" width="32" height="32" />
+        <h1>Job Copilot</h1>
+        <span id="save-state" class="muted"></span>
+      </header>
+
+      <nav>
+        <a href="#profile">Profile</a>
+        <a href="#answers">Saved answers</a>
+        <a href="#files">Resume</a>
+        <a href="#jobs">Saved jobs</a>
+        <a href="#settings">Claude bridge</a>
+      </nav>
+
+      <section id="import" class="card">
+        <h2>Import / export</h2>
+        <p class="muted">
+          The Claude <code>setup</code> skill writes <code>~/.job-search/profile.json</code>. Import it here so autofill uses the same data
+          Claude uses. Exports use the same format.
+        </p>
+        <div class="buttons">
+          <label class="file-btn">Import profile.json<input id="import-file" type="file" accept="application/json,.json" hidden /></label>
+          <button id="export-profile">Export profile.json</button>
+        </div>
+      </section>
+
+      <section id="profile" class="card">
+        <h2>Profile</h2>
+        <form id="profile-form"></form>
+        <label class="block">How did you hear about us? (default answer)<input id="howDidYouHear" /></label>
+        <label class="block">Short professional summary<textarea id="summary" rows="3"></textarea></label>
+      </section>
+
+      <section id="answers" class="card">
+        <h2>Saved answers</h2>
+        <p class="muted">Answers to recurring custom questions. Matched by similar wording.</p>
+        <div id="answers-list"></div>
+        <button id="add-answer">Add answer</button>
+      </section>
+
+      <section id="files" class="card">
+        <h2>Resume &amp; cover letter</h2>
+        <p class="muted">Attached automatically to resume / cover letter upload fields. Stored only in this browser.</p>
+        <div class="file-row">
+          <strong>Resume</strong> <span id="resume-name" class="muted">none</span>
+          <label class="file-btn">Choose file<input id="resume-file" type="file" accept=".pdf,.doc,.docx,.txt" hidden /></label>
+          <button id="resume-clear" class="small">Remove</button>
+        </div>
+        <div class="file-row">
+          <strong>Cover letter</strong> <span id="cover-name" class="muted">none</span>
+          <label class="file-btn">Choose file<input id="cover-file" type="file" accept=".pdf,.doc,.docx,.txt" hidden /></label>
+          <button id="cover-clear" class="small">Remove</button>
+        </div>
+      </section>
+
+      <section id="jobs" class="card">
+        <h2>Saved jobs</h2>
+        <div class="buttons">
+          <button id="export-jobs-json">Export JSON</button>
+          <button id="export-jobs-csv">Export CSV</button>
+          <button id="clear-jobs">Clear</button>
+        </div>
+        <div id="jobs-list"></div>
+      </section>
+
+      <section id="settings" class="card">
+        <h2>Claude bridge</h2>
+        <p class="muted">
+          Claude in Chrome can call <code>window.jobCopilot</code> on pages you visit to detect jobs, read postings and autofill. Read-only
+          commands work everywhere. Autofill with your profile and file attachment only work on trusted job sites.
+        </p>
+        <label class="check"><input type="checkbox" id="bridgeEnabled" /> Enable the Claude bridge</label>
+        <label class="check"><input type="checkbox" id="bridgeAutofill" /> Allow Claude to trigger autofill on trusted sites</label>
+        <label class="check"><input type="checkbox" id="showBadge" /> Show job count badge on the toolbar icon</label>
+        <label class="block">Extra trusted sites (one domain per line, e.g. <code>careers.example.com</code>)<textarea id="trustedDomains" rows="4"></textarea></label>
+        <details>
+          <summary>Built-in trusted sites</summary>
+          <p id="default-domains" class="muted"></p>
+        </details>
+      </section>
+    </main>
+    <script src="../src/shared/config.js"></script>
+    <script src="../src/shared/profile-schema.js"></script>
+    <script src="options.js"></script>
+  </body>
+</html>

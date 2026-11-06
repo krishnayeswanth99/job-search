@@ -135,6 +135,10 @@ function bindFile(kind, inputId, nameId, clearId) {
     await chrome.storage.local.set({ [kind]: data });
     $(nameId).textContent = `${f.name} (${Math.round(f.size / 1024)} KB)`;
     flash('File saved');
+    if (kind === 'resume') {
+      // resume-import.js reads it and shows the review panel.
+      document.dispatchEvent(new CustomEvent('jc:resume-saved', { detail: { name: f.name, type: f.type, buffer: await f.arrayBuffer() } }));
+    }
     e.target.value = '';
   });
   $(clearId).addEventListener('click', async () => {
@@ -201,6 +205,27 @@ async function renderSettings() {
   $('default-domains').textContent = JC.DEFAULT_TRUSTED_DOMAINS.join(', ');
 }
 
+// Used by resume-import.js to read the profile and save reviewed suggestions.
+let readyResolve;
+const ready = new Promise((r) => (readyResolve = r));
+window.JCOptions = {
+  getProfile: () => profile,
+  async applyUpdates(updates) {
+    await ready;
+    for (const [path, value] of Object.entries(updates)) {
+      const [sec, key] = path.split('.');
+      if (key === undefined) profile[sec] = value;
+      else {
+        profile[sec] = profile[sec] || {};
+        profile[sec][key] = value;
+      }
+    }
+    await chrome.storage.local.set({ profile });
+    renderProfile();
+    flash('Profile updated from resume');
+  },
+};
+
 (async function init() {
   const data = await chrome.storage.local.get(['profile', 'resume', 'coverLetter']);
   profile = JC.normalizeProfile(data.profile);
@@ -209,4 +234,5 @@ async function renderSettings() {
   if (data.coverLetter) $('cover-name').textContent = `${data.coverLetter.name} (${Math.round((data.coverLetter.size || 0) / 1024)} KB)`;
   renderJobs();
   renderSettings();
+  readyResolve();
 })();

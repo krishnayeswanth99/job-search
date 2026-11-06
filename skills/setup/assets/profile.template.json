@@ -30,7 +30,8 @@
     "earliestStartDate": "",
     "desiredSalary": "",
     "desiredHourlyRate": "",
-    "salaryCurrency": ""
+    "salaryCurrency": "",
+    "skills": ""
   },
   "education": {
     "school": "",

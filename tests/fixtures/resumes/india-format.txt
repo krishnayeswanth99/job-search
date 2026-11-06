@@ -1,0 +1,24 @@
+Ravi Kumar
++91 98765 43210 · ravi.kumar@outlook.com · Bengaluru, Karnataka, India
+https://www.linkedin.com/in/ravi-kumar-123/
+
+Professional Summary:
+Data engineer with experience in Spark and Airflow on GCP.
+
+Work Experience
+Data Engineer
+Flipkart, Bengaluru
+07/2020 - Present
+- Built streaming pipelines on Spark Structured Streaming.
+Associate Software Engineer
+Infosys, Mysuru
+08/2018 - 06/2020
+- Developed ETL jobs.
+
+Education
+B.Tech in Electronics and Communication Engineering
+National Institute of Technology Karnataka (NITK), 2014 - 2018
+CGPA: 8.4/10
+
+Technical Skills
+Spark • Airflow • BigQuery • Python • Scala

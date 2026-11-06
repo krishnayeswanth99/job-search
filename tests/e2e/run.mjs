@@ -238,6 +238,70 @@ try {
     assert.equal(await frame.evaluate(() => first_name.value), 'Ada');
   });
 
+  // ---- resume upload -> parse -> review -> edit -> save (options page)
+  const resumeTxt = readFileSync(path.join(here, '../fixtures/resumes/classic-us.txt'), 'utf8');
+  const resumeHtml = '<html><body style="font:12px Arial;width:7in">' + resumeTxt.split('\n').map((l) => {
+    const [a, b] = l.split(/\s{4,}/);
+    const esc = (t) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;');
+    return b ? `<div style="display:flex;justify-content:space-between"><span>${esc(a)}</span><span>${esc(b)}</span></div>` : `<div>${esc(l) || '&nbsp;'}</div>`;
+  }).join('') + '</body></html>';
+  const pdfBrowser = await chromium.launch();
+  const pdfPage = await pdfBrowser.newPage();
+  await pdfPage.setContent(resumeHtml);
+  const resumePdf = await pdfPage.pdf({ format: 'Letter' });
+  await pdfBrowser.close();
+
+  const readReview = (page) => page.$$eval('.review-row', (rows) => Object.fromEntries(rows.map((r) => [r.querySelector('.review-label').firstChild.textContent.trim(), { value: r.querySelector('input:not([type=checkbox]), textarea').value, checked: r.querySelector('input[type=checkbox]').checked }])));
+
+  await check('options: uploading a PDF resume suggests profile fields for review', async () => {
+    const errors = [];
+    const opt = await context.newPage();
+    opt.on('pageerror', (e) => errors.push(e.message));
+    opt.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
+    await opt.goto(`chrome-extension://${extId}/options/options.html`);
+    await opt.evaluate(async () => {
+      const p = globalThis.JC.emptyProfile();
+      p.personal.firstName = 'Janet'; // user-entered value must not be overwritten by default
+      await chrome.storage.local.set({ profile: p });
+    });
+    await opt.reload();
+    await opt.setInputFiles('#resume-file', { name: 'jane-doe.pdf', mimeType: 'application/pdf', buffer: resumePdf });
+    await opt.waitForSelector('.review-row', { timeout: 15000 });
+    const rv = await readReview(opt);
+    assert.ok(!/\bnull\b/.test(await opt.textContent('#resume-review')), 'no stray "null" text');
+    assert.deepEqual(rv['Email'], { value: 'jane.doe@gmail.com', checked: true });
+    assert.deepEqual(rv['First name'], { value: 'Jane', checked: false });
+    assert.equal(rv['Current / most recent title'].value, 'Senior Software Engineer');
+    assert.equal(rv['Current / most recent company'].value, 'Stripe');
+    assert.equal(rv['LinkedIn URL'].value, 'https://www.linkedin.com/in/janedoe');
+    assert.equal(rv['Degree (e.g. Bachelor of Science)'].value, 'B.S.');
+    assert.match(rv['Key skills (comma-separated)'].value, /Kubernetes/);
+
+    // Edit a suggestion, then save.
+    const titleRow = opt.locator('.review-row', { hasText: 'Current / most recent title' });
+    await titleRow.locator('input:not([type=checkbox])').fill('Staff Software Engineer');
+    await opt.getByRole('button', { name: 'Save selected to profile' }).click();
+    await opt.waitForSelector('.review .ok');
+    const saved = await opt.evaluate(async () => (await chrome.storage.local.get(['profile', 'resume'])));
+    assert.equal(saved.profile.work.currentTitle, 'Staff Software Engineer');
+    assert.equal(saved.profile.personal.email, 'jane.doe@gmail.com');
+    assert.equal(saved.profile.personal.firstName, 'Janet');
+    assert.equal(saved.resume.name, 'jane-doe.pdf');
+    // The editable profile form shows the saved values.
+    assert.equal(await opt.inputValue('input[data-section="work"][data-key="currentTitle"]'), 'Staff Software Engineer');
+    assert.deepEqual(errors, []);
+  });
+
+  await check('options: DOCX resume is read too', async () => {
+    const opt = await context.newPage();
+    await opt.goto(`chrome-extension://${extId}/options/options.html`);
+    await opt.setInputFiles('#resume-file', path.join(here, '../fixtures/resumes/classic-us.docx'));
+    await opt.waitForSelector('.review-row', { timeout: 15000 });
+    const rv = await readReview(opt);
+    assert.equal(rv['Email'].value, 'jane.doe@gmail.com');
+    assert.equal(rv['Current / most recent company'].value, 'Stripe');
+  });
+
   await check('bridge disabled: commands refused', async () => {
     await ext.evaluate(async () => {
       const { settings } = await chrome.storage.local.get('settings');

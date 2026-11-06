@@ -5,14 +5,16 @@ Manifest V3, plain JavaScript, no build step.
 ## Install (unpacked)
 1. Open `chrome://extensions` and turn on **Developer mode**.
 2. Click **Load unpacked** and select this `extension/` folder.
-3. In the options page that opens: import `~/.job-search/profile.json` (or type your profile in), choose your resume
-   PDF, and optionally a cover letter.
+3. In the options page that opens, click **Upload resume**. Job Copilot reads your details from it and shows them for
+   review: edit anything that's wrong, untick what you don't want, then **Save selected to profile**. Everything stays
+   editable in the Profile section afterwards. (Or import `~/.job-search/profile.json` from the Claude setup skill.)
 4. Reload any tabs that were already open. Content scripts load on page load.
 
 ## What it does
 
 | Feature | How |
 |---|---|
+| **Profile from your resume** | Upload a PDF, DOCX or TXT resume in the options page. It's read locally (pdf.js for PDFs, a built-in zip reader for DOCX) and turned into suggested values: name, email, phone, location, links, current title and company, years of experience, education, skills and summary. You review each one, edit it, untick anything wrong, then save. Fields you already filled are never overwritten unless you tick them. |
 | Badge on the toolbar icon | The job count on listing pages, `JOB` on a posting, `FILL` on an application form, `LOG` when a login is required |
 | **Find jobs on this tab** | Portal extractors (LinkedIn, Indeed, Glassdoor, Wellfound, Greenhouse, Lever, Ashby, Workday), then JSON-LD `JobPosting`, then generic job-link scanning. You can save jobs and export them as JSON or CSV. |
 | **Read this job posting** | Title, company, location, salary, description, and apply button (DOM merged with JSON-LD) |
@@ -64,6 +66,10 @@ manifest.json
 src/shared/config.js          portals, trusted domains, default settings
 src/shared/profile-schema.js  profile shape (shared with ~/.job-search/profile.json)
 src/shared/field-rules.js     field classification + option matching (pure, unit-tested)
+src/shared/resume-parser.js   resume text -> suggested profile values (pure, unit-tested)
+src/shared/docx-text.js       .docx -> text without libraries
+options/resume-import.js      PDF/DOCX reading + the review-and-edit panel
+vendor/pdfjs/                 pdf.js 4.10.38 (Apache-2.0), used only by the options page
 src/content/util.js           DOM helpers
 src/content/jsonld.js         schema.org JobPosting reader
 src/content/login.js          login / signup wall detection

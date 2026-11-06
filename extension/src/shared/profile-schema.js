@@ -53,6 +53,7 @@
         ['desiredSalary', 'Desired annual salary (plain number, e.g. 150000)'],
         ['desiredHourlyRate', 'Desired hourly rate (plain number, e.g. 75)'],
         ['salaryCurrency', 'Salary currency (e.g. USD)'],
+        ['skills', 'Key skills (comma-separated)'],
       ],
     },
     {

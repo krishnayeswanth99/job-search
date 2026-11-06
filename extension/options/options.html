@@ -16,12 +16,33 @@
       </header>
 
       <nav>
+        <a href="#files">Resume</a>
         <a href="#profile">Profile</a>
         <a href="#answers">Saved answers</a>
-        <a href="#files">Resume</a>
         <a href="#jobs">Saved jobs</a>
         <a href="#settings">Claude bridge</a>
       </nav>
+
+      <section id="files" class="card">
+        <h2>Resume &amp; cover letter</h2>
+        <p class="muted">
+          Upload your resume and Job Copilot reads your details from it (name, contact, links, current role, education,
+          skills) so you can review and edit them before saving. It is read and stored only in this browser, and attached
+          automatically to resume upload fields when you autofill.
+        </p>
+        <div class="file-row">
+          <strong>Resume</strong> <span id="resume-name" class="muted">none</span>
+          <label class="file-btn primary-btn">Upload resume<input id="resume-file" type="file" accept=".pdf,.docx,.txt,.md" hidden /></label>
+          <button id="resume-reparse" class="small">Read details again</button>
+          <button id="resume-clear" class="small">Remove</button>
+        </div>
+        <div id="resume-review" class="review" hidden></div>
+        <div class="file-row">
+          <strong>Cover letter</strong> <span id="cover-name" class="muted">none</span>
+          <label class="file-btn">Choose file<input id="cover-file" type="file" accept=".pdf,.doc,.docx,.txt" hidden /></label>
+          <button id="cover-clear" class="small">Remove</button>
+        </div>
+      </section>
 
       <section id="import" class="card">
         <h2>Import / export</h2>
@@ -49,20 +70,6 @@
         <button id="add-answer">Add answer</button>
       </section>
 
-      <section id="files" class="card">
-        <h2>Resume &amp; cover letter</h2>
-        <p class="muted">Attached automatically to resume / cover letter upload fields. Stored only in this browser.</p>
-        <div class="file-row">
-          <strong>Resume</strong> <span id="resume-name" class="muted">none</span>
-          <label class="file-btn">Choose file<input id="resume-file" type="file" accept=".pdf,.doc,.docx,.txt" hidden /></label>
-          <button id="resume-clear" class="small">Remove</button>
-        </div>
-        <div class="file-row">
-          <strong>Cover letter</strong> <span id="cover-name" class="muted">none</span>
-          <label class="file-btn">Choose file<input id="cover-file" type="file" accept=".pdf,.doc,.docx,.txt" hidden /></label>
-          <button id="cover-clear" class="small">Remove</button>
-        </div>
-      </section>
 
       <section id="jobs" class="card">
         <h2>Saved jobs</h2>
@@ -92,6 +99,9 @@
     </main>
     <script src="../src/shared/config.js"></script>
     <script src="../src/shared/profile-schema.js"></script>
+    <script src="../src/shared/resume-parser.js"></script>
+    <script src="../src/shared/docx-text.js"></script>
     <script src="options.js"></script>
+    <script type="module" src="resume-import.js"></script>
   </body>
 </html>

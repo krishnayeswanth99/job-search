@@ -31,8 +31,9 @@ the extension handles speed and reliability.
 ### 1. Install the extension (about 1 minute)
 1. Clone this repo.
 2. Open `chrome://extensions`, turn on **Developer mode**, click **Load unpacked**, and select `extension/`.
-3. The options page opens. Fill in your profile (or import the `profile.json` that the setup skill creates) and pick
-   your resume PDF.
+3. The options page opens. Click **Upload resume** (PDF, DOCX or TXT). It reads your details from it locally, shows
+   them for review and editing, and saves what you approve to your profile. Everything stays editable afterwards. You
+   can also import the `profile.json` that the setup skill creates.
 
 ### 2. Install the skills in Claude Code
 ```bash

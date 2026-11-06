@@ -48,8 +48,9 @@ If `profile.json` already exists, load it and only fill the gaps. Never overwrit
 ### Step 2: Profile → `profile.json`
 
 1. Start from `assets/profile.template.json`. Fill whatever the resume states: name, email, phone, city, country,
-   links, current title and company, school, degree, graduation year, and years of experience (compute it from the
-   dates and say how you got it).
+   links, current title and company, school, degree, graduation year, key skills (`work.skills`, comma-separated), and
+   years of experience (compute it from the dates and say how you got it). If the user already uploaded their resume
+   in the extension, they can export that profile (**Export profile.json**) and you can start from it instead.
 2. Ask the user only for what a resume can't tell you, in **one** consolidated message:
    - work authorization and sponsorship need (for each target country, if there are several)
    - willingness to relocate, preferred work arrangement, notice period, earliest start date

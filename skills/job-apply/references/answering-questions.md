@@ -11,7 +11,9 @@ Sources, in priority order: what the user said this session → `profile.json` (
 | Require sponsorship (now or future)? | `authorization.requiresSponsorship` |
 | Willing to relocate / work onsite N days? | `willingToRelocate`, `remotePreference`. If it's ambiguous, ask. |
 | Years of experience with <skill> | Count from the dated roles in the resume where the skill appears. Round down. If the skill isn't in the resume, ask. |
-| Desired salary / expected CTC | `work.desiredSalary`. If it's blank, ask. If the field is optional, leave it blank. Never invent a number. |
+| Desired salary / expected CTC (annual) | `work.desiredSalary` (annual, plain number). If it's blank, ask. If the field is optional, leave it blank. Never invent a number. |
+| Hourly / contract rate | `work.desiredHourlyRate`. If it's blank, ask. **Never convert** between hourly and annual (2080 hours, overtime and benefits make it the user's call). |
+| Pay question that doesn't say the period, or asks monthly or daily | Autofill leaves it in `needsInput` with `payPeriod` (`unknown`, `monthly`, `daily`). Check the posting: a salaried role means annual, a contract or hourly role means hourly. If it's still unclear, ask the user. Never convert. |
 | Current / previous salary | Leave blank or "Prefer not to say" where that's allowed. Some places ban asking. Ask the user only if the field is required. |
 | Notice period / start date | `noticePeriod`, `earliestStartDate` |
 | How did you hear about us? | The portal you came from (LinkedIn, Indeed…), or `howDidYouHear` |

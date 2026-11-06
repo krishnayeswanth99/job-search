@@ -137,8 +137,10 @@
         }
         const r = resolve(f, profile, opts.overrides);
         if (!r) {
-          if (f.required || !f.key) needsInput.push(Object.assign(d, { reason: f.key ? `profile has no value for ${f.key}` : 'custom question' }));
-          else skipped.push(Object.assign(d, { reason: `profile has no value for ${f.key}` }));
+          const reason = f.key ? R.emptyReason(f.key, f.period, profile) : 'custom question';
+          // Pay questions always go to Claude/the user, even when optional.
+          if (f.required || !f.key || f.key === 'desiredPay') needsInput.push(Object.assign(d, { reason }));
+          else skipped.push(Object.assign(d, { reason }));
           continue;
         }
         let ok = false;
@@ -150,7 +152,15 @@
         else if (f.els && f.els.length > 1) ok = fillGroup(f, r.value);
         else if (f.type === 'checkbox') ok = fillCheckbox(f, r.value);
         else if (f.type === 'radio') ok = false;
-        else {
+        else if (f.type === 'number') {
+          const n = R.toNumberValue(r.value);
+          if (n === null) {
+            needsInput.push(Object.assign(d, { reason: 'field takes a single number', suggested: r.value }));
+            continue;
+          }
+          setValue(f.el, n);
+          ok = true;
+        } else {
           setValue(f.el, r.value);
           ok = true;
         }

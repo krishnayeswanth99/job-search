@@ -46,7 +46,11 @@
     { key: 'willingToRelocate', re: /\brelocat/, q: true },
     { key: 'securityClearance', re: /\bclearance\b/, q: true },
     { key: 'yearsExperience', re: /\b(years? of (relevant |professional |total |work )?experience|how many years)\b/, q: true },
-    { key: 'desiredSalary', re: /\b(salary|compensation|pay (expectation|range)|desired pay|expected (ctc|pay)|ctc)\b/, q: true },
+    // Current/previous pay is never filled from desired pay (and some places ban asking).
+    { key: 'currentPay', re: /\b((current|present|previous|last|existing|most recent) (base |annual |hourly )?(salary|compensation|ctc|pay|rate|wage)|salary history)\b/, q: true },
+    // Any pay question. classifyField() then decides the period (see payPeriod) and maps it to
+    // desiredSalary (annual), desiredHourlyRate, or desiredPay (period unclear / monthly / daily).
+    { key: 'pay', re: /\b(salary|salaries|compensation|remuneration|wages?|ctc|lpa|(desired|expected|target|minimum) pay|pay (expectations?|range|rate)|(hourly|day|daily|bill|billing) rate|rate per (hour|day))\b/, q: true },
     { key: 'noticePeriod', re: /\bnotice period\b/, q: true },
     { key: 'earliestStartDate', re: /\b(start date|when can you start|available to start|earliest (start|availability)|date available)\b/, q: true },
     { key: 'howDidYouHear', re: /\b(how did you (hear|find|learn)|where did you (hear|find|learn)|(referral|application|candidate) source|source of (application|referral)|how you heard)\b/, q: true },
@@ -90,6 +94,19 @@
     url: 'website',
   };
 
+  // Pay period signals, checked in this order against label + placeholder + attributes + options.
+  const PERIODS = [
+    ['hourly', /\b(hourly|per hour|an hour|hour rate|rate per hour|bill(ing)? rate|pay rate|wages?)\b|\/\s*h(ou)?r\b|\bp\/?h\b/],
+    ['daily', /\b(daily|per day|a day|day rate)\b|\/\s*day\b/],
+    ['monthly', /\b(monthly|per month|a month|pcm)\b|\/\s*mo(nth)?\b/],
+    ['annual', /\b(annual(ly|ised|ized)?|per (year|annum)|a year|yearly|p\.a\.?|base salary|ctc|lpa|salary|salaries)\b|\/\s*(yr|year)\b/],
+  ];
+
+  function payPeriod(text) {
+    for (const [period, re] of PERIODS) if (re.test(text)) return period;
+    return 'unknown';
+  }
+
   /** Profile key -> [section, field]. Keys not listed here are computed in valueForKey. */
   const KEY_PATH = {};
   for (const s of JC.PROFILE_SECTIONS || []) for (const [f] of s.fields) KEY_PATH[f] = [s.id, f];
@@ -121,6 +138,7 @@
 
     const label = norm(f.label);
     const attrs = [f.name, f.id, f.automationId, f.placeholder, f.ariaLabel].map(humanize).filter(Boolean);
+    const payText = [label, norm(f.placeholder), ...attrs, norm(f.optionsText)].join(' | ');
     const isLong = label.length > LONG_LABEL;
     const isFile = type === 'file';
 
@@ -136,7 +154,13 @@
         if (isFile && !r.fileOnly) continue;
         if (r.re.test(c.text)) {
           if (r.key === 'skip') return null;
-          return { key: r.key, confidence: c.weight, via: c.text === label ? 'label' : 'attribute' };
+          const via = c.text === label ? 'label' : 'attribute';
+          if (r.key === 'pay') {
+            const period = payPeriod(payText);
+            const key = period === 'annual' ? 'desiredSalary' : period === 'hourly' ? 'desiredHourlyRate' : 'desiredPay';
+            return { key, period, confidence: c.weight, via };
+          }
+          return { key: r.key, confidence: c.weight, via };
         }
       }
     }
@@ -164,6 +188,8 @@
       case 'consent':
       case 'resume':
       case 'coverLetter':
+      case 'desiredPay': // period unclear, monthly or daily: never guess or convert
+      case 'currentPay':
         return '';
       default:
         return get(profile, key);
@@ -203,6 +229,45 @@
     return n / Math.max(A.size, B.size);
   }
 
+  const MULT = { k: 1e3, m: 1e6, lakh: 1e5, lakhs: 1e5, lpa: 1e5, l: 1e5 };
+
+  /** All amounts in a text: "$100k – $150,000" -> [100000, 150000]; "0-2 years" -> [0, 2]. */
+  function amounts(text) {
+    const t = String(text || '').toLowerCase().replace(/(\d),(?=\d{3}\b)/g, '$1');
+    const out = [];
+    const re = /(\d+(?:\.\d+)?)\s*(k|m|lakhs?|lpa|l)?(?![a-z0-9])/g;
+    let m;
+    while ((m = re.exec(t))) out.push(parseFloat(m[1]) * (m[2] ? MULT[m[2]] : 1));
+    return out;
+  }
+
+  /** A single amount ("150000", "$150,000", "150k", "75/hr") -> number, else null (ranges, words). */
+  function parseAmount(v) {
+    const t = norm(v).replace(/^(usd|eur|gbp|inr|cad|aud|[$€£₹])\s*/, '').replace(/\s*(\/\s*[a-z]+|per [a-z]+|(an?|each) [a-z]+)$/, '');
+    if (!/^[\d.,]+\s*(k|m|lakhs?|lpa|l)?$/.test(t)) return null;
+    const a = amounts(t);
+    return a.length === 1 ? a[0] : null;
+  }
+
+  /** Value for an <input type="number">: digits only, or null if it is not a single amount. */
+  function toNumberValue(v) {
+    const n = parseAmount(v);
+    return n === null ? null : String(Math.round(n * 100) / 100);
+  }
+
+  /** Why a classified field was left empty, in words Claude can act on. */
+  function emptyReason(key, period, profile) {
+    const w = (profile && profile.work) || {};
+    if (key === 'currentPay') return 'asks for current/previous pay: leave blank if optional, otherwise ask the user';
+    if (key === 'desiredPay') {
+      if (period === 'unknown') return 'pay question does not say hourly or annual: ask the user';
+      return `asks for ${period} pay; the profile stores annual/hourly only: ask the user (do not convert)`;
+    }
+    if (key === 'desiredSalary' && w.desiredHourlyRate) return 'asks for annual salary but the profile only has an hourly rate: ask the user (do not convert)';
+    if (key === 'desiredHourlyRate' && w.desiredSalary) return 'asks for an hourly rate but the profile only has an annual salary: ask the user (do not convert)';
+    return `profile has no value for ${key}`;
+  }
+
   /** options: [{ text, value }]. Returns the best index or -1. */
   function chooseOption(options, desired) {
     if (desired === undefined || desired === null || String(desired).trim() === '') return -1;
@@ -237,16 +302,16 @@
       const m = opts.find((o) => re.test(o.t));
       if (m) return m.i;
     }
-    // Numeric ranges, e.g. desired "6" vs options "0-2", "3-5", "6-9", "10+".
-    const num = parseFloat(d);
-    if (!isNaN(num) && /^\d+(\.\d+)?$/.test(d)) {
+    // Numeric ranges, e.g. desired "6" vs "0-2 years" / "6-9 years" / "10+",
+    // or "150000" vs "$100k - $150k" / "$150,000+" / "Under $50,000".
+    const num = parseAmount(d);
+    if (num !== null) {
       for (const o of opts) {
-        const range = o.t.match(/(\d+)\s*(?:-|–|to)\s*(\d+)/);
-        if (range && num >= +range[1] && num <= +range[2]) return o.i;
-        const plus = o.t.match(/(\d+)\s*\+|(\d+) or more|more than (\d+)/);
-        if (plus) {
-          const lo = +(plus[1] || plus[2] || plus[3]);
-          if (num >= lo) return o.i;
+        const a = amounts(o.t);
+        if (a.length >= 2 && num >= a[0] && num <= a[1]) return o.i;
+        if (a.length === 1) {
+          if (/(\+|or more|and (above|up|over)|or above|above|over|more than|at least|minimum)/.test(o.t) && num >= a[0]) return o.i;
+          if (/(under|below|less than|up to|or less|maximum)/.test(o.t) && num <= a[0]) return o.i;
         }
       }
     }
@@ -280,7 +345,7 @@
     return score >= 0.6 ? best : null;
   }
 
-  JC.rules = { classifyField, valueForKey, chooseOption, matchSavedAnswer, humanize, norm, LONG_LABEL };
+  JC.rules = { classifyField, valueForKey, chooseOption, matchSavedAnswer, humanize, norm, payPeriod, amounts, parseAmount, toNumberValue, emptyReason, LONG_LABEL };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = JC;
 })(typeof globalThis !== 'undefined' ? globalThis : self);

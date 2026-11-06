@@ -49,7 +49,9 @@
         ['yearsExperience', 'Years of experience', 'number'],
         ['noticePeriod', 'Notice period (e.g. 2 weeks)'],
         ['earliestStartDate', 'Earliest start date'],
-        ['desiredSalary', 'Desired salary (number or range)'],
+        // Kept as `desiredSalary` (annual) so profiles from 0.1.0 keep working.
+        ['desiredSalary', 'Desired annual salary (plain number, e.g. 150000)'],
+        ['desiredHourlyRate', 'Desired hourly rate (plain number, e.g. 75)'],
         ['salaryCurrency', 'Salary currency (e.g. USD)'],
       ],
     },

@@ -53,7 +53,9 @@ If `profile.json` already exists, load it and only fill the gaps. Never overwrit
 2. Ask the user only for what a resume can't tell you, in **one** consolidated message:
    - work authorization and sponsorship need (for each target country, if there are several)
    - willingness to relocate, preferred work arrangement, notice period, earliest start date
-   - desired salary (or "prefer not to say", in which case leave it blank and job-apply will ask each time)
+   - desired **annual** salary, and an **hourly** rate if they'd take contract or hourly roles. Store both as plain
+     numbers (`150000`, `75`) in `work.desiredSalary` and `work.desiredHourlyRate`. Never derive one from the other.
+     If they'd rather not say, leave them blank and job-apply will ask each time.
    - how they usually heard about jobs (default answer: LinkedIn)
    - EEO answers: default "Decline to self-identify". Only change them if the user offers.
 3. Seed `answers` with 3–5 reusable custom answers drafted from the resume, such as "Why are you looking for a new

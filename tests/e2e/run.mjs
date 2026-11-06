@@ -31,6 +31,7 @@ const PROFILE = {
   personal: { firstName: 'Ada', lastName: 'Lovelace', email: 'ada@example.com', phone: '+1 555 0100', city: 'London', country: 'United Kingdom' },
   links: { linkedin: 'https://www.linkedin.com/in/ada' },
   authorization: { authorizedToWork: 'Yes', requiresSponsorship: 'No' },
+  work: { desiredSalary: '$175,000', desiredHourlyRate: '85' },
   answers: [{ question: 'Why do you want to work at Acme?', answer: 'I love robots.' }],
 };
 
@@ -146,6 +147,15 @@ try {
     const needs = r.needsInput.map((f) => f.label);
     assert.ok(needs.includes('What is your favorite robot?'), JSON.stringify(needs));
     assert.ok(needs.some((l) => /privacy policy/.test(l)));
+  });
+  await check('autofill: annual vs hourly pay, ranges, ambiguous pay left for the user', async () => {
+    const v = await gh.evaluate(() => ({ sal: sal.value, rate: rate.value, band: payband.selectedOptions[0].text, pay: pay.value, cur: cur.value }));
+    assert.deepEqual(v, { sal: '175000', rate: '85', band: '$150,001 - $200,000', pay: '', cur: '' });
+    const r = await bridge(gh, () => window.jobCopilot.last);
+    const amb = r.needsInput.find((f) => f.label === 'What is your desired pay?');
+    assert.ok(amb, 'ambiguous pay reported');
+    assert.equal(amb.payPeriod, 'unknown');
+    assert.match(amb.reason, /hourly or annual/);
   });
   await check('bridge: fillField answers a custom question', async () => {
     const r = await bridge(gh, () => window.jobCopilot.fillField({ label: 'What is your favorite robot?', value: 'Curiosity rover' }));

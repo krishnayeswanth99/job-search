@@ -100,3 +100,64 @@ test('trust and portal helpers', () => {
   assert.equal(JC.isTrustedHost('evil-lever.co'), false);
   assert.equal(JC.isTrustedHost('careers.acme.com', ['acme.com']), true);
 });
+
+test('pay questions are split by period', () => {
+  const pay = (f) => {
+    const c = classifyField(f) || {};
+    return [c.key, c.period].join(':');
+  };
+  assert.equal(pay({ label: 'Desired salary' }), 'desiredSalary:annual');
+  assert.equal(pay({ label: 'What are your salary expectations for this role?' }), 'desiredSalary:annual');
+  assert.equal(pay({ label: 'Expected CTC (LPA)' }), 'desiredSalary:annual');
+  assert.equal(pay({ label: 'Desired annual compensation' }), 'desiredSalary:annual');
+  assert.equal(pay({ label: 'Expected hourly rate' }), 'desiredHourlyRate:hourly');
+  assert.equal(pay({ label: 'Desired pay rate' }), 'desiredHourlyRate:hourly');
+  assert.equal(pay({ label: 'Compensation expectations', placeholder: 'e.g. $60/hr' }), 'desiredHourlyRate:hourly');
+  assert.equal(pay({ label: 'Desired compensation', type: 'select', optionsText: '$40-$50/hr | $50-$60/hr' }), 'desiredHourlyRate:hourly');
+  assert.equal(pay({ label: 'Monthly salary expectation' }), 'desiredPay:monthly');
+  assert.equal(pay({ label: 'Day rate' }), 'desiredPay:daily');
+  assert.equal(pay({ label: 'What is your desired pay?' }), 'desiredPay:unknown');
+  assert.equal(pay({ label: 'Compensation expectations' }), 'desiredPay:unknown');
+  // Current pay must never receive the desired figure.
+  assert.equal(pay({ label: 'What is your current salary?' }), 'currentPay:');
+  assert.equal(pay({ label: 'Current CTC' }), 'currentPay:');
+  assert.equal(pay({ label: 'Previous hourly rate' }), 'currentPay:');
+  assert.equal(valueForKey(JC.normalizeProfile({ work: { desiredSalary: '150000' } }), 'currentPay'), '');
+});
+
+test('pay values are never guessed or converted', () => {
+  const both = JC.normalizeProfile({ work: { desiredSalary: '150000', desiredHourlyRate: '75' } });
+  assert.equal(valueForKey(both, 'desiredSalary'), '150000');
+  assert.equal(valueForKey(both, 'desiredHourlyRate'), '75');
+  assert.equal(valueForKey(both, 'desiredPay'), '');
+  const annualOnly = JC.normalizeProfile({ work: { desiredSalary: '150000' } });
+  assert.equal(valueForKey(annualOnly, 'desiredHourlyRate'), '');
+  assert.match(JC.rules.emptyReason('desiredHourlyRate', 'hourly', annualOnly), /only has an annual salary/);
+  assert.match(JC.rules.emptyReason('desiredPay', 'unknown', both), /hourly or annual/);
+  assert.match(JC.rules.emptyReason('desiredPay', 'monthly', both), /monthly/);
+});
+
+test('amount parsing', () => {
+  const { amounts, parseAmount, toNumberValue } = JC.rules;
+  assert.deepEqual([...amounts('$100k – $150,000')], [100000, 150000]);
+  assert.deepEqual([...amounts('0-2 years')], [0, 2]);
+  assert.equal(parseAmount('150000'), 150000);
+  assert.equal(parseAmount('$150,000'), 150000);
+  assert.equal(parseAmount('150k'), 150000);
+  assert.equal(parseAmount('USD 75/hr'), 75);
+  assert.equal(parseAmount('18 LPA'), 1800000);
+  assert.equal(parseAmount('140k-160k'), null);
+  assert.equal(parseAmount('negotiable'), null);
+  assert.equal(toNumberValue('$150,000'), '150000');
+  assert.equal(toNumberValue('140-160k'), null);
+});
+
+test('salary range dropdowns', () => {
+  const opts = [{ text: 'Select...' }, { text: 'Under $100,000' }, { text: '$100k - $150k' }, { text: '$150,001 - $200,000' }, { text: '$200,000+' }];
+  assert.equal(chooseOption(opts, '90000'), 1);
+  assert.equal(chooseOption(opts, '150000'), 2);
+  assert.equal(chooseOption(opts, '$175,000'), 3);
+  assert.equal(chooseOption(opts, '250k'), 4);
+  const hourly = [{ text: '$40-$50/hr' }, { text: '$50-$75/hr' }, { text: '$75+/hr' }];
+  assert.equal(chooseOption(hourly, '60'), 1);
+});

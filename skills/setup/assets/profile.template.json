@@ -29,6 +29,7 @@
     "noticePeriod": "",
     "earliestStartDate": "",
     "desiredSalary": "",
+    "desiredHourlyRate": "",
     "salaryCurrency": ""
   },
   "education": {

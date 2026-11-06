@@ -28,6 +28,10 @@ Same shape as `extension/src/shared/profile-schema.js`. Top-level sections are `
 `education`, `authorization`, and `eeo`, plus `howDidYouHear`, `summary`, and `answers: [{ question, answer }]`.
 EEO fields default to `"Decline to self-identify"`. A template is at `setup/assets/profile.template.json`.
 
+Pay: `work.desiredSalary` is **annual** and `work.desiredHourlyRate` is **hourly**. Both are plain numbers, in
+`work.salaryCurrency`. Autofill uses each only for fields worded that way. Pay fields that don't say hourly or annual,
+or ask for monthly or daily pay, are always left for Claude to ask about. Nothing converts between the two.
+
 **Reusable answers:** when the user answers a new custom question during job-apply (for example "Why are you leaving
 your job?"), append it to `answers` if it's reusable. Then remind the user to re-import `profile.json` in the extension
 options so autofill picks it up.

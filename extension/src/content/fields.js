@@ -152,9 +152,11 @@
         automationId: el.getAttribute('data-automation-id') || (el.closest('[data-automation-id]') || { getAttribute: () => '' }).getAttribute('data-automation-id'),
         type: f.type,
         tag: f.tag,
+        optionsText: (f.options || []).slice(0, 12).map((o) => o.text).join(' | '),
       });
       if (c) {
         f.key = c.key;
+        if (c.period) f.period = c.period;
         profileHints.push(c.key);
       }
     }
@@ -173,6 +175,7 @@
   function describe(f) {
     const d = { ref: f.ref, selector: `[data-jc-ref="${f.ref}"]`, label: f.label, type: f.type, required: !!f.required, hasValue: !!f.hasValue };
     if (f.key) d.profileKey = f.key;
+    if (f.period) d.payPeriod = f.period;
     if (f.combobox) d.combobox = true;
     if (f.options) d.options = f.options.slice(0, 50).map((o) => o.text).filter(Boolean);
     if (f.els && f.els.length > 1) d.optionSelectors = f.els.map((o) => `[data-jc-ref="${o.getAttribute('data-jc-ref')}"]`);

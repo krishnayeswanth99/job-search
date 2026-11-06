@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Job Copilot",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Finds jobs on the current tab, autofills applications, and gives Claude in Chrome a bridge to do the same.",
   "minimum_chrome_version": "111",
   "permissions": ["storage", "unlimitedStorage", "scripting", "activeTab"],

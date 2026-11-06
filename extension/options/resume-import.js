@@ -1,9 +1,12 @@
 /*
  * Job Copilot options: read the uploaded resume and suggest profile values.
- * Everything runs locally in this page; the resume is never uploaded anywhere.
- * Suggestions are shown for review/editing and only saved when the user clicks Save.
+ * By default everything runs locally in this page. If the user adds their own
+ * Anthropic API key, "Read with Claude" sends the resume to the Claude API instead
+ * (official SDK, bundled in vendor/anthropic-sdk). Either way, suggestions are
+ * shown for review/editing and only saved when the user clicks Save.
  */
 import * as pdfjs from '../vendor/pdfjs/pdf.min.mjs';
+import Anthropic from '../vendor/anthropic-sdk/anthropic-sdk.mjs';
 
 pdfjs.GlobalWorkerOptions.workerSrc = chrome.runtime.getURL('vendor/pdfjs/pdf.worker.min.mjs');
 
@@ -115,7 +118,7 @@ function renderReview(result, fileName) {
             { class: 'review-label' },
             labelFor(path),
             ' ',
-            el('span', { class: `conf conf-${sug.confidence}` }, sug.confidence === 'high' ? 'sure' : sug.confidence === 'medium' ? 'check' : 'guess'),
+            el('span', { class: `conf conf-${sug.confidence}` }, { high: 'sure', medium: 'check', low: 'guess', claude: 'from Claude' }[sug.confidence] || 'check'),
           ),
           input,
           current && !same ? el('div', { class: 'muted small' }, 'Currently in your profile: ', current) : null,
@@ -183,10 +186,89 @@ function renderReview(result, fileName) {
   box.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
-async function readAndReview(file) {
+// ------------------------------------------------------------ Claude (optional)
+async function claudeSettings() {
+  const { claudeApi } = await chrome.storage.local.get('claudeApi');
+  return Object.assign({ apiKey: '', model: JC.claudeResume.DEFAULT_MODEL, autoRead: false }, claudeApi || {});
+}
+
+function bufToB64(buf) {
+  const u8 = new Uint8Array(buf);
+  let bin = '';
+  for (let i = 0; i < u8.length; i += 0x8000) bin += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
+
+function friendlyError(e) {
+  if (e instanceof Anthropic.AuthenticationError) return 'Your Anthropic API key was rejected. Check it in "Claude (optional)" below.';
+  if (e instanceof Anthropic.PermissionDeniedError) return 'This API key is not allowed to use that model.';
+  if (e instanceof Anthropic.NotFoundError) return 'That model is not available to your API key. Pick another model below.';
+  if (e instanceof Anthropic.RateLimitError) return 'Rate limited by the Claude API. Wait a minute and try again.';
+  if (e instanceof Anthropic.BadRequestError) return `The Claude API rejected the request: ${e.message}`;
+  if (e instanceof Anthropic.APIConnectionError) return 'Could not reach the Claude API. Check your connection.';
+  if (e instanceof Anthropic.APIError) return `Claude API error ${e.status || ''}: ${e.message}`;
+  return e && e.message ? e.message : String(e);
+}
+
+/** Ask Claude to extract profile fields. Returns the same shape as JC.resume.parse(). */
+async function claudeExtract(file, settings) {
+  const isPdf = (file.name || '').toLowerCase().endsWith('.pdf') || file.type === 'application/pdf';
+  const instructions = JC.claudeResume.prompt(new Date().toISOString().slice(0, 10));
+  const content = isPdf
+    ? [
+        { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: bufToB64(file.buffer) } },
+        { type: 'text', text: instructions },
+      ]
+    : [{ type: 'text', text: `<resume>\n${await extractText(file.name, file.type, file.buffer)}\n</resume>\n\n${instructions}` }];
+
+  const client = new Anthropic({ apiKey: settings.apiKey, dangerouslyAllowBrowser: true, timeout: 120000 });
+  const params = {
+    model: settings.model,
+    max_tokens: 16000,
+    output_config: { effort: 'low', format: { type: 'json_schema', schema: JC.claudeResume.schema() } },
+    messages: [{ role: 'user', content }],
+  };
+  // Sonnet 5.5 / Opus 5.5: let the API retry on a fallback model if a safety classifier declines.
+  const withFallback = settings.model === 'claude-sonnet-5-5' || settings.model === 'claude-opus-5-5';
+  const res = withFallback
+    ? await client.beta.messages.create({ ...params, betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' })
+    : await client.messages.create(params);
+
+  if (res.stop_reason === 'refusal') throw new Error('Claude declined to read this file.');
+  if (res.stop_reason === 'max_tokens') throw new Error('Claude ran out of output space. Try again.');
+  const text = res.content.filter((b) => b.type === 'text').map((b) => b.text).join('');
+  let json;
+  try {
+    json = JSON.parse(text);
+  } catch (_) {
+    throw new Error('Claude returned something that was not valid JSON.');
+  }
+  return JC.claudeResume.toResult(json);
+}
+
+async function readAndReview(file, opts) {
   const box = $('resume-review');
   box.hidden = false;
-  box.replaceChildren(el('p', { class: 'muted' }, `Reading ${file.name}…`));
+  const settings = await claudeSettings();
+  const useClaude = opts && 'useClaude' in opts ? opts.useClaude : settings.autoRead && !!settings.apiKey;
+  const model = (JC.claudeResume.MODELS.find((m) => m.id === settings.model) || { label: settings.model }).label.split(' (')[0];
+  box.replaceChildren(el('p', { class: 'muted' }, useClaude ? `Sending ${file.name} to ${model}…` : `Reading ${file.name}…`));
+  if (useClaude) {
+    try {
+      renderReview(await claudeExtract(file, settings), `${file.name} (read by ${model})`);
+      return;
+    } catch (e) {
+      // Fall back to the built-in reader so the user still gets suggestions.
+      try {
+        const local = JC.resume.parse(await extractText(file.name, file.type, file.buffer));
+        local.warnings.unshift(`Claude could not read it: ${friendlyError(e)} Showing the built-in reader's results instead.`);
+        renderReview(local, file.name);
+      } catch (e2) {
+        box.replaceChildren(el('p', { class: 'warn-text' }, `Could not read ${file.name}: ${friendlyError(e)}`));
+      }
+      return;
+    }
+  }
   try {
     const text = await extractText(file.name, file.type, file.buffer);
     const result = JC.resume.parse(text);
@@ -200,11 +282,60 @@ async function readAndReview(file) {
 // After options.js stores a new resume file it dispatches this event.
 document.addEventListener('jc:resume-saved', (e) => readAndReview(e.detail));
 
-$('resume-reparse').addEventListener('click', async () => {
+async function storedResume() {
   const { resume } = await chrome.storage.local.get('resume');
-  if (!resume) return alert('Upload a resume first.');
-  readAndReview({ name: resume.name, type: resume.type, buffer: b64ToBuf(resume.dataBase64) });
+  if (!resume) {
+    alert('Upload a resume first.');
+    return null;
+  }
+  return { name: resume.name, type: resume.type, buffer: b64ToBuf(resume.dataBase64) };
+}
+
+$('resume-reparse').addEventListener('click', async () => {
+  const f = await storedResume();
+  if (f) readAndReview(f, { useClaude: false });
 });
 
-// Exposed for tests and for the Claude bridge-free flow.
-window.JCResumeImport = { extractText, readAndReview };
+$('resume-claude').addEventListener('click', async () => {
+  const s = await claudeSettings();
+  if (!s.apiKey) {
+    $('claude').scrollIntoView({ behavior: 'smooth' });
+    $('claude-key').focus();
+    return;
+  }
+  const f = await storedResume();
+  if (f) readAndReview(f, { useClaude: true });
+});
+
+// "Claude (optional)" settings card.
+async function renderClaudeSettings() {
+  const s = await claudeSettings();
+  const sel = $('claude-model');
+  sel.replaceChildren(...JC.claudeResume.MODELS.map((m) => el('option', { value: m.id }, m.label)));
+  sel.value = s.model;
+  $('claude-auto').checked = !!s.autoRead;
+  $('claude-key').value = '';
+  $('claude-key').placeholder = s.apiKey ? `Saved (…${s.apiKey.slice(-4)}). Paste a new key to replace it.` : 'sk-ant-…';
+  $('claude-status').textContent = s.apiKey ? 'Key saved in this browser.' : 'No key saved. Claude features are off.';
+  $('claude-remove').hidden = !s.apiKey;
+  $('resume-claude').title = s.apiKey ? `Send the resume to ${s.model} and review what it finds` : 'Add your Anthropic API key under "Claude (optional)" first';
+}
+
+async function saveClaudeSettings(patch) {
+  const s = Object.assign(await claudeSettings(), patch);
+  await chrome.storage.local.set({ claudeApi: s });
+  await renderClaudeSettings();
+}
+
+$('claude-save').addEventListener('click', async () => {
+  const key = $('claude-key').value.trim();
+  if (key && !/^sk-ant-/.test(key)) return alert('That does not look like an Anthropic API key (they start with "sk-ant-").');
+  await saveClaudeSettings(key ? { apiKey: key } : {});
+});
+$('claude-remove').addEventListener('click', () => saveClaudeSettings({ apiKey: '', autoRead: false }));
+$('claude-model').addEventListener('change', (e) => saveClaudeSettings({ model: e.target.value }));
+$('claude-auto').addEventListener('change', (e) => saveClaudeSettings({ autoRead: e.target.checked }));
+renderClaudeSettings();
+
+// Exposed for tests.
+window.JCResumeImport = { extractText, readAndReview, claudeExtract };

@@ -14,6 +14,7 @@ Manifest V3, plain JavaScript, no build step.
 
 | Feature | How |
 |---|---|
+| **Read with Claude (optional)** | Add your own Anthropic API key under **Claude (optional)** and click **Read with Claude** (or turn on "use automatically"). The PDF goes to the Claude API as a document (DOCX/TXT as text) through the official Anthropic SDK, with a structured-output schema that only asks for resume facts (never work authorization, salary or EEO). Results land in the same review panel, tagged "from Claude". Default model: Claude Haiku 5.5; Sonnet 5.5 and Opus 5.5 are selectable. If the call fails, the built-in reader's results are shown instead. |
 | **Profile from your resume** | Upload a PDF, DOCX or TXT resume in the options page. It's read locally (pdf.js for PDFs, a built-in zip reader for DOCX) and turned into suggested values: name, email, phone, location, links, current title and company, years of experience, education, skills and summary. You review each one, edit it, untick anything wrong, then save. Fields you already filled are never overwritten unless you tick them. |
 | Badge on the toolbar icon | The job count on listing pages, `JOB` on a posting, `FILL` on an application form, `LOG` when a login is required |
 | **Find jobs on this tab** | Portal extractors (LinkedIn, Indeed, Glassdoor, Wellfound, Greenhouse, Lever, Ashby, Workday), then JSON-LD `JobPosting`, then generic job-link scanning. You can save jobs and export them as JSON or CSV. |
@@ -51,7 +52,10 @@ Full reference for skill authors: [`../shared/browser.md`](../shared/browser.md)
 - `attachFile({ url })` only fetches from `127.0.0.1` or `localhost`, and only files of 10 MB or less.
 - The bridge can be turned off entirely in the options ("Enable the Claude bridge"), and so can bridge-triggered
   autofill on its own.
-- Everything (profile, files, saved jobs) stays in `chrome.storage.local`. Nothing is sent anywhere.
+- Everything (profile, files, saved jobs) stays in `chrome.storage.local`. Nothing is sent anywhere, except when you
+  click **Read with Claude** (or turn on automatic Claude reading): then the resume file goes to `api.anthropic.com`
+  with your API key. The key is stored unencrypted in `chrome.storage.local` (like the rest of your profile), is only
+  used by the options page, and is never exposed to web pages or the Claude bridge.
 
 ### Permissions
 - `<all_urls>` host access and content scripts: needed to detect jobs and autofill on any company careers site.
@@ -69,7 +73,9 @@ src/shared/field-rules.js     field classification + option matching (pure, unit
 src/shared/resume-parser.js   resume text -> suggested profile values (pure, unit-tested)
 src/shared/docx-text.js       .docx -> text without libraries
 options/resume-import.js      PDF/DOCX reading + the review-and-edit panel
+src/shared/claude-resume.js   schema, prompt and result mapping for "Read with Claude" (pure, unit-tested)
 vendor/pdfjs/                 pdf.js 4.10.38 (Apache-2.0), used only by the options page
+vendor/anthropic-sdk/         @anthropic-ai/sdk 1.3.0 (MIT) bundled by scripts/vendor-anthropic-sdk.mjs
 src/content/util.js           DOM helpers
 src/content/jsonld.js         schema.org JobPosting reader
 src/content/login.js          login / signup wall detection

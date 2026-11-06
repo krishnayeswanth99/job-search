@@ -302,6 +302,90 @@ try {
     assert.equal(rv['Current / most recent company'].value, 'Stripe');
   });
 
+  // ---- "Read with Claude": the Claude API is mocked; we check what is sent and how replies/errors are handled.
+  const claudeCalls = [];
+  let claudeReply = null;
+  await context.route('https://api.anthropic.com/**', async (route) => {
+    const req = route.request();
+    claudeCalls.push({ url: req.url(), headers: await req.allHeaders(), body: req.postDataJSON() });
+    const cors = { 'access-control-allow-origin': '*', 'access-control-allow-headers': '*' };
+    if (req.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: cors });
+    return route.fulfill(Object.assign({ contentType: 'application/json', headers: Object.assign({ 'request-id': 'req_test' }, cors) }, claudeReply));
+  });
+  const claudeJson = {
+    personal: { firstName: 'Jane', lastName: 'Doe', email: 'jane.doe@gmail.com', phone: '(415) 555-0134', phoneCountryCode: '', address1: '', city: 'San Francisco', state: 'CA', postalCode: '94105', country: 'United States' },
+    links: { linkedin: 'https://www.linkedin.com/in/janedoe', github: 'https://github.com/janedoe', portfolio: '', website: 'https://janedoe.dev', twitter: '' },
+    work: { currentTitle: 'Senior Software Engineer', currentCompany: 'Stripe', yearsExperience: '7', skills: 'Go, Python, Kubernetes' },
+    education: { school: 'University of California, Berkeley', degree: 'B.S.', fieldOfStudy: 'Computer Science', graduationYear: '2017', gpa: '3.8/4.0' },
+    summary: 'Backend engineer with 7 years building distributed systems.',
+    notes: ['Years of experience exclude the 2016 internship.'],
+  };
+  const okReply = (json) => ({ status: 200, body: JSON.stringify({ id: 'msg_test', type: 'message', role: 'assistant', model: 'claude-haiku-5-5', content: [{ type: 'text', text: JSON.stringify(json) }], stop_reason: 'end_turn', stop_sequence: null, usage: { input_tokens: 1200, output_tokens: 300 } }) });
+  const setClaude = (v) => ext.evaluate((v) => chrome.storage.local.set({ claudeApi: v }), v);
+
+  await check('Claude: reads the PDF via the API and shows results for review', async () => {
+    await setClaude({ apiKey: 'sk-ant-test-0000', model: 'claude-haiku-5-5', autoRead: false });
+    claudeReply = okReply(claudeJson);
+    claudeCalls.length = 0;
+    const opt = await context.newPage();
+    const errors = [];
+    opt.on('pageerror', (e) => errors.push(e.message));
+    await opt.goto(`chrome-extension://${extId}/options/options.html`);
+    await opt.setInputFiles('#resume-file', { name: 'jane-doe.pdf', mimeType: 'application/pdf', buffer: resumePdf });
+    await opt.waitForSelector('.review-row');
+    assert.equal(claudeCalls.length, 0, 'autoRead off: nothing sent on upload');
+    await opt.click('#resume-claude');
+    await opt.waitForSelector('.review h3:has-text("read by Claude Haiku 5.5")', { timeout: 15000 });
+    const call = claudeCalls.find((c) => c.body);
+    assert.ok(call, 'request sent');
+    assert.match(call.url, /\/v1\/messages$/);
+    // SDK 1.x (API version 2026-10-21) sends the key as a bearer token; older versions used x-api-key.
+    assert.ok(call.headers['authorization'] === 'Bearer sk-ant-test-0000' || call.headers['x-api-key'] === 'sk-ant-test-0000', 'API key sent');
+    assert.equal(call.headers['anthropic-dangerous-direct-browser-access'], 'true');
+    assert.equal(call.body.model, 'claude-haiku-5-5');
+    assert.equal(call.body.output_config.format.type, 'json_schema');
+    assert.equal(call.body.output_config.effort, 'low');
+    assert.equal(call.body.messages[0].content[0].type, 'document');
+    assert.equal(call.body.messages[0].content[0].source.media_type, 'application/pdf');
+    assert.ok(!('fallbacks' in call.body), 'Haiku: no fallbacks param');
+    const rv = await readReview(opt);
+    assert.equal(rv['Years of experience'].value, '7');
+    assert.equal(rv['School / university'].value, 'University of California, Berkeley');
+    assert.match(await opt.textContent('#resume-review'), /exclude the 2016 internship/);
+    assert.match(await opt.textContent('#resume-review'), /from Claude/);
+    assert.deepEqual(errors, []);
+  });
+
+  await check('Claude: auto-read on upload, Sonnet sends server-side fallback', async () => {
+    await setClaude({ apiKey: 'sk-ant-test-0000', model: 'claude-sonnet-5-5', autoRead: true });
+    claudeReply = okReply(claudeJson);
+    claudeCalls.length = 0;
+    const opt = await context.newPage();
+    await opt.goto(`chrome-extension://${extId}/options/options.html`);
+    await opt.setInputFiles('#resume-file', path.join(here, '../fixtures/resumes/classic-us.docx'));
+    await opt.waitForSelector('.review h3:has-text("read by Claude Sonnet 5.5")', { timeout: 15000 });
+    const call = claudeCalls.find((c) => c.body);
+    assert.equal(call.body.model, 'claude-sonnet-5-5');
+    assert.equal(call.body.fallbacks, 'default');
+    assert.match(call.headers['anthropic-beta'] || '', /server-side-fallback-2026-07-01/);
+    assert.equal(call.body.messages[0].content[0].type, 'text', 'DOCX goes as extracted text');
+    assert.match(call.body.messages[0].content[0].text, /<resume>\nJANE DOE/);
+  });
+
+  await check('Claude: bad key falls back to the built-in reader with a clear message', async () => {
+    await setClaude({ apiKey: 'sk-ant-bad', model: 'claude-haiku-5-5', autoRead: true });
+    claudeReply = { status: 401, body: JSON.stringify({ type: 'error', error: { type: 'authentication_error', message: 'invalid x-api-key' } }) };
+    const opt = await context.newPage();
+    await opt.goto(`chrome-extension://${extId}/options/options.html`);
+    await opt.setInputFiles('#resume-file', { name: 'jane-doe.pdf', mimeType: 'application/pdf', buffer: resumePdf });
+    await opt.waitForSelector('.review-row', { timeout: 20000 });
+    const txt = await opt.textContent('#resume-review');
+    assert.match(txt, /API key was rejected/);
+    assert.match(txt, /built-in reader/);
+    assert.equal((await readReview(opt))['Email'].value, 'jane.doe@gmail.com');
+    await setClaude({ apiKey: '', model: 'claude-haiku-5-5', autoRead: false });
+  });
+
   await check('bridge disabled: commands refused', async () => {
     await ext.evaluate(async () => {
       const { settings } = await chrome.storage.local.get('settings');

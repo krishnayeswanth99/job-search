@@ -1,6 +1,6 @@
 {
   "name": "job-search",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "description": "Job Copilot Chrome extension + Claude skills for finding, tailoring and applying to jobs.",
   "type": "module",
@@ -10,7 +10,8 @@
     "test:e2e": "node tests/e2e/run.mjs",
     "sync-shared": "node scripts/sync-shared.mjs",
     "check": "node scripts/sync-shared.mjs --check && npm run test:unit",
-    "package:extension": "node scripts/package-extension.mjs"
+    "package:extension": "node scripts/package-extension.mjs",
+    "vendor:sdk": "node scripts/vendor-anthropic-sdk.mjs"
   },
   "license": "MIT",
   "devDependencies": {

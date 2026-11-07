@@ -25,6 +25,11 @@ const ROUTES = {
   'https://acme.wd5.myworkdayjobs.com/en-US/careers/login': fx('workday-login.html'),
   'https://evil.example.com/apply': fx('untrusted-form.html'),
   'https://www.acme-robotics.com/careers': fx('company-embed.html'),
+  'https://www.linkedin.com/jobs/view/4000000009/': fx('linkedin-external.html'),
+  'https://job-boards.greenhouse.io/acme/jobs/123?gh_src=linkedin': fx('greenhouse-job.html'),
+  'https://www.indeed.com/applystart?jk=abc&url=https%3A%2F%2Fjob-boards.greenhouse.io%2Facme%2Fjobs%2F123': fx('indeed-applystart.html'),
+  'https://jobright.ai/jobs/info/abc123': fx('jobright-job.html'),
+  'https://jobs.lever.co/acme/11111111-1111-1111-1111-111111111111/apply': '<html><body><form id="application-form"><label>Full name<input name="name"></label><label>Email<input name="email" type="email"></label><label>Phone<input name="phone"></label><label>Resume/CV<input type="file" name="resume"></label></form></body></html>',
 };
 
 const PROFILE = {
@@ -384,6 +389,56 @@ try {
     assert.match(txt, /built-in reader/);
     assert.equal((await readReview(opt))['Email'].value, 'jane.doe@gmail.com');
     await setClaude({ apiKey: '', model: 'claude-haiku-5-5', autoRead: false });
+  });
+
+  // ---- From job boards / aggregators to the real application
+  await check('LinkedIn external Apply: detected, click opens new tab, reported in openedTabs', async () => {
+    await ext.evaluate(async () => {
+      const { settings } = await chrome.storage.local.get('settings');
+      await chrome.storage.local.set({ settings: Object.assign({}, settings, { bridgeEnabled: true }) });
+    });
+    const p = await open('https://www.linkedin.com/jobs/view/4000000009/');
+    const d = await bridge(p, () => window.jobCopilot.detect());
+    assert.equal(d.apply.kind, 'external');
+    assert.equal(d.apply.newTab, true);
+    const f = await bridge(p, () => window.jobCopilot.followApply());
+    assert.equal(f.ok, false, 'scripted button: cannot navigate same tab');
+    const [child] = await Promise.all([context.waitForEvent('page'), p.click(d.apply.selector)]);
+    await child.waitForLoadState('domcontentloaded');
+    await p.waitForTimeout(300);
+    const d2 = await bridge(p, () => window.jobCopilot.detect());
+    assert.ok(d2.openedTabs && d2.openedTabs.some((t) => /greenhouse\.io\/acme\/jobs\/123/.test(t.url)), JSON.stringify(d2.openedTabs));
+  });
+
+  await check('Indeed redirect + "leaving Indeed" screen: followApply lands on the ATS form', async () => {
+    const p = await open('https://www.indeed.com/applystart?jk=abc&url=https%3A%2F%2Fjob-boards.greenhouse.io%2Facme%2Fjobs%2F123');
+    const d = await bridge(p, () => window.jobCopilot.detect());
+    assert.equal(d.pageType, 'redirect');
+    assert.equal(d.redirect.target, 'https://job-boards.greenhouse.io/acme/jobs/123');
+    assert.equal(d.interstitial.button, 'Continue');
+    const f = await bridge(p, () => window.jobCopilot.followApply());
+    assert.equal(f.ok, true);
+    await p.waitForURL('https://job-boards.greenhouse.io/acme/jobs/123');
+    await p.waitForFunction(() => window.jobCopilot && window.jobCopilot.installed);
+    assert.equal((await bridge(p, () => window.jobCopilot.detect())).pageType, 'application');
+  });
+
+  await check('Jobright-style aggregator: unwraps redirect link, same-tab follow, "Did you apply?" prompt', async () => {
+    const p = await open('https://jobright.ai/jobs/info/abc123');
+    const d = await bridge(p, () => window.jobCopilot.detect());
+    assert.equal(d.portal, 'jobright');
+    assert.equal(d.apply.kind, 'external');
+    assert.equal(d.apply.target, 'https://jobs.lever.co/acme/11111111-1111-1111-1111-111111111111/apply');
+    assert.equal(d.appliedPrompt.yes, 'Yes, I applied');
+    assert.equal(d.appliedPrompt.no, 'No, not yet');
+    // Dismiss the prompt the honest way (not applied yet), then follow.
+    await p.click(d.appliedPrompt.noSelector);
+    await p.evaluate(() => document.getElementById('did').remove());
+    const f = await bridge(p, () => window.jobCopilot.followApply());
+    assert.equal(f.ok, true);
+    await p.waitForURL('**/jobs.lever.co/acme/**/apply');
+    await p.waitForFunction(() => window.jobCopilot && window.jobCopilot.installed);
+    assert.equal((await bridge(p, () => window.jobCopilot.detect())).pageType, 'application');
   });
 
   await check('bridge disabled: commands refused', async () => {

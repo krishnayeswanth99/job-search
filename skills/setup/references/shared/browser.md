@@ -28,9 +28,10 @@ Each call returns a Promise and also stores its result in `window.jobCopilot.las
 
 | Call | Returns |
 |---|---|
-| `await jobCopilot.detect()` | `{ portal, pageType: listings\|job\|application\|unknown, jobCount, application, applicationFrame?, login: { required, kind: signin\|signup, providers[], hints[] } }` |
+| `await jobCopilot.detect()` | `{ portal, pageType: listings\|job\|application\|redirect\|unknown, jobCount, application, applicationFrame?, login: { required, kind, providers[], hints[] }, apply?, redirect?: { target }, interstitial?: { text, button, selector }, appliedPrompt?: { text, yes, no, yesSelector, noSelector }, openedTabs?: [{ url, title }] }` |
 | `await jobCopilot.extractJobs({ limit })` | `{ count, jobs: [{ title, company, location, url, jobId, salary, postedAt, easyApply, remote, source }] }` |
-| `await jobCopilot.extractJob()` | `{ job: { title, company, location, salary, description (≤15k chars), url, apply: { text, href } } }` |
+| `await jobCopilot.extractJob()` | `{ job: { title, company, location, salary, description (≤15k chars), url, apply: { text, kind: easy-apply\|external\|onsite, target, newTab, selector } } }` |
+| `await jobCopilot.followApply()` | Moves **this tab** to the real application when the link is known: unwraps redirect URLs, continues through "You're leaving…" screens. `{ ok: false, reason }` means the button is scripted or Easy Apply, so click it instead |
 | `await jobCopilot.scanForm()` | `{ fields: [{ selector, label, type, required, hasValue, profileKey?, options?, combobox?, frame }] }` |
 | `await jobCopilot.autofill({ overrides, overwrite })` | `{ filledCount, filled[], skipped[], needsInput: [{ selector, label, type, options?, reason, suggested? }] }` |
 | `await jobCopilot.fillField({ selector \| label, value, check })` | `{ ok }`: sets a value so React, Vue, and Angular see the change. Works inside iframes. |

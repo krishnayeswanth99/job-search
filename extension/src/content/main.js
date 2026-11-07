@@ -71,8 +71,24 @@
         case 'detect': {
           const s = quickStatus();
           s.jobCount = s.pageType === 'listings' || isTop ? JC.extract.listings().length : 0;
+          if (isTop) {
+            // How to get from here to the real application form.
+            const redirect = JC.nav.redirectInfo();
+            const interstitial = JC.nav.interstitial();
+            const appliedPrompt = JC.nav.appliedPrompt();
+            if (redirect) {
+              s.redirect = redirect;
+              if (!s.application) s.pageType = 'redirect';
+            }
+            if (interstitial) s.interstitial = interstitial;
+            if (appliedPrompt) s.appliedPrompt = appliedPrompt;
+            if (!s.application) s.apply = JC.nav.applyInfo();
+          }
           return Object.assign({ ok: true }, s);
         }
+        case 'followApply':
+          if (!isTop) return null;
+          return Object.assign({ frame: location.href }, JC.nav.followApply());
         case 'extractJobs': {
           const jobs = JC.extract.listings();
           return { ok: true, frame: location.href, isTop, portal: (JC.extract.portal() || {}).id || 'generic', jobs: jobs.slice(0, payload.limit || 100) };

@@ -3,10 +3,10 @@
 
 Usage:
   tracker.py init
-  tracker.py add --portal P --company C --title T --url U [--location L] [--fit F] [--status S] [--notes N]
+  tracker.py add --portal P --company C --title T --url U [--apply-url A] [--location L] [--fit F] [--status S] [--notes N]
   tracker.py exists --url U                  exit 0 and print the row if tracked, else exit 1
   tracker.py get --id N | --url U
-  tracker.py update --id N [--status S] [--fit F] [--folder D] [--notes N] [--applied]
+  tracker.py update --id N [--status S] [--fit F] [--folder D] [--apply-url A] [--notes N]
   tracker.py list [--status S[,S2]] [--fit F[,F2]] [--portal P] [--limit N]
   tracker.py slug --company C --title T      folder name for a job
   tracker.py stats
@@ -24,7 +24,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 HOME = os.path.expanduser(os.environ.get("JOB_SEARCH_HOME", "~/.job-search"))
 TRACKER = os.path.join(HOME, "tracker.csv")
-COLUMNS = ["id", "found_at", "portal", "company", "title", "location", "url", "fit", "status", "applied_at", "folder", "notes"]
+COLUMNS = ["id", "found_at", "portal", "company", "title", "location", "url", "apply_url", "fit", "status", "applied_at", "folder", "notes"]
 STATUSES = {"found", "shortlisted", "tailored", "applying", "applied", "skipped", "blocked", "closed", "interview", "offer", "rejected"}
 TRACKING_PARAMS = re.compile(r"^(utm_.*|ref|refid|trackingid|trk|trkinfo|src|source|gh_src|lever-source|lever-origin|ebp|eid|from|position|pagenum|origin)$", re.I)
 
@@ -82,7 +82,11 @@ def find(rows, id_=None, url=None):
     if id_ is not None:
         return next((r for r in rows if r["id"] == str(id_)), None)
     cu = canonical_url(url)
-    return next((r for r in rows if canonical_url(r["url"]) == cu), None) if cu else None
+    if not cu:
+        return None
+    # A job found on a board (LinkedIn, Indeed, Jobright...) and later opened on the employer's ATS is one job:
+    # match either the listing URL or the application URL.
+    return next((r for r in rows if cu in (canonical_url(r.get("url")), canonical_url(r.get("apply_url")))), None)
 
 
 def out(obj, code=0):
@@ -108,7 +112,7 @@ def cmd_add(a):
     next_id = max([int(r["id"]) for r in rows if r["id"].isdigit()] + [0]) + 1
     row = {
         "id": str(next_id), "found_at": now(), "portal": a.portal or "", "company": a.company or "", "title": a.title or "",
-        "location": a.location or "", "url": canonical_url(a.url), "fit": a.fit or "", "status": a.status or "found",
+        "location": a.location or "", "url": canonical_url(a.url), "apply_url": canonical_url(a.apply_url), "fit": a.fit or "", "status": a.status or "found",
         "applied_at": "", "folder": "", "notes": a.notes or "",
     }
     rows.append(row)
@@ -141,6 +145,8 @@ def cmd_update(a):
         v = getattr(a, k, None)
         if v:
             r[k] = v
+    if getattr(a, "apply_url", None):
+        r["apply_url"] = canonical_url(a.apply_url)
     if a.notes:
         r["notes"] = (r.get("notes", "") + " | " if r.get("notes") else "") + a.notes
     write_rows(rows)
@@ -180,6 +186,7 @@ def main():
     s = sub.add_parser("add")
     for f in ("portal", "company", "title", "location", "fit", "status", "notes"):
         s.add_argument("--" + f)
+    s.add_argument("--apply-url", dest="apply_url", help="the employer ATS URL, when it differs from --url")
     s.add_argument("--url", required=True)
     s = sub.add_parser("exists")
     s.add_argument("--url", required=True)
@@ -191,6 +198,7 @@ def main():
     s.add_argument("--url")
     for f in ("status", "fit", "folder", "notes", "location", "company", "title"):
         s.add_argument("--" + f)
+    s.add_argument("--apply-url", dest="apply_url")
     s = sub.add_parser("list")
     s.add_argument("--status")
     s.add_argument("--fit")

@@ -35,6 +35,7 @@ Each portal has its own playbook in `portals/<portal>.md`. Load only the one you
 | Ashby boards | `portals/ashby.md` | No |
 | Workday sites | `portals/workday.md` | No (only to apply) |
 | Any company careers page | `portals/company-careers.md` | No |
+| Jobright, Simplify, ZipRecruiter, Dice, Built In (aggregators) | `portals/jobright.md` | Often |
 
 To add a portal, write `portals/<id>.md` following `portals/_template.md`. If a dedicated extractor would help, add one to
 `extension/src/content/extractors.js`.

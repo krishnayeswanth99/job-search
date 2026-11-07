@@ -7,7 +7,26 @@
  */
 importScripts('shared/config.js');
 
-const FRAME_CMDS = new Set(['ping', 'detect', 'extractJobs', 'extractJob', 'scanForm', 'autofill', 'fillField', 'attachFile']);
+const FRAME_CMDS = new Set(['ping', 'detect', 'extractJobs', 'extractJob', 'scanForm', 'autofill', 'fillField', 'attachFile', 'followApply']);
+
+// ---------------------------------------------------- tabs opened by Apply buttons
+// Job boards often open the employer's site in a new tab. Remember child tabs per
+// opener so detect() can tell Claude where the application went.
+const childTabs = new Map(); // openerTabId -> [{ tabId, url, title, openedAt }]
+chrome.tabs.onCreated.addListener((tab) => {
+  if (tab.openerTabId === undefined) return;
+  const list = childTabs.get(tab.openerTabId) || [];
+  list.push({ tabId: tab.id, url: tab.pendingUrl || tab.url || '', title: tab.title || '', openedAt: new Date().toISOString() });
+  childTabs.set(tab.openerTabId, list.slice(-5));
+});
+chrome.tabs.onUpdated.addListener((tabId, info, tab) => {
+  if (!info.url && !info.title) return;
+  for (const list of childTabs.values()) for (const c of list) if (c.tabId === tabId) Object.assign(c, { url: tab.url || c.url, title: tab.title || c.title });
+});
+chrome.tabs.onRemoved.addListener((tabId) => {
+  childTabs.delete(tabId);
+  for (const [k, list] of childTabs) childTabs.set(k, list.filter((c) => c.tabId !== tabId));
+});
 
 async function runInFrames(tabId, cmd, payload) {
   let results;
@@ -46,6 +65,7 @@ function merge(cmd, frames) {
         out.application = true;
         out.applicationFrame = app.url;
         out.portal = out.portal || app.portal;
+        delete out.apply;
       }
       return out;
     }
@@ -85,6 +105,8 @@ function merge(cmd, frames) {
       out.reminder = 'Nothing was submitted. Review the form, answer needsInput items, then ask the user before clicking Submit.';
       return out;
     }
+    case 'followApply':
+      return frames.find((f) => f.frameId === 0) || frames[0];
     case 'fillField':
     case 'attachFile': {
       const hit = frames.find((f) => f.ok);
@@ -137,7 +159,12 @@ async function runCommand(tabId, cmd, payload, origin) {
       payload.file = stored;
     }
   }
-  return merge(cmd, await runInFrames(tabId, cmd, payload));
+  const out = merge(cmd, await runInFrames(tabId, cmd, payload));
+  if (cmd === 'detect') {
+    const kids = (childTabs.get(tabId) || []).filter((c) => /^https?:/.test(c.url));
+    if (kids.length) out.openedTabs = kids;
+  }
+  return out;
 }
 
 // ------------------------------------------------------------------ badge

@@ -38,7 +38,9 @@ options so autofill picks it up.
 
 ## tracker.csv
 
-Columns: `id, found_at, portal, company, title, location, url, fit, status, applied_at, folder, notes`.
+Columns: `id, found_at, portal, company, title, location, url, apply_url, fit, status, applied_at, folder, notes`.
+`url` is where the job was found (LinkedIn, Jobright…). `apply_url` is the employer's application page. Lookups match
+either one, so the same job seen on a board and on the employer's site is tracked once.
 
 Statuses: `found` → `shortlisted` → `tailored` → `applying` → `applied`. Side branches are `skipped` (the user said no or
 it's a poor fit), `blocked` (login or CAPTCHA failure, or the page broke), and `closed` (the posting is gone). Later

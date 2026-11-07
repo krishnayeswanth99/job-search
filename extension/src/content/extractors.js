@@ -415,9 +415,7 @@
   }
 
   function applyLink() {
-    const btn = findButton(/^(apply|apply now|apply for this job|apply on company (site|website)|easy apply|i'?m interested|submit application)\b/i);
-    if (!btn) return null;
-    return { text: clean(btn.innerText || btn.value), href: btn.href ? absUrl(btn.getAttribute('href')) : '' };
+    return JC.nav ? JC.nav.applyInfo() : null;
   }
 
   JC.extract = {

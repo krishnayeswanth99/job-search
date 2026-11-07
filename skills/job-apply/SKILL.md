@@ -25,6 +25,7 @@ the site you end up on.
 | `ashbyhq.com` | `ats/ashby.md` |
 | `myworkdayjobs.com` | `ats/workday.md` |
 | LinkedIn "Easy Apply" | `ats/linkedin-easy-apply.md` |
+| A job board or aggregator that sends you elsewhere (LinkedIn "Apply", Indeed "Apply on company site", Jobright, Glassdoor, ZipRecruiter) | `references/boards-and-redirects.md` first, then the destination's playbook |
 | Indeed "Easily apply" (`smartapply.indeed.com`) | `ats/indeed.md` |
 | anything else (iCIMS, SmartRecruiters, Taleo, SuccessFactors, custom) | `ats/generic.md` |
 
@@ -49,10 +50,15 @@ the site you end up on.
 
 ### Step 2: Reach the application form
 1. Open the job URL (or use the current tab). Run `await window.jobCopilot.detect()`.
-2. If `pageType` is `job`, read `extractJob()` and save or refresh `<folder>/posting.md` if it's missing. Then click the
-   apply button (`job.apply.text`, or `find("Apply button")`). It may open a **new tab**: check `tabs_context_mcp` and
-   switch to it.
-3. Run `detect()` again on the destination. Load the matching `ats/*.md` playbook.
+2. If `pageType` is `job`, read `extractJob()` and save or refresh `<folder>/posting.md` if it's missing.
+3. Get to the form by following `references/boards-and-redirects.md`. In short:
+   - `detect().apply.kind === 'easy-apply'` means an on-site flow (LinkedIn or Indeed). Click it and use that playbook.
+   - Otherwise call `await jobCopilot.followApply()`. It goes to the employer's page **in the same tab** when the link is
+     known, and steps through redirect hops and "You're leaving…" screens.
+   - If it says the button is scripted, click it. Then find the new tab via `detect().openedTabs` or
+     `tabs_context_mcp`.
+4. Run `detect()` again on the destination. Load the matching `ats/*.md` playbook, and record the ATS URL with
+   `tracker.py update --id N --apply-url <url>`.
 
 ### Step 3: Login, signup, and verification walls
 If `detect().login.required` is true (or you see a sign-in, create-account, or "verify your email" step):
@@ -112,6 +118,9 @@ stage) → `detect()` → `autofill()` again on the new page → repeat. If a pa
   "<why>"`.
 - Add new reusable answers to `profile.json` → `answers`, and remind the user to re-import it in the extension options.
 - Stop the file server if it's still running (kill the background task).
+
+If the job board's tab asks **"Did you apply?"** when you go back, answer **Yes** only after the confirmation in step 7.
+Otherwise answer **No** (see `references/boards-and-redirects.md`).
 
 ### Step 9: Next job
 In queue mode, give a short summary line per job and continue with the next one. Ask about submitting for each job

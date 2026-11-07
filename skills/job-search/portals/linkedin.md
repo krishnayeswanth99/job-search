@@ -44,8 +44,10 @@ https://www.linkedin.com/jobs/search/?keywords=<q>&location=<loc>&f_TPR=r604800&
 Clicking a card opens the details pane on the right without leaving the page. That's faster, and LinkedIn sees fewer
 page loads. Then run `extractJob()`. It reads the pane, including the current `currentJobId`.
 
-The **Apply** button is either "Easy Apply" (on-site multi-step modal, see `job-apply/ats/linkedin-easy-apply.md`) or
-"Apply" (opens the company ATS in a new tab).
+The **Apply** button is either "Easy Apply" (an on-site multi-step modal, see `job-apply/ats/linkedin-easy-apply.md`) or
+"Apply". "Apply" opens the company's site in a new tab, and `extractJob().apply.kind` is `'external'`. LinkedIn's button
+is scripted, so the destination URL is usually only known after clicking: `detect().openedTabs` then shows it. When you
+return, LinkedIn may ask "Did you apply?" (see `job-apply/references/boards-and-redirects.md`).
 
 ## Etiquette
 

@@ -105,8 +105,22 @@ async function init() {
     $('login-banner').textContent = `This page needs you to ${d.login.kind === 'signup' ? 'create an account' : 'sign in'}${d.login.providers.length ? ` (options: ${d.login.providers.join(', ')})` : ''}. Do that in the tab, then reopen this popup.`;
   }
   if (d.pageType !== 'application') $('btn-autofill').classList.remove('primary');
+  // Job boards / aggregators: offer to jump to the employer's application.
+  const ext = d.apply && d.apply.kind === 'external';
+  if (d.redirect || d.interstitial || ext) {
+    $('btn-follow').hidden = false;
+    $('btn-follow').classList.add('primary');
+    $('btn-follow').textContent = d.interstitial ? `Continue: ${d.interstitial.button}` : ext && d.apply.target ? `Go to application (${new URL(d.apply.target).hostname})` : 'Go to application';
+  }
+  if (d.apply && d.apply.kind === 'easy-apply') $('page-type').textContent += ` · ${d.apply.text} (on-site)`;
   if (d.pageType === 'listings' || d.jobCount) $('btn-jobs').classList.add('primary');
 }
+
+$('btn-follow').addEventListener('click', async () => {
+  const r = await send('followApply');
+  if (r && r.ok) return window.close();
+  showResult('Open the application', el('p', {}, (r && r.reason) || 'Click the Apply button on the page.'), r);
+});
 
 $('btn-autofill').addEventListener('click', async () => {
   $('btn-autofill').disabled = true;

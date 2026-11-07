@@ -7,7 +7,7 @@
 (function (root) {
   const JC = (root.JC = root.JC || {});
 
-  JC.VERSION = '0.3.0';
+  JC.VERSION = '0.4.0';
   JC.BRIDGE_CHANNEL = 'job-copilot';
 
   /**
@@ -28,6 +28,12 @@
     { id: 'jobvite', name: 'Jobvite', hosts: ['jobvite.com'] },
     { id: 'workable', name: 'Workable', hosts: ['workable.com'] },
     { id: 'bamboohr', name: 'BambooHR', hosts: ['bamboohr.com'] },
+    // Aggregators: they list jobs but send you to the employer's ATS to apply.
+    { id: 'jobright', name: 'Jobright', hosts: ['jobright.ai'], aggregator: true },
+    { id: 'simplify', name: 'Simplify', hosts: ['simplify.jobs'], aggregator: true },
+    { id: 'ziprecruiter', name: 'ZipRecruiter', hosts: ['ziprecruiter.com'], aggregator: true },
+    { id: 'dice', name: 'Dice', hosts: ['dice.com'], aggregator: true },
+    { id: 'builtin', name: 'Built In', hosts: ['builtin.com'], aggregator: true },
   ];
 
   /**

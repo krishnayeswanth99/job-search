@@ -48,6 +48,8 @@ test('uses attributes and autocomplete', () => {
   assert.equal(key({ automationId: 'countryPhoneCode' }), 'phoneCountryCode');
   assert.equal(key({ autocomplete: 'given-name', label: 'Something odd' }), 'firstName');
   assert.equal(key({ type: 'password', label: 'Password' }), null);
+  // Seen live on Lever: must not be filled with the candidate's name.
+  assert.equal(key({ label: 'Name Pronunciation | How do you pronounce your name?' }), null);
 });
 
 test('consent checkboxes are flagged, never mapped to profile data', () => {

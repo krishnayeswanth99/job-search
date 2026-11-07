@@ -268,7 +268,7 @@
       });
     },
     company() {
-      return pickAttr(document, ['.main-header-logo img'], 'alt') || (location.pathname.split('/')[1] || '').replace(/-/g, ' ');
+      return pickAttr(document, ['.main-header-logo img'], 'alt').replace(/\s*logo$/i, '') || (location.pathname.split('/')[1] || '').replace(/-/g, ' ');
     },
     job() {
       const title = pick(document, ['.posting-headline h2', '.posting-header h2', 'h2']);
@@ -297,13 +297,20 @@
       const org = location.pathname.split('/')[1];
       const links = qsa(`a[href*="/${org}/"]`).filter((a) => UUID.test(a.getAttribute('href')));
       return cardsToJobs(links, (a) => {
-        const lines = (a.innerText || '').split('\n').map(clean).filter(Boolean);
+        const title = pick(a, ['h3', 'h2']) || clean((a.innerText || '').split('\n')[0]);
+        // Card text is "Title / Department • City • Full time • $230K – $385K • Offers Equity".
+        const parts = (a.innerText || '').split(/\n|•/).map(clean).filter((p) => p && p !== title);
+        const salary = parts.find((p) => /[$€£₹]\s?\d/.test(p)) || '';
+        const employmentType = parts.find((p) => /^(full|part)[ -]?time$|^contract|^intern/i.test(p)) || '';
+        const rest = parts.filter((p) => p !== salary && p !== employmentType && !/equity/i.test(p));
         return {
-          title: pick(a, ['h3', 'h2']) || lines[0],
-          location: lines.slice(1).join(' • '),
+          title,
+          location: rest.length > 1 ? rest.slice(1).join(' • ') : rest.join(' • '),
+          salary,
+          employmentType,
           url: a.href,
           jobId: (a.getAttribute('href').match(UUID) || [])[0],
-          company: (org || '').replace(/-/g, ' '),
+          company: (org || '').replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()),
           remote: /remote/i.test(a.innerText),
         };
       });

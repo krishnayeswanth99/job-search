@@ -52,11 +52,16 @@
     if (wrap) tries.push(textOf(wrap.querySelector('.application-label, .text, span, div') || wrap));
     if (el.getAttribute('aria-label')) tries.push(clean(el.getAttribute('aria-label')));
 
-    // Common ATS containers: Greenhouse .field, Lever .application-question, Workday formField, Ashby _fieldEntry.
-    const container = el.closest('.field, .application-question, .application-field, [data-automation-id^="formField"], [class*="fieldEntry"], [class*="FormField"], .form-group, .form-field, .question, fieldset, li');
-    if (container) {
+    // Common ATS question containers, most specific first (the nearest ancestor is often just an
+    // input wrapper such as Lever's .application-field, which holds no label).
+    for (const sel of ['.application-question', '.field', '[data-automation-id^="formField"]', '[class*="fieldEntry"]', '[class*="FormField"]', '.form-group', '.form-field', '.question', 'fieldset', 'li']) {
+      const container = el.closest(sel);
+      if (!container) continue;
       const lab = container.querySelector('label, legend, .application-label, [class*="label" i], h3, h4, p');
-      if (lab && !lab.contains(el)) tries.push(textOf(lab));
+      if (lab && !lab.contains(el) && textOf(lab)) {
+        tries.push(textOf(lab));
+        break;
+      }
     }
     // Previous sibling text (unlabelled inputs that follow a <p> or <div>).
     let prev = el.previousElementSibling;

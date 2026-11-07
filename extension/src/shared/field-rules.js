@@ -21,6 +21,8 @@
     { key: 'resume', re: /\b(resume|résumé|cv|curriculum vitae)\b/, fileOnly: true, q: true },
     { key: 'coverLetter', re: /\bcover ?letter\b/, fileOnly: true, q: true },
     { key: 'email', re: /\be-?mail\b/ },
+    // "How do you pronounce your name?" is a free-text question, not the name itself.
+    { key: 'skip', re: /\bpronounc/, q: true },
     { key: 'preferredName', re: /\b(preferred (first )?name|nick ?name|name you go by)\b/ },
     { key: 'pronouns', re: /\bpronouns?\b/, q: true },
     { key: 'firstName', re: /\b(first|given|fore) ?name\b|\bfname\b/ },

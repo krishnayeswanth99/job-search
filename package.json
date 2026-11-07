@@ -11,7 +11,8 @@
     "sync-shared": "node scripts/sync-shared.mjs",
     "check": "node scripts/sync-shared.mjs --check && npm run test:unit",
     "package:extension": "node scripts/package-extension.mjs",
-    "vendor:sdk": "node scripts/vendor-anthropic-sdk.mjs"
+    "vendor:sdk": "node scripts/vendor-anthropic-sdk.mjs",
+    "test:live": "node tests/live/ats-smoke.mjs"
   },
   "license": "MIT",
   "devDependencies": {

@@ -5,7 +5,7 @@
  * - Fetches local files for attachFile (localhost only).
  * - Maintains the toolbar badge.
  */
-importScripts('shared/config.js');
+importScripts('shared/config.js', 'shared/profile-schema.js', 'shared/field-rules.js');
 
 const FRAME_CMDS = new Set(['ping', 'detect', 'extractJobs', 'extractJob', 'scanForm', 'autofill', 'fillField', 'attachFile', 'followApply']);
 
@@ -190,6 +190,17 @@ async function setBadge(tabId, status) {
   await chrome.action.setTitle({ tabId, title: label ? `Job Copilot: ${label}` : 'Job Copilot' });
 }
 
+let rememberQueue = Promise.resolve();
+async function rememberAnswers(items, ctx) {
+  const { settings, profile } = await chrome.storage.local.get(['settings', 'profile']);
+  if ((settings && settings.rememberAnswers === false) || !profile || !Array.isArray(items)) return { ok: false };
+  const p = self.JC.normalizeProfile(profile);
+  const r = self.JC.rules.mergeAnswers(p.answers, items.slice(0, 60), { company: String((ctx && ctx.company) || '').slice(0, 80), host: String((ctx && ctx.host) || '').slice(0, 120) });
+  p.answers = r.answers; // also persists updated use counts
+  await chrome.storage.local.set({ profile: p });
+  return { ok: true, added: r.added, updated: r.updated };
+}
+
 // Extension pages (popup, options) vs. content scripts running in web pages.
 const isExtensionPage = (sender) => sender.id === chrome.runtime.id && String(sender.url || '').startsWith(chrome.runtime.getURL(''));
 
@@ -199,6 +210,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (msg.type === 'jc:status' && sender.tab && !fromExt) {
       if (sender.frameId === 0) await setBadge(sender.tab.id, msg.status);
       return { ok: true };
+    }
+    if (msg.type === 'jc:remember' && sender.tab && !fromExt) {
+      // Answers to new questions captured on Submit/Next. Merged one at a time here so
+      // several frames can't overwrite each other's writes.
+      return (rememberQueue = rememberQueue.then(() => rememberAnswers(msg.items, msg.ctx)));
     }
     if (msg.type === 'jc:bridge' && sender.tab && !fromExt) {
       return runCommand(sender.tab.id, msg.cmd, msg.payload, 'bridge');

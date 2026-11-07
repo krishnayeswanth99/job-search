@@ -329,14 +329,25 @@
     return score >= 0.5 ? best : -1;
   }
 
-  function matchSavedAnswer(label, answers) {
+  /**
+   * Saved/remembered answers: [{ question, answer, scope?: 'any'|'company', company?, source?, uses?, updatedAt? }].
+   * `ctx.company` is the current employer key (see JC.memory.context); company-scoped answers
+   * are only reused for that same employer.
+   */
+  function matchSavedAnswer(label, answers, ctx) {
     if (!label || !Array.isArray(answers)) return null;
     const l = norm(label);
+    const company = norm((ctx && ctx.company) || '');
     let best = null;
     let score = 0;
     for (const a of answers) {
       if (!a || !a.question) continue;
+      if (a.scope === 'company' && (!company || norm(a.company) !== company)) continue;
       const q = norm(a.question);
+      if (q && words(l).join(' ') === words(q).join(' ')) return a.answer;
+      // Remembered answers need a near-identical question: "authorized to work in Singapore" must not
+      // answer "authorized to work in the United States". Answers the user typed in are matched loosely.
+      if (a.source === 'remembered') continue;
       if (q && (l === q || (q.length > 12 && l.includes(q)))) return a.answer;
       const s = overlap(l, q);
       if (s > score) {
@@ -347,7 +358,70 @@
     return score >= 0.6 ? best : null;
   }
 
-  JC.rules = { classifyField, valueForKey, chooseOption, matchSavedAnswer, humanize, norm, payPeriod, amounts, parseAmount, toNumberValue, emptyReason, LONG_LABEL };
+  // ------------------------------------------------------------ answer memory
+  // Profile keys whose answers must never be remembered from a form (they live in the profile
+  // already, are sensitive, or go stale).
+  const NEVER_REMEMBER = new Set(['consent', 'resume', 'coverLetter', 'gender', 'race', 'hispanicLatino', 'veteran', 'disability', 'sexualOrientation', 'desiredPay', 'currentPay', 'desiredSalary', 'desiredHourlyRate']);
+
+  /** Values that look like personal identifiers or secrets: never stored. */
+  function looksSensitive(v) {
+    const s = String(v || '');
+    return (
+      /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i.test(s) || // email
+      /\b\d{3}-\d{2}-\d{4}\b/.test(s) || // SSN
+      /\b(?:\d[ -]?){13,19}\b/.test(s) || // card / long account numbers
+      (s.replace(/\D/g, '').length >= 7 && s.replace(/[\d\s()+.-]/g, '').length === 0) // phone-like
+    );
+  }
+
+  /** Should this question/answer only be reused for the same employer? */
+  function isCompanySpecific(question, answer, company) {
+    const q = norm(question);
+    const c = norm(company);
+    if (/\bwhy (do you want to|are you interested in|would you like to|this|us|here|join|work (at|for|with))\b|\b(join|joining|working at|work at|work for) (us|our|the team|this company)\b|\bwhat (excites|interests|attracts) you\b|\babout (us|our (company|mission|product))\b/.test(q)) return true;
+    if (c && c.length >= 3 && (q.includes(c) || norm(answer).includes(c))) return true;
+    return false;
+  }
+
+  /**
+   * Merge newly captured { question, answer, type } items into the answers list.
+   * Returns { answers, added, updated }. Same normalized question (+ same company for scoped
+   * answers) updates in place; manual answers the user wrote are never overwritten.
+   */
+  function mergeAnswers(answers, items, ctx) {
+    const list = Array.isArray(answers) ? answers.slice() : [];
+    const company = (ctx && ctx.company) || '';
+    const now = (ctx && ctx.now) || new Date().toISOString();
+    let added = 0;
+    let updated = 0;
+    for (const it of items || []) {
+      const question = String(it.question || '').replace(/\s*[*✱]\s*$/, '').trim();
+      const answer = String(it.answer == null ? '' : it.answer).trim();
+      if (!question || !answer || question.length > 400 || answer.length > 4000 || looksSensitive(answer)) continue;
+      const scope = isCompanySpecific(question, answer, company) ? 'company' : 'any';
+      const nq = norm(question);
+      if (list.some((a) => a && a.source !== 'remembered' && norm(a.question) === nq)) continue; // the user's own answer wins
+      const existing = list.find((a) => a && norm(a.question) === nq && (scope === 'any' ? a.scope !== 'company' : a.scope === 'company' && norm(a.company) === norm(company)));
+      if (existing) {
+        if (existing.source !== 'remembered') continue; // the user's own saved answer wins
+        if (existing.answer !== answer) {
+          existing.answer = answer;
+          updated++;
+        }
+        existing.uses = (existing.uses || 1) + 1;
+        existing.updatedAt = now;
+        continue;
+      }
+      const entry = { question, answer, scope, source: 'remembered', uses: 1, updatedAt: now };
+      if (scope === 'company') entry.company = company;
+      if (ctx && ctx.host) entry.host = ctx.host;
+      list.push(entry);
+      added++;
+    }
+    return { answers: list, added, updated };
+  }
+
+  JC.rules = { classifyField, valueForKey, chooseOption, matchSavedAnswer, mergeAnswers, isCompanySpecific, looksSensitive, NEVER_REMEMBER, humanize, norm, payPeriod, amounts, parseAmount, toNumberValue, emptyReason, LONG_LABEL };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = JC;
 })(typeof globalThis !== 'undefined' ? globalThis : self);

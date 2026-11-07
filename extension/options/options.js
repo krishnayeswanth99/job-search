@@ -82,7 +82,18 @@ function renderAnswers() {
       renderAnswers();
       scheduleSave();
     } }, 'Remove');
-    list.append(el('div', { class: 'answer' }, q, ans, del));
+    const row = el('div', { class: 'answer' }, q, ans, del);
+    if (a.source === 'remembered') {
+      const scope = el('select', { class: 'small' }, el('option', { value: 'any' }, 'Use for every company'), el('option', { value: 'company' }, `Only for ${a.company || a.host || 'this company'}`));
+      scope.value = a.scope === 'company' ? 'company' : 'any';
+      scope.addEventListener('change', () => {
+        a.scope = scope.value;
+        if (a.scope === 'company' && !a.company) a.company = a.host || '';
+        scheduleSave();
+      });
+      const meta = el('div', { class: 'answer-meta muted small' }, `Remembered${a.company ? ' at ' + a.company : a.host ? ' at ' + a.host : ''}${a.updatedAt ? ' · ' + a.updatedAt.slice(0, 10) : ''}${a.uses > 1 ? ` · used ${a.uses}×` : ''} · `, scope);
+      list.append(el('div', { class: 'answer-wrap' }, row, meta));
+    } else list.append(row);
   });
 }
 
@@ -185,7 +196,7 @@ $('clear-jobs').addEventListener('click', async () => {
 async function renderSettings() {
   const { settings } = await chrome.storage.local.get('settings');
   const s = Object.assign({}, JC.DEFAULT_SETTINGS, settings || {});
-  for (const k of ['bridgeEnabled', 'bridgeAutofill', 'showBadge']) {
+  for (const k of ['bridgeEnabled', 'bridgeAutofill', 'showBadge', 'rememberAnswers']) {
     $(k).checked = !!s[k];
     $(k).onchange = async () => {
       s[k] = $(k).checked;

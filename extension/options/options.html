@@ -68,7 +68,11 @@
 
       <section id="answers" class="card">
         <h2>Saved answers</h2>
-        <p class="muted">Answers to recurring custom questions. Matched by similar wording.</p>
+        <p class="muted">
+          Answers to recurring custom questions. Ones you type here are matched by similar wording. When you answer a new
+          question on an application and click Submit or Next, Job Copilot remembers it (marked "remembered") and reuses
+          it only for the same question. Answers that mention a specific company are reused only for that company.
+        </p>
         <div id="answers-list"></div>
         <button id="add-answer">Add answer</button>
       </section>
@@ -112,6 +116,7 @@
         <label class="check"><input type="checkbox" id="bridgeEnabled" /> Enable the Claude bridge</label>
         <label class="check"><input type="checkbox" id="bridgeAutofill" /> Allow Claude to trigger autofill on trusted sites</label>
         <label class="check"><input type="checkbox" id="showBadge" /> Show job count badge on the toolbar icon</label>
+        <label class="check"><input type="checkbox" id="rememberAnswers" /> Remember my answers to new application questions and reuse them</label>
         <label class="block">Extra trusted sites (one domain per line, e.g. <code>careers.example.com</code>)<textarea id="trustedDomains" rows="4"></textarea></label>
         <details>
           <summary>Built-in trusted sites</summary>

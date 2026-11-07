@@ -25,6 +25,8 @@ const ROUTES = {
   'https://acme.wd5.myworkdayjobs.com/en-US/careers/login': fx('workday-login.html'),
   'https://evil.example.com/apply': fx('untrusted-form.html'),
   'https://www.acme-robotics.com/careers': fx('company-embed.html'),
+  'https://job-boards.greenhouse.io/globex/jobs/77': fx('greenhouse-job.html'),
+  'https://job-boards.greenhouse.io/acme/jobs/124': fx('greenhouse-job.html'),
   'https://www.linkedin.com/jobs/view/4000000009/': fx('linkedin-external.html'),
   'https://job-boards.greenhouse.io/acme/jobs/123?gh_src=linkedin': fx('greenhouse-job.html'),
   'https://www.indeed.com/applystart?jk=abc&url=https%3A%2F%2Fjob-boards.greenhouse.io%2Facme%2Fjobs%2F123': fx('indeed-applystart.html'),
@@ -166,6 +168,25 @@ try {
     const r = await bridge(gh, () => window.jobCopilot.fillField({ label: 'What is your favorite robot?', value: 'Curiosity rover' }));
     assert.equal(r.ok, true, r.error);
     assert.equal(await gh.evaluate(() => q5.value), 'Curiosity rover');
+  });
+  await check('answer memory: new answers remembered on Submit, reused next time (company-specific only for that company)', async () => {
+    await gh.fill('#q6', 'Your robots are the best.');
+    await gh.click('#submit');
+    await gh.waitForTimeout(800);
+    const answers = await ext.evaluate(async () => (await chrome.storage.local.get('profile')).profile.answers);
+    const robot = answers.find((a) => a.question === 'What is your favorite robot?');
+    const excite = answers.find((a) => a.question === 'What excites you about joining us?');
+    assert.deepEqual([robot && robot.answer, robot && robot.scope, robot && robot.source], ['Curiosity rover', 'any', 'remembered']);
+    assert.deepEqual([excite && excite.scope, excite && excite.company], ['company', 'acme']);
+    assert.ok(!answers.some((a) => /email|phone|first name|salary|gender|veteran/i.test(a.question)), JSON.stringify(answers.map((a) => a.question)));
+    assert.equal(answers.filter((a) => a.question === 'Why do you want to work at Acme?').length, 1, 'manual answer not duplicated');
+
+    const other = await open('https://job-boards.greenhouse.io/globex/jobs/77');
+    await bridge(other, () => window.jobCopilot.autofill());
+    assert.deepEqual(await other.evaluate(() => [q5.value, q6.value]), ['Curiosity rover', '']);
+    const again = await open('https://job-boards.greenhouse.io/acme/jobs/124');
+    await bridge(again, () => window.jobCopilot.autofill());
+    assert.deepEqual(await again.evaluate(() => [q5.value, q6.value]), ['Curiosity rover', 'Your robots are the best.']);
   });
   await check('bridge: attachFile from localhost replaces resume', async () => {
     const r = await gh.evaluate((port) => window.jobCopilot.attachFile({ kind: 'resume', url: `http://127.0.0.1:${port}/tailored-resume.pdf` }), filePort);

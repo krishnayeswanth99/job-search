@@ -87,7 +87,7 @@
       const o = overrides[f.ref] ?? overrides[f.label] ?? (f.key && overrides[f.key]);
       if (o !== undefined && o !== null && o !== '') return { value: String(o), source: 'override' };
     }
-    const saved = R.matchSavedAnswer(f.label, profile.answers);
+    const saved = R.matchSavedAnswer(f.label, profile.answers, JC.memory ? JC.memory.context() : null);
     if (saved) return { value: String(saved), source: 'saved-answer' };
     if (f.key) {
       const v = R.valueForKey(profile, f.key);

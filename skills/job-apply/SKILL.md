@@ -116,7 +116,9 @@ stage) → `detect()` → `autofill()` again on the new page → repeat. If a pa
   the confirmation text.
 - Run `tracker.py update --id N --status applied --folder jobs/<folder>`. On failure, use `--status blocked --notes
   "<why>"`.
-- Add new reusable answers to `profile.json` → `answers`, and remind the user to re-import it in the extension options.
+- The extension remembers answers to new questions automatically when Submit or Next is clicked (see Saved answers
+  in its options). To keep `~/.job-search/profile.json` in sync, add new reusable answers there too, or ask the user
+  to **Export profile.json** from the options page and save it over the old file.
 - Stop the file server if it's still running (kill the background task).
 
 If the job board's tab asks **"Did you apply?"** when you go back, answer **Yes** only after the confirmation in step 7.

@@ -46,3 +46,7 @@ code { background: var(--bg); border: 1px solid var(--line); border-radius: 4px;
 @media (prefers-color-scheme: dark) {
   .conf-claude { background: #3b0764; color: #e9d5ff; }
 }
+.answer-wrap { margin-bottom: 10px; }
+.answer-wrap .answer { margin-bottom: 2px; }
+.answer-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.answer-meta select { width: auto; padding: 2px 6px; }

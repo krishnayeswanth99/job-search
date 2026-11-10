@@ -26,7 +26,8 @@ https://www.linkedin.com/jobs/search/?keywords=<q>&location=<loc>&f_TPR=r604800&
 
 1. `detect()`. LinkedIn sometimes shows the **auth wall** (`/authwall`, or a "Sign in to view more jobs" modal). Ask the
    user to sign in, then reload the search URL.
-2. The results list is lazy-loaded and virtualized. Before `extractJobs()`, scroll the **results pane**, not the window:
+2. The results list is lazy-loaded and virtualized. Use `loadMoreJobs({ rounds: 4 })`, which scrolls the results pane and
+   keeps cards LinkedIn removes. Without the extension, scroll the **results pane**, not the window:
    ```js
    (async () => { const pane = document.querySelector('.scaffold-layout__list > div, .jobs-search-results-list'); for (let i = 0; i < 8 && pane; i++) { pane.scrollBy(0, 800); await new Promise(r => setTimeout(r, 300)); } return document.querySelectorAll('li[data-occludable-job-id]').length; })()
    ```

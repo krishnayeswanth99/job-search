@@ -5,8 +5,12 @@
 
 Aggregators are good for **discovering** jobs. The application almost always happens on the employer's ATS, so:
 
-1. Open the user's feed or search, then run `detect()` and `extractJobs()`. If it returns 0 (feeds are rendered by
-   JavaScript), scroll, wait 1–2 s and retry. Fall back to `read_page` with `filter: "interactive"` to list the job links.
+1. Open the user's feed (`/jobs/recommend`, which needs the user signed in), then run `detect()` and `extractJobs()`.
+   - Jobright's cards are clickable boxes, not links. Each job has a `selector` to click, and a `url` when the card
+     exposes Jobright's job ID.
+   - Run `loadMoreJobs({ rounds: 8 })` to scroll the feed and collect more. Jobs that scroll off the page are kept.
+   - If nothing is found, fall back to `read_page` with `filter: "interactive"`. Send a card's HTML so the extractor
+     can be fixed.
 2. For each promising job, open it and run `extractJob()`. Its `apply` field tells you where Apply leads:
    - `apply.target` is the employer URL when the link reveals it (redirect links are unwrapped automatically). Record it
      with `tracker.py add … --url <aggregator URL> --apply-url <apply.target>`.

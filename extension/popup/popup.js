@@ -26,6 +26,7 @@ function showResult(title, body, payload, jobs) {
   lastPayload = payload;
   lastJobs = jobs || [];
   $('btn-save-all').hidden = !lastJobs.length;
+  $('btn-more').hidden = !(payload && payload.jobs);
 }
 
 async function savedJobs() {
@@ -155,6 +156,16 @@ $('btn-copy').addEventListener('click', async () => {
   await navigator.clipboard.writeText(JSON.stringify(lastPayload, null, 2));
   $('btn-copy').textContent = 'Copied';
   setTimeout(() => ($('btn-copy').textContent = 'Copy for Claude'), 1200);
+});
+
+$('btn-more').addEventListener('click', async () => {
+  $('btn-more').disabled = true;
+  $('btn-more').textContent = 'Scrolling…';
+  const r = await send('loadMoreJobs', { rounds: 8 });
+  $('btn-more').disabled = false;
+  $('btn-more').textContent = 'Scroll for more';
+  if (!r || r.ok === false) return showResult('Could not load more', el('p', {}, (r && r.error) || ''), r);
+  showResult(`${r.jobs.length} jobs on this tab (+${r.added} new)`, el('div', {}, r.jobs.map(jobRow)), r, r.jobs);
 });
 
 $('btn-save-all').addEventListener('click', async () => {

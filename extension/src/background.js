@@ -7,7 +7,7 @@
  */
 importScripts('shared/config.js', 'shared/profile-schema.js', 'shared/field-rules.js');
 
-const FRAME_CMDS = new Set(['ping', 'detect', 'extractJobs', 'extractJob', 'scanForm', 'autofill', 'fillField', 'attachFile', 'followApply']);
+const FRAME_CMDS = new Set(['ping', 'detect', 'extractJobs', 'loadMoreJobs', 'extractJob', 'scanForm', 'autofill', 'fillField', 'attachFile', 'followApply']);
 
 // ---------------------------------------------------- tabs opened by Apply buttons
 // Job boards often open the employer's site in a new tab. Remember child tabs per
@@ -69,6 +69,7 @@ function merge(cmd, frames) {
       }
       return out;
     }
+    case 'loadMoreJobs':
     case 'extractJobs': {
       const seen = new Set();
       const jobs = [];
@@ -79,7 +80,7 @@ function merge(cmd, frames) {
           jobs.push(j);
         }
       }
-      return { ok: true, url: top.frame, portal: top.portal, count: jobs.length, jobs };
+      return { ok: true, url: top.frame, portal: top.portal, count: jobs.length, added: frames.reduce((n, f) => n + (f.added || 0), 0), jobs };
     }
     case 'extractJob': {
       const withJob = frames.filter((f) => f.job && f.job.title);

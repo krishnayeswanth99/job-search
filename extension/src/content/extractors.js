@@ -372,6 +372,72 @@
   const JOB_HREF = /\/(jobs?|careers?|positions?|openings?|vacanc(y|ies)|opportunit(y|ies)|requisitions?|postings?)\/[^?#]*[\w-]{3,}/i;
   const NOT_JOB = /^(jobs?|careers?|all jobs|view all|see all|search|apply|sign in|log in|home|about|benefits|teams?|locations?|students?|internships?|life at|our culture|faq|back|next|previous|more|\d+)$/i;
 
+  // ------------------------------------------------- card feeds without links
+  // App-style feeds (Jobright, some Wellfound/ZipRecruiter views) render each job as a
+  // clickable <div> with no <a href>. Find repeated "job card" elements and read them.
+  const CARD_SEL = [
+    '[data-job-id]', '[data-jobid]', '[data-job]',
+    '[class*="job-card" i]', '[class*="jobcard" i]', '[class*="job_card" i]', '[class*="job-item" i]', '[class*="jobitem" i]',
+    '[class*="job-list-item" i]', '[class*="joblistitem" i]', '[class*="position-card" i]', '[class*="opening-card" i]',
+  ].join(', ');
+  const HEX_ID = /\b([0-9a-f]{24})\b/i;
+
+  let cardN = 0;
+  function cardRef(el) {
+    if (!el.getAttribute('data-jc-ref')) el.setAttribute('data-jc-ref', `jc-card-${++cardN}`);
+    return `[data-jc-ref="${el.getAttribute('data-jc-ref')}"]`;
+  }
+
+  function cardListings() {
+    let cards = qsa(CARD_SEL).filter((c) => {
+      const t = clean(c.innerText);
+      return t.length >= 15 && t.length <= 2000;
+    });
+    // Keep the outermost card of nested matches.
+    cards = cards.filter((c) => !cards.some((o) => o !== c && o.contains(c)));
+    if (cards.length < 2) return [];
+    const host = location.hostname;
+    return cardsToJobs(cards, (c) => {
+      const titleEl = c.querySelector('[class*="title" i], h2, h3, h4, strong');
+      const lines = (c.innerText || '').split('\n').map(clean).filter(Boolean);
+      const title = (titleEl && clean(titleEl.innerText).split('\n')[0]) || lines[0];
+      const a = c.querySelector('a[href]');
+      const idAttr = c.getAttribute('data-job-id') || c.getAttribute('data-jobid') || c.getAttribute('data-id') || c.id || '';
+      const hex = (idAttr.match(HEX_ID) || (a ? a.getAttribute('href').match(HEX_ID) : null) || [])[1] || '';
+      let url = a && !/^javascript:/i.test(a.getAttribute('href')) ? absUrl(a.getAttribute('href')) : '';
+      if (!url && hex && /(^|\.)jobright\.ai$/.test(host)) url = `https://jobright.ai/jobs/info/${hex}`;
+      const salaryLine = lines.find((l) => /[$€£₹]\s?\d|\d+k\s*[-–\/]/i.test(l)) || '';
+      return {
+        title,
+        company: pick(c, ['[class*="company" i]', '[class*="employer" i]', '[class*="org" i]']) || (lines[1] && lines[1] !== title ? lines[1] : ''),
+        location: pick(c, ['[class*="location" i]', '[class*="address" i]']),
+        salary: pick(c, ['[class*="salary" i]', '[class*="compensation" i]']) || salaryLine,
+        postedAt: pick(c, ['[class*="time" i]', '[class*="date" i]', 'time']),
+        jobId: hex || idAttr,
+        url,
+        selector: cardRef(c), // click this to open the job when there is no link
+        remote: /\bremote\b/i.test(c.innerText),
+      };
+    });
+  }
+
+  // ---------------------------------------------------------------- Jobright
+  const jobright = {
+    pageType() {
+      if (/\/jobs\/info\//.test(location.pathname)) return 'job';
+      if (/\/jobs\/(recommend|liked|applied|external|search)|\/jobs\/?$/.test(location.pathname)) return 'listings';
+      return 'unknown';
+    },
+    listings() {
+      const links = qsa('a[href*="/jobs/info/"]');
+      const fromLinks = cardsToJobs(links, (a) => {
+        const card = a.closest(CARD_SEL) || a;
+        return { title: pick(card, ['[class*="title" i]', 'h2', 'h3']) || clean(a.innerText).split('\n')[0], company: pick(card, ['[class*="company" i]']), location: pick(card, ['[class*="location" i]']), salary: pick(card, ['[class*="salary" i]']), url: a.href, jobId: (a.getAttribute('href').match(HEX_ID) || [])[1] || '' };
+      });
+      return fromLinks.length >= 2 ? fromLinks : cardListings();
+    },
+  };
+
   const generic = {
     pageType() {
       if (JC.jsonld.jobPostings(document).length === 1) return 'job';
@@ -385,10 +451,13 @@
         const t = clean(a.innerText);
         return JOB_HREF.test(a.href) && t.length >= 4 && t.length <= 140 && !NOT_JOB.test(t) && a.href !== location.href;
       });
-      return cardsToJobs(links, (a) => {
+      const fromLinks = cardsToJobs(links, (a) => {
         const lines = (a.innerText || '').split('\n').map(clean).filter(Boolean);
         return { title: lines[0], location: lines.slice(1, 3).join(' • '), url: a.href };
       });
+      if (fromLinks.length >= 3) return fromLinks;
+      const cards = cardListings();
+      return cards.length > fromLinks.length ? cards : fromLinks;
     },
     job() {
       const ld = JC.jsonld.jobPostings(document, MAX_DESC);
@@ -400,7 +469,7 @@
     },
   };
 
-  JC.extractors = { linkedin, indeed, glassdoor, wellfound, greenhouse, lever, ashby, workday, generic };
+  JC.extractors = { linkedin, indeed, glassdoor, wellfound, greenhouse, lever, ashby, workday, jobright, generic };
 
   /** Merge a portal-specific job with JSON-LD (portal values win, JSON-LD fills blanks). */
   function enrich(j) {
@@ -416,6 +485,38 @@
 
   function applyLink() {
     return JC.nav ? JC.nav.applyInfo() : null;
+  }
+
+  const seen = { key: '', map: new Map() };
+  function pageKey() {
+    try {
+      const u = new URL(location.href);
+      for (const p of ['currentJobId', 'vjk', 'jobId', 'selectedJobId', 'jk']) u.searchParams.delete(p);
+      return u.origin + u.pathname + '?' + u.searchParams.toString();
+    } catch (_) {
+      return location.href;
+    }
+  }
+
+  /** The element that scrolls the job list: the scrollable box holding the most job links, else the page. */
+  function scrollBox() {
+    const jobLinks = new Set([...seen.map.values()].map((j) => j.url).filter(Boolean));
+    let best = document.scrollingElement || document.documentElement;
+    let bestScore = 0;
+    for (const el of document.querySelectorAll('div, ul, section, main, aside')) {
+      if (el.scrollHeight - el.clientHeight < 80 || el.clientHeight < 150) continue;
+      const oy = getComputedStyle(el).overflowY;
+      if (oy !== 'auto' && oy !== 'scroll') continue;
+      const links =
+        [...el.querySelectorAll('a[href]')].filter((a) => jobLinks.has(a.href)).length ||
+        el.querySelectorAll('[data-jc-ref^="jc-card-"], [data-job-id], [data-occludable-job-id], [data-jk]').length ||
+        el.querySelectorAll('li').length / 10;
+      if (links > bestScore) {
+        bestScore = links;
+        best = el;
+      }
+    }
+    return best;
   }
 
   JC.extract = {
@@ -434,7 +535,8 @@
         return 'unknown';
       }
     },
-    listings() {
+    /** Jobs visible right now (no memory). */
+    visibleListings() {
       const ex = this.extractor();
       let jobs = [];
       try {
@@ -445,6 +547,47 @@
       if (!jobs.length && ex !== generic) jobs = generic.listings();
       const src = (this.portal() || { id: 'generic' }).id;
       return jobs.map((j) => Object.assign(j, { source: src }));
+    },
+    /**
+     * Every job seen on this results page so far, in order. Infinite-scroll feeds
+     * (Jobright, LinkedIn, Indeed, Wellfound) load more as you scroll and often
+     * remove cards that scrolled away, so we remember what we've seen until the
+     * search itself changes (clicking a card that only changes ?currentJobId= keeps it).
+     */
+    listings() {
+      const key = pageKey();
+      if (key !== seen.key) {
+        seen.key = key;
+        seen.map = new Map();
+      }
+      for (const j of this.visibleListings()) {
+        const k = j.url || j.jobId || j.title + '|' + j.company;
+        if (!k) continue;
+        const prev = seen.map.get(k);
+        seen.map.set(k, prev ? Object.assign(prev, Object.fromEntries(Object.entries(j).filter(([, v]) => v))) : j);
+      }
+      return [...seen.map.values()].slice(0, 500);
+    },
+    /** Scroll the results list (and click "Show more") to load more jobs, collecting as it goes. */
+    async loadMore(opts) {
+      const rounds = Math.min((opts && opts.rounds) || 6, 20);
+      const before = this.listings().length;
+      let stale = 0;
+      for (let i = 0; i < rounds && stale < 3; i++) {
+        const n = this.listings().length;
+        const more = findButton(/^(show|load|see|view) more( jobs| results| positions)?$|^more jobs$|^next$/i);
+        if (more && i % 2 === 1) more.click();
+        else {
+          // Jump to the bottom: infinite feeds load the next batch when the end of the list is reached.
+          const box = scrollBox();
+          if (box === document.scrollingElement || box === document.documentElement) window.scrollTo(0, document.documentElement.scrollHeight);
+          else box.scrollTop = box.scrollHeight;
+        }
+        await new Promise((r) => setTimeout(r, 900));
+        stale = this.listings().length > n ? 0 : stale + 1;
+      }
+      const jobs = this.listings();
+      return { jobs, added: jobs.length - before };
     },
     job() {
       const ex = this.extractor();

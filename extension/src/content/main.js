@@ -89,6 +89,11 @@
         case 'followApply':
           if (!isTop) return null;
           return Object.assign({ frame: location.href }, JC.nav.followApply());
+        case 'loadMoreJobs': {
+          if (!isTop) return null;
+          const r = await JC.extract.loadMore(payload);
+          return { ok: true, frame: location.href, isTop, portal: (JC.extract.portal() || {}).id || 'generic', added: r.added, jobs: r.jobs.slice(0, payload.limit || 300) };
+        }
         case 'extractJobs': {
           const jobs = JC.extract.listings();
           return { ok: true, frame: location.href, isTop, portal: (JC.extract.portal() || {}).id || 'generic', jobs: jobs.slice(0, payload.limit || 100) };
@@ -150,10 +155,12 @@
     // Badge: initial + SPA navigations (LinkedIn, Indeed, Workday are SPAs).
     let lastUrl = '';
     let timer = null;
+    let hasJobs = false;
     const report = () => {
       try {
         const s = quickStatus();
         s.jobCount = JC.extract.listings().length;
+        hasJobs = s.jobCount > 0;
         chrome.runtime.sendMessage({ type: 'jc:status', status: s }).catch(() => {});
       } catch (_) {
         /* extension context invalidated */
@@ -169,5 +176,22 @@
     };
     tick();
     setInterval(tick, 1500);
+
+    // Infinite-scroll feeds add jobs without changing the URL: re-check when the page grows
+    // (throttled to once every 2.5 s, and only on pages that already show jobs).
+    let pending = null;
+    let lastRun = 0;
+    const onGrow = () => {
+      if (pending) return;
+      const wait = Math.max(0, 2500 - (Date.now() - lastRun));
+      pending = setTimeout(() => {
+        pending = null;
+        lastRun = Date.now();
+        report();
+      }, wait);
+    };
+    new MutationObserver((muts) => {
+      if (hasJobs && muts.some((m) => m.addedNodes.length)) onGrow();
+    }).observe(document.documentElement, { childList: true, subtree: true });
   }
 })(typeof globalThis !== 'undefined' ? globalThis : self);

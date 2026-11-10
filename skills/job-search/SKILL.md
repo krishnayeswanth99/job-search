@@ -67,8 +67,9 @@ Run `await window.jobCopilot.detect()`.
 
 ### Step 3: Extract listings
 
-1. Run `await window.jobCopilot.extractJobs({ limit: 100 })`. If it returns 0, scroll the results (`computer` →
-   `scroll`), wait 1 s, and try again once. If it's still 0, use the playbook's fallback snippet. Never use
+1. Run `await window.jobCopilot.extractJobs({ limit: 100 })`. For infinite-scroll feeds (Jobright, LinkedIn, Indeed,
+   Wellfound), run `await window.jobCopilot.loadMoreJobs({ rounds: 8 })` to scroll and collect more. It keeps jobs
+   that have already scrolled away. If it still returns 0, use the playbook's fallback snippet. Never use
    `get_page_text` on a listings page.
 2. Paginate as the playbook says, up to `pages` (default 3) or about 75 jobs, whichever comes first.
 3. Drop duplicates. For each job, run `tracker.py exists --url <url>` and skip any that are already tracked, unless

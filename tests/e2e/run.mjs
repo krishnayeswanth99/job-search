@@ -32,6 +32,7 @@ const ROUTES = {
   'https://www.indeed.com/applystart?jk=abc&url=https%3A%2F%2Fjob-boards.greenhouse.io%2Facme%2Fjobs%2F123': fx('indeed-applystart.html'),
   'https://jobright.ai/jobs/info/abc123': fx('jobright-job.html'),
   'https://jobright.ai/jobs/info/def456': fx('jobright-modal.html'),
+  'https://jobright.ai/jobs/recommend': fx('jobright-feed.html'),
   'https://jobs.lever.co/acme/11111111-1111-1111-1111-111111111111/apply': '<html><body><form id="application-form"><label>Full name<input name="name"></label><label>Email<input name="email" type="email"></label><label>Phone<input name="phone"></label><label>Resume/CV<input type="file" name="resume"></label></form></body></html>',
 };
 
@@ -479,6 +480,28 @@ try {
     await p.waitForURL('**/jobs.lever.co/acme/**/apply');
     await p.waitForFunction(() => window.jobCopilot && window.jobCopilot.installed);
     assert.equal((await bridge(p, () => window.jobCopilot.detect())).pageType, 'application');
+  });
+
+  await check('Jobright-style infinite feed: link-less cards read, jobs kept after they scroll away, loadMoreJobs', async () => {
+    const p = await open('https://jobright.ai/jobs/recommend');
+    const first = await bridge(p, () => window.jobCopilot.extractJobs());
+    assert.equal(first.count, 8);
+    const j0 = first.jobs[0];
+    assert.deepEqual([j0.title, j0.company, j0.location, j0.salary], ['Software Engineer 0', 'Company 0', 'Remote · United States', '$100K/yr - $150K/yr']);
+    assert.match(j0.url, /^https:\/\/jobright\.ai\/jobs\/info\/[0-9a-f]{24}$/);
+    assert.ok(j0.selector);
+    // The user scrolls by hand: new cards load, old ones leave the page, but stay remembered.
+    for (let i = 0; i < 2; i++) {
+      await p.evaluate(() => { const l = document.getElementById('list'); l.scrollTop = l.scrollHeight; });
+      await p.waitForTimeout(700);
+    }
+    const second = await bridge(p, () => window.jobCopilot.extractJobs());
+    assert.equal(second.count, 24, 'remembers cards that left the page');
+    assert.equal(await p.evaluate(() => document.getElementById('list').children.length), 16);
+    // Claude / popup: scroll automatically until no more jobs load.
+    const more = await bridge(p, () => window.jobCopilot.loadMoreJobs({ rounds: 10 }));
+    assert.equal(more.count, 40);
+    assert.equal(more.added, 16);
   });
 
   await check('bridge disabled: commands refused', async () => {

@@ -1,0 +1,26 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Job Recommendations | Jobright AI</title>
+<style>#list{height:600px;overflow-y:auto} .index_job-card__x1{height:140px;border:1px solid #ccc;margin:4px;cursor:pointer}</style></head><body>
+<h2>Recommended</h2>
+<div id="list"></div>
+<script>
+  // Infinite scroll: 8 cards per batch, up to 40; keeps only the last 16 cards in the DOM (virtualised).
+  const list = document.getElementById('list');
+  let n = 0;
+  const hex = (i) => (i.toString(16).padStart(4, '0') + 'a1b2c3d4e5f6a7b8c9d0').slice(0, 24);
+  function batch() {
+    for (let k = 0; k < 8 && n < 40; k++, n++) {
+      const d = document.createElement('div');
+      const id = hex(n);
+      d.className = 'index_job-card__x1';
+      d.id = 'job-' + id;
+      d.onclick = () => (location.href = '/jobs/info/' + id);
+      d.innerHTML = `<div class="index_job-title__a">Software Engineer ${n}</div><div class="index_company-name__b">Company ${n}</div>` +
+        `<div class="index_job-location__c">Remote · United States</div><div class="index_job-salary__d">$${100 + n}K/yr - $${150 + n}K/yr</div><div class="index_publish-time__e">${n} hours ago</div>`;
+      list.appendChild(d);
+    }
+    while (list.children.length > 16) list.firstElementChild.remove();
+  }
+  batch();
+  list.addEventListener('scroll', () => { if (list.scrollTop + list.clientHeight > list.scrollHeight - 150) setTimeout(batch, 200); });
+</script>
+</body></html>

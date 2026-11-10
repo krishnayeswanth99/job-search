@@ -84,7 +84,9 @@ Pick the top candidates by title match, at most 25 per run (safety rule 7). For 
 2. `await window.jobCopilot.extractJob()` gets the description, salary, and apply-button text.
 3. Score it with `references/fit-scoring.md`. Keep the evidence short: matched must-haves, gaps, and deal-breakers.
 4. Note the **apply route**: Easy Apply or Indeed Apply (on-site), or an external ATS (Greenhouse, Lever, Workday and so
-   on, which you can often tell from `apply.href`).
+   on, from `apply.target`). On aggregators (Jobright, Simplify, ZipRecruiter, Built In), run `resolveApplyLinks()` on
+   the results page first. It finds each job's employer link without opening them one by one. Then pass
+   `--apply-url <applyUrl>` when you record the job.
 
 ### Step 5: Record
 

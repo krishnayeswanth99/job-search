@@ -49,7 +49,8 @@ the site you end up on.
 - If the preferences say to tailor High-fit jobs and nothing is tailored yet, offer to run `customize-resume` first.
 
 ### Step 2: Reach the application form
-1. Open the job URL (or use the current tab). Run `await window.jobCopilot.detect()`.
+1. If the tracker row already has an `apply_url` (found during job search), open that directly: it's the employer's
+   application page. Otherwise open the job URL (or use the current tab). Run `await window.jobCopilot.detect()`.
 2. If `pageType` is `job`, read `extractJob()` and save or refresh `<folder>/posting.md` if it's missing.
 3. Get to the form by following `references/boards-and-redirects.md`. In short:
    - `detect().apply.kind === 'easy-apply'` means an on-site flow (LinkedIn or Indeed). Click it and use that playbook.

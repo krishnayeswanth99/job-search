@@ -31,6 +31,7 @@ const ROUTES = {
   'https://job-boards.greenhouse.io/acme/jobs/123?gh_src=linkedin': fx('greenhouse-job.html'),
   'https://www.indeed.com/applystart?jk=abc&url=https%3A%2F%2Fjob-boards.greenhouse.io%2Facme%2Fjobs%2F123': fx('indeed-applystart.html'),
   'https://jobright.ai/jobs/info/abc123': fx('jobright-job.html'),
+  'https://jobright.ai/jobs/info/def456': fx('jobright-modal.html'),
   'https://jobs.lever.co/acme/11111111-1111-1111-1111-111111111111/apply': '<html><body><form id="application-form"><label>Full name<input name="name"></label><label>Email<input name="email" type="email"></label><label>Phone<input name="phone"></label><label>Resume/CV<input type="file" name="resume"></label></form></body></html>',
 };
 
@@ -455,6 +456,24 @@ try {
     // Dismiss the prompt the honest way (not applied yet), then follow.
     await p.click(d.appliedPrompt.noSelector);
     await p.evaluate(() => document.getElementById('did').remove());
+    const f = await bridge(p, () => window.jobCopilot.followApply());
+    assert.equal(f.ok, true);
+    await p.waitForURL('**/jobs.lever.co/acme/**/apply');
+    await p.waitForFunction(() => window.jobCopilot && window.jobCopilot.installed);
+    assert.equal((await bridge(p, () => window.jobCopilot.detect())).pageType, 'application');
+  });
+
+  await check('Jobright "customize your resume?" pop-up: picks "Apply without customizing", lands on the ATS', async () => {
+    const p = await open('https://jobright.ai/jobs/info/def456');
+    const d = await bridge(p, () => window.jobCopilot.detect());
+    assert.equal(d.apply.text, 'Apply', 'plain Apply preferred over the site\'s autofill button');
+    assert.equal(d.apply.kind, 'external');
+    assert.equal((await bridge(p, () => window.jobCopilot.followApply())).ok, false, 'scripted button');
+    await p.click(d.apply.selector);
+    const d2 = await bridge(p, () => window.jobCopilot.detect());
+    assert.equal(d2.interstitial.kind, 'upsell');
+    assert.equal(d2.interstitial.button, 'Apply without customizing');
+    assert.equal(d2.interstitial.href, 'https://jobs.lever.co/acme/11111111-1111-1111-1111-111111111111/apply');
     const f = await bridge(p, () => window.jobCopilot.followApply());
     assert.equal(f.ok, true);
     await p.waitForURL('**/jobs.lever.co/acme/**/apply');

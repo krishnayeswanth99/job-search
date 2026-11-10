@@ -29,6 +29,19 @@ a redirect URL, or an "are you sure?" screen. Job Copilot reports all of it in `
    `tracker.py update --id N --apply-url "<ATS URL>"`. Then the same job found later on the employer's own board is
    recognized as a duplicate.
 
+## Pre-apply pop-ups (upsells)
+
+Aggregators often put a pop-up between **Apply** and the employer's site. Jobright, for example, offers to customize
+your resume first, with **Customize Resume** and **Apply without customizing** options.
+- `detect().interstitial` with `kind: 'upsell'` names the skip option (`button`, `selector`, and `href` when it's a link).
+- `followApply()` takes it: it navigates to `href`, or clicks the button, which may open a new tab (check
+  `detect().openedTabs`).
+- **Never** pick the site's own customize, tailor, "AI optimize", upgrade or "Apply with Autofill" options. They change
+  the resume outside our no-fabrication rules, and may cost money. Tailoring is done by the `customize-resume` skill,
+  and the tailored PDF is attached on the employer's form.
+- On a job page with both **Apply with Autofill** and **Apply**, use plain **Apply**. `detect().apply` already prefers
+  it.
+
 ## "Did you apply?" prompts
 
 LinkedIn, Jobright, Simplify and others ask this when you return to their tab (`detect().appliedPrompt`).

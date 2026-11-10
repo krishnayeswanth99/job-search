@@ -12,7 +12,8 @@ Aggregators are good for **discovering** jobs. The application almost always hap
      with `tracker.py add … --url <aggregator URL> --apply-url <apply.target>`.
    - When the target is hidden behind a script, leave `--apply-url` empty. job-apply fills it in later.
 3. Score fit from the employer's own posting when you can (it's often more complete than the aggregator's summary).
-4. Don't use the aggregator's own "Apply with autofill" or "AI apply" buttons. job-apply goes to the employer's site
+4. Don't use the aggregator's own "Apply with autofill", "customize resume" or "AI apply" options. Clicking Apply on
+   Jobright opens a "customize your resume?" pop-up. Take **Apply without customizing** (`followApply()` does this). job-apply goes to the employer's site
    instead. See `job-apply/references/boards-and-redirects.md`.
 
 The markup of these sites isn't covered by a dedicated extractor yet. If the generic extractor misses jobs, capture a

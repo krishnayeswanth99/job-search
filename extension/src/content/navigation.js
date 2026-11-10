@@ -86,7 +86,12 @@
       return null;
     }
     // Prefer the most specific button (external/easy wording) over a generic "Apply" in a list card.
-    const score = (el) => (EASY_RE.test(label(el) + ' ' + (el.getAttribute('aria-label') || '')) ? 3 : 0) + (EXTERNAL_RE.test((el.getAttribute('aria-label') || '') + ' ' + label(el)) ? 3 : 0) + (el.closest('[class*="top-card" i], [class*="header" i], main') ? 1 : 0);
+    const UPSELL = /(autofill|customi[sz]|tailor|optimi[sz]e|with (jobright|simplify|ai)|upgrade|premium)/i;
+    const score = (el) =>
+      (EASY_RE.test(label(el) + ' ' + (el.getAttribute('aria-label') || '')) ? 3 : 0) +
+      (EXTERNAL_RE.test((el.getAttribute('aria-label') || '') + ' ' + label(el)) ? 3 : 0) +
+      (el.closest('[class*="top-card" i], [class*="header" i], main') ? 1 : 0) -
+      (UPSELL.test(label(el)) ? 4 : 0); // prefer plain "Apply" over an aggregator's own autofill/AI button
     const el = list.sort((a, b) => score(b) - score(a))[0];
     const text = label(el);
     const aria = clean(el.getAttribute('aria-label') || '');
@@ -96,6 +101,9 @@
     if (EASY_RE.test(text + ' ' + aria) || el.id === 'indeedApplyButton') kind = 'easy-apply';
     else if (EXTERNAL_RE.test(aria + ' ' + text)) kind = 'external';
     else if (target && hostOf(target) && hostOf(target) !== location.hostname.replace(/^www\./, '')) kind = 'external';
+    // On aggregators (Jobright, Simplify, ZipRecruiter...) Apply always leads to the employer's site.
+    const portal = JC.portalForHost(location.hostname);
+    if (kind === 'onsite' && portal && portal.aggregator) kind = 'external';
     const newTab = el.getAttribute('target') === '_blank' || (kind === 'external' && !target);
     return { text, kind, href, target, newTab, selector: ref(el), aria: aria || undefined };
   }
@@ -111,21 +119,36 @@
   }
 
   function dialogs() {
-    return [...document.querySelectorAll('[role="dialog"], [role="alertdialog"], dialog[open], [aria-modal="true"], .modal, .artdeco-modal')].filter(isVisible);
+    return [...document.querySelectorAll('[role="dialog"], [role="alertdialog"], dialog[open], [aria-modal="true"], .modal, .artdeco-modal, .ant-modal, .MuiDialog-root, [class*="modal" i], [class*="popup" i]')].filter(isVisible);
   }
 
   function buttonIn(scope, re) {
     return [...scope.querySelectorAll('a, button, [role="button"]')].find((b) => re.test(label(b)) && isVisible(b));
   }
 
+  // Buttons/links in a pre-apply pop-up that skip the site's upsell and go straight to the employer,
+  // e.g. Jobright's "Apply without customizing". Never the upsell itself (customize/tailor/upgrade/autofill).
+  const SKIP_UPSELL = /^(apply without (customi[sz]|tailor|optimi[sz]|changes|editing|ai)\w*|apply (directly|anyway|as is|with (my )?(original|current|existing) resume)|continue without (customi[sz]|tailor|optimi[sz]|changes)\w*|skip( (and|&) apply| for now| customi[sz]\w*)?|no,? (thanks|apply (directly|now|anyway))|use (my )?(original|current|existing) resume|go to (the )?(company|employer|original|job) (site|website|posting|page)|apply on (the )?(company|employer) (site|website))\b/i;
+  const UPSELL_BTN = /(customi[sz]e|tailor|optimi[sz]e|upgrade|premium|subscribe|with (jobright|simplify)|autofill)/i;
+
+  function upsellGate() {
+    for (const d of dialogs()) {
+      const b = [...d.querySelectorAll('a, button, [role="button"]')].find((x) => isVisible(x) && SKIP_UPSELL.test(label(x)) && !UPSELL_BTN.test(label(x).replace(SKIP_UPSELL, '')));
+      if (b) return { kind: 'upsell', text: clean(d.innerText).slice(0, 240), button: label(b), selector: ref(b), href: b.tagName === 'A' && b.getAttribute('href') ? resolveTarget(absUrl(b.getAttribute('href'))) : '' };
+    }
+    return null;
+  }
+
   function interstitial() {
+    const up = upsellGate();
+    if (up) return up;
     const LEAVING = /(leaving|leave (linkedin|indeed|glassdoor|this site)|redirect|external (site|website)|third[- ]party|company('s)? (site|website)|employer('s)? (site|website)|continue to|you('re| are) (about to|being)|job search safety|apply on)/i;
     const GO = /^(continue|continue to (apply|site|website)|proceed|go to (site|website|company)|apply on company( site| website)?|i understand|continue applying|open|visit (site|website))\b/i;
     for (const d of dialogs()) {
       const t = clean(d.innerText);
       if (!LEAVING.test(t)) continue;
       const b = buttonIn(d, GO);
-      if (b) return { text: t.slice(0, 240), button: label(b), selector: ref(b), href: b.tagName === 'A' ? resolveTarget(absUrl(b.getAttribute('href'))) : '' };
+      if (b) return { kind: 'leaving', text: t.slice(0, 240), button: label(b), selector: ref(b), href: b.tagName === 'A' ? resolveTarget(absUrl(b.getAttribute('href'))) : '' };
     }
     // Full-page interstitials (e.g. "You're being redirected to ..." with a Continue link).
     if (redirectInfo()) {

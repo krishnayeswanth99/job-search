@@ -89,6 +89,11 @@
         case 'followApply':
           if (!isTop) return null;
           return Object.assign({ frame: location.href }, JC.nav.followApply());
+        case 'resolveApplyLinks': {
+          if (!isTop) return null;
+          const r = await JC.applyLinks.resolve(payload);
+          return Object.assign({ ok: true, frame: location.href, isTop, portal: (JC.extract.portal() || {}).id || 'generic' }, r);
+        }
         case 'loadMoreJobs': {
           if (!isTop) return null;
           const r = await JC.extract.loadMore(payload);

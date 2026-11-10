@@ -11,12 +11,16 @@ Aggregators are good for **discovering** jobs. The application almost always hap
    - Run `loadMoreJobs({ rounds: 8 })` to scroll the feed and collect more. Jobs that scroll off the page are kept.
    - If nothing is found, fall back to `read_page` with `filter: "interactive"`. Send a card's HTML so the extractor
      can be fixed.
-2. For each promising job, open it and run `extractJob()`. Its `apply` field tells you where Apply leads:
+2. **Find the real application links in bulk:** run `resolveApplyLinks({ limit: 15 })` on the feed. Each job gets
+   `applyUrl` (the employer's Greenhouse, Lever, Workday or careers page) when Jobright's job page reveals it. Run it
+   again for the next 15 (`remaining`). If it returns `blocked: true`, Jobright showed a security check: stop and ask
+   the user to open a job by hand. Never try to get past it.
+3. For a single job, open it and run `extractJob()`. Its `apply` field tells you where Apply leads:
    - `apply.target` is the employer URL when the link reveals it (redirect links are unwrapped automatically). Record it
      with `tracker.py add … --url <aggregator URL> --apply-url <apply.target>`.
    - When the target is hidden behind a script, leave `--apply-url` empty. job-apply fills it in later.
-3. Score fit from the employer's own posting when you can (it's often more complete than the aggregator's summary).
-4. Don't use the aggregator's own "Apply with autofill", "customize resume" or "AI apply" options. Clicking Apply on
+4. Score fit from the employer's own posting when you can (it's often more complete than the aggregator's summary).
+5. Don't use the aggregator's own "Apply with autofill", "customize resume" or "AI apply" options. Clicking Apply on
    Jobright opens a "customize your resume?" pop-up. Take **Apply without customizing** (`followApply()` does this). job-apply goes to the employer's site
    instead. See `job-apply/references/boards-and-redirects.md`.
 

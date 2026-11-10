@@ -33,6 +33,7 @@
         "src/content/login.js",
         "src/content/navigation.js",
         "src/content/extractors.js",
+        "src/content/apply-links.js",
         "src/content/fields.js",
         "src/content/autofill.js",
         "src/content/memory.js",

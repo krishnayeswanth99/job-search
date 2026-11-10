@@ -78,6 +78,7 @@
     detect: () => call('detect', {}, T),
     extractJobs: (opts) => call('extractJobs', opts, T),
     loadMoreJobs: (opts) => call('loadMoreJobs', opts, 45000),
+    resolveApplyLinks: (opts) => call('resolveApplyLinks', opts, 180000),
     extractJob: () => call('extractJob', {}, T),
     scanForm: () => call('scanForm', {}, T),
     autofill: (opts) => call('autofill', opts, 30000),

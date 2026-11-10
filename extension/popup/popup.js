@@ -27,6 +27,7 @@ function showResult(title, body, payload, jobs) {
   lastJobs = jobs || [];
   $('btn-save-all').hidden = !lastJobs.length;
   $('btn-more').hidden = !(payload && payload.jobs);
+  $('btn-links').hidden = !(payload && payload.jobs && payload.jobs.length);
 }
 
 async function savedJobs() {
@@ -67,7 +68,8 @@ function jobRow(j) {
   return el('div', { class: 'job' },
     el('div', { class: 'meta' },
       j.url ? el('a', { class: 'title', href: j.url, target: '_blank', rel: 'noopener' }, j.title) : el('span', { class: 'title' }, j.title),
-      el('span', { class: 'sub' }, sub, j.easyApply ? el('span', { class: 'pill' }, 'Easy Apply') : null, j.remote ? el('span', { class: 'pill' }, 'Remote') : null)
+      el('span', { class: 'sub' }, sub, j.easyApply ? el('span', { class: 'pill' }, 'Easy Apply') : null, j.remote ? el('span', { class: 'pill' }, 'Remote') : null),
+      j.applyUrl ? el('a', { class: 'sub apply-link', href: j.applyUrl, target: '_blank', rel: 'noopener' }, `Apply on ${j.applyHost || 'employer site'} ↗`) : j.applyError ? el('span', { class: 'sub muted' }, 'No employer link found') : null
     ),
     saveBtn
   );
@@ -166,6 +168,17 @@ $('btn-more').addEventListener('click', async () => {
   $('btn-more').textContent = 'Scroll for more';
   if (!r || r.ok === false) return showResult('Could not load more', el('p', {}, (r && r.error) || ''), r);
   showResult(`${r.jobs.length} jobs on this tab (+${r.added} new)`, el('div', {}, r.jobs.map(jobRow)), r, r.jobs);
+});
+
+$('btn-links').addEventListener('click', async () => {
+  $('btn-links').disabled = true;
+  $('btn-links').textContent = 'Opening jobs… (about 2 s each)';
+  const r = await send('resolveApplyLinks', { limit: 15 });
+  $('btn-links').disabled = false;
+  $('btn-links').textContent = 'Find apply links';
+  if (!r || r.ok === false) return showResult('Could not find apply links', el('p', {}, (r && r.error) || ''), r);
+  const head = r.blocked ? `${r.resolved} found, then the site showed a security check. Open a job by hand to continue.` : `Found ${r.resolved} apply link${r.resolved === 1 ? '' : 's'}${r.failed ? `, ${r.failed} not found` : ''}${r.remaining ? ` · ${r.remaining} more: click again` : ''}`;
+  showResult(head, el('div', {}, r.jobs.map(jobRow)), r, r.jobs);
 });
 
 $('btn-save-all').addEventListener('click', async () => {

@@ -104,6 +104,10 @@
     // On aggregators (Jobright, Simplify, ZipRecruiter...) Apply always leads to the employer's site.
     const portal = JC.portalForHost(location.hostname);
     if (kind === 'onsite' && portal && portal.aggregator) kind = 'external';
+    // Scripted Apply button: the employer URL is often in the page's embedded data.
+    let found = null;
+    if (!target && portal && portal.aggregator && JC.applyLinks) found = JC.applyLinks.findIn(document.documentElement.innerHTML);
+    if (found) return { text, kind, href, target: found.url, targetVia: found.via, newTab: true, selector: ref(el), aria: aria || undefined };
     const newTab = el.getAttribute('target') === '_blank' || (kind === 'external' && !target);
     return { text, kind, href, target, newTab, selector: ref(el), aria: aria || undefined };
   }

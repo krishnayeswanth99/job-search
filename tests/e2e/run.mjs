@@ -81,6 +81,21 @@ try {
     if (!/^https?:/.test(url) || url.startsWith('http://127.0.0.1')) return route.continue();
     const body = ROUTES[url];
     if (body) return route.fulfill({ status: 200, contentType: 'text/html', body });
+    // Jobright-style job pages behind the feed fixture: the employer link is in embedded data,
+    // or a redirect link, or missing; job 6 answers with a security check.
+    const jr = url.match(/^https:\/\/jobright\.ai\/jobs\/info\/([0-9a-f]{24})$/);
+    if (jr) {
+      const n = parseInt(jr[1].slice(0, 4), 16);
+      const page =
+        n === 6
+          ? '<html><head><title>Security check | Jobright</title></head><body>One quick security check</body></html>'
+          : n % 3 === 0
+            ? `<html><body><h1>Software Engineer ${n}</h1><script id="__NEXT_DATA__" type="application/json">{"props":{"pageProps":{"job":{"originalUrl":"https:\\u002F\\u002Fjobs.lever.co\\u002Facme\\u002F${n}"}}}}</script></body></html>`
+            : n % 3 === 1
+              ? `<html><body><h1>Software Engineer ${n}</h1><a href="https://jobright.ai/redirect?url=https%3A%2F%2Fjob-boards.greenhouse.io%2Facme%2Fjobs%2F${n}">Apply</a></body></html>`
+              : `<html><body><h1>Software Engineer ${n}</h1><button>Apply</button></body></html>`;
+      return route.fulfill({ status: 200, contentType: 'text/html', body: page });
+    }
     return route.fulfill({ status: 404, body: '' });
   });
 
@@ -469,7 +484,9 @@ try {
     const d = await bridge(p, () => window.jobCopilot.detect());
     assert.equal(d.apply.text, 'Apply', 'plain Apply preferred over the site\'s autofill button');
     assert.equal(d.apply.kind, 'external');
-    assert.equal((await bridge(p, () => window.jobCopilot.followApply())).ok, false, 'scripted button');
+    // The scripted button's destination is found in the page itself, so Apply can go straight there.
+    assert.equal(d.apply.target, 'https://jobs.lever.co/acme/11111111-1111-1111-1111-111111111111/apply');
+    // The pop-up path still works when it does open.
     await p.click(d.apply.selector);
     const d2 = await bridge(p, () => window.jobCopilot.detect());
     assert.equal(d2.interstitial.kind, 'upsell');
@@ -502,6 +519,23 @@ try {
     const more = await bridge(p, () => window.jobCopilot.loadMoreJobs({ rounds: 10 }));
     assert.equal(more.count, 40);
     assert.equal(more.added, 16);
+  });
+
+  await check('Jobright feed: resolveApplyLinks finds the employer link per job, stops at a security check', async () => {
+    const p = await open('https://jobright.ai/jobs/recommend');
+    await bridge(p, () => window.jobCopilot.extractJobs());
+    const r = await bridge(p, () => window.jobCopilot.resolveApplyLinks({ limit: 6, delayMs: 0 }));
+    assert.equal(r.ok, true, r.error);
+    assert.deepEqual([r.resolved, r.failed, r.blocked], [4, 2, false]);
+    const [j0, j1, j2] = r.jobs;
+    assert.deepEqual([j0.applyUrl, j0.applyHost, j0.applyVia], ['https://jobs.lever.co/acme/0', 'jobs.lever.co', 'page-data']);
+    assert.deepEqual([j1.applyUrl, j1.applyVia], ['https://job-boards.greenhouse.io/acme/jobs/1', 'page-link']);
+    assert.ok(!j2.applyUrl && j2.applyError);
+    // Next batch: job 6 answers with a security check, so it stops there instead of pushing on.
+    const r2 = await bridge(p, () => window.jobCopilot.resolveApplyLinks({ limit: 6, delayMs: 0 }));
+    assert.equal(r2.blocked, true);
+    assert.equal(r2.resolved, 0);
+    assert.match(r2.note, /security check/);
   });
 
   await check('bridge disabled: commands refused', async () => {

@@ -120,7 +120,11 @@ async function init() {
 }
 
 $('btn-follow').addEventListener('click', async () => {
+  $('btn-follow').disabled = true;
+  $('btn-follow').textContent = 'Opening the application… (waiting for the site)';
   const r = await send('followApply');
+  $('btn-follow').disabled = false;
+  $('btn-follow').textContent = 'Go to application';
   if (r && r.ok) return window.close();
   showResult('Open the application', el('p', {}, (r && r.reason) || 'Click the Apply button on the page.'), r);
 });

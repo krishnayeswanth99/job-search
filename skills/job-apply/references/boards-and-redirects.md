@@ -29,6 +29,16 @@ a redirect URL, or an "are you sure?" screen. Job Copilot reports all of it in `
    `tracker.py update --id N --apply-url "<ATS URL>"`. Then the same job found later on the employer's own board is
    recognized as a duplicate.
 
+## Jobright: tab flashes, then a pop-up
+
+On Jobright, **Apply** and **Apply with Autofill** briefly open a new tab, close it again, and then show a pop-up with
+the link to the employer's application.
+- Use `followApply()`. It clicks Apply, waits up to 8 s for the pop-up, and follows the employer link inside it (any
+  link to Greenhouse, Lever, Workday and other ATS hosts, or the "Apply without customizing" option).
+- Ignore the tab that flashes open and closed. Its address is kept in `detect().flashedTabs` (redirects unwrapped),
+  which is a fallback if the pop-up never shows.
+- If you click by hand instead, wait about 3 s after the click before calling `detect()`.
+
 ## Pre-apply pop-ups (upsells)
 
 Aggregators often put a pop-up between **Apply** and the employer's site. Jobright, for example, offers to customize

@@ -33,6 +33,7 @@ const ROUTES = {
   'https://jobright.ai/jobs/info/abc123': fx('jobright-job.html'),
   'https://jobright.ai/jobs/info/def456': fx('jobright-modal.html'),
   'https://jobright.ai/jobs/recommend': fx('jobright-feed.html'),
+  'https://jobright.ai/jobs/info/fab001': fx('jobright-flash.html'),
   'https://jobs.lever.co/acme/11111111-1111-1111-1111-111111111111/apply': '<html><body><form id="application-form"><label>Full name<input name="name"></label><label>Email<input name="email" type="email"></label><label>Phone<input name="phone"></label><label>Resume/CV<input type="file" name="resume"></label></form></body></html>',
 };
 
@@ -536,6 +537,23 @@ try {
     assert.equal(r2.blocked, true);
     assert.equal(r2.resolved, 0);
     assert.match(r2.note, /security check/);
+  });
+
+  await check('Jobright Apply that flashes a tab, then shows a pop-up: followApply waits and reaches the employer form', async () => {
+    // By hand: the flashed tab is remembered (its address is the real link).
+    const p = await open('https://jobright.ai/jobs/info/fab001');
+    await p.click('#plain');
+    await p.waitForTimeout(1500);
+    const d = await bridge(p, () => window.jobCopilot.detect());
+    assert.ok(d.flashedTabs && d.flashedTabs.some((t) => t.url === 'https://job-boards.greenhouse.io/acme/jobs/123'), JSON.stringify(d.flashedTabs));
+    assert.equal(d.interstitial.href, 'https://job-boards.greenhouse.io/acme/jobs/123', 'employer link in the pop-up, any wording');
+    // Claude / popup button: one call clicks Apply, waits for the pop-up and follows its link.
+    const q = await open('https://jobright.ai/jobs/info/fab001');
+    const f = await bridge(q, () => window.jobCopilot.followApply());
+    assert.equal(f.ok, true, JSON.stringify(f));
+    await q.waitForURL('https://job-boards.greenhouse.io/acme/jobs/123');
+    await q.waitForFunction(() => window.jobCopilot && window.jobCopilot.installed);
+    assert.equal((await bridge(q, () => window.jobCopilot.detect())).pageType, 'application');
   });
 
   await check('bridge disabled: commands refused', async () => {

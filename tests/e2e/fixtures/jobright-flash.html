@@ -1,0 +1,24 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Data Engineer - Acme | Jobright</title><style>.ant-modal-wrap{display:none}.open .ant-modal-wrap{display:block}</style></head><body>
+<h1>Data Engineer</h1><div>Acme Robotics</div>
+<button id="auto">Apply with Autofill</button>
+<button id="plain">Apply</button>
+<div class="ant-modal-wrap"><div class="ant-modal"><div class="ant-modal-content">
+  <h3>Before you go</h3>
+  <p>Original job post:</p>
+  <a id="orig" target="_blank">View on company site</a>
+</div></div></div>
+<script>
+  // Like Jobright: open a tab, close it again, then show a pop-up holding the employer link.
+  // The link is only filled in when the pop-up opens (so it is not in the page beforehand).
+  function apply() {
+    const w = window.open('https://jobright.ai/redirect?url=https%3A%2F%2Fjob-boards.greenhouse.io%2Facme%2Fjobs%2F123', '_blank');
+    setTimeout(() => { if (w) w.close(); }, 300);
+    setTimeout(() => {
+      document.getElementById('orig').href = 'https://job-boards.greenhouse.io/acme/jobs/123';
+      document.body.classList.add('open');
+    }, 900);
+  }
+  document.getElementById('auto').onclick = apply;
+  document.getElementById('plain').onclick = apply;
+</script>
+</body></html>

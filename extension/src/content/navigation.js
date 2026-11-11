@@ -137,6 +137,9 @@
 
   function upsellGate() {
     for (const d of dialogs()) {
+      // A pop-up that shows the employer's application link directly (any wording).
+      const ats = JC.applyLinks && [...d.querySelectorAll('a[href]')].find((x) => isVisible(x) && JC.applyLinks.ATS.test(resolveTarget(absUrl(x.getAttribute('href')))));
+      if (ats) return { kind: 'upsell', text: clean(d.innerText).slice(0, 240), button: label(ats), selector: ref(ats), href: resolveTarget(absUrl(ats.getAttribute('href'))) };
       const b = [...d.querySelectorAll('a, button, [role="button"]')].find((x) => isVisible(x) && SKIP_UPSELL.test(label(x)) && !UPSELL_BTN.test(label(x).replace(SKIP_UPSELL, '')));
       if (b) return { kind: 'upsell', text: clean(d.innerText).slice(0, 240), button: label(b), selector: ref(b), href: b.tagName === 'A' && b.getAttribute('href') ? resolveTarget(absUrl(b.getAttribute('href'))) : '' };
     }
@@ -174,8 +177,36 @@
     return null;
   }
 
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  /**
+   * Scripted Apply buttons (Jobright and similar): click, then wait for what the site does next.
+   * Jobright briefly opens and closes a tab, then shows a pop-up holding the employer's link.
+   */
+  async function clickAndWait(selector, timeoutMs) {
+    const el = document.querySelector(selector);
+    if (!el) return { ok: false, reason: 'Apply button disappeared.' };
+    const before = location.href;
+    el.click();
+    const end = Date.now() + (timeoutMs || 8000);
+    while (Date.now() < end) {
+      await sleep(400);
+      if (location.href !== before) return { ok: true, action: 'navigated', to: location.href };
+      const gate = interstitial();
+      if (gate) {
+        if (gate.href) {
+          setTimeout(() => location.assign(gate.href), 50);
+          return { ok: true, action: 'navigate', to: gate.href, reason: `pop-up "${gate.button}"` };
+        }
+        document.querySelector(gate.selector).click();
+        return { ok: true, action: 'clicked', button: gate.button, note: 'May open a new tab: check detect().openedTabs or the tab list.' };
+      }
+    }
+    return { ok: false, action: 'clicked', reason: 'Clicked Apply, but no pop-up or page change followed within the wait. If a new tab opened, check detect().openedTabs; a tab that opened and closed again is listed in detect().flashedTabs.' };
+  }
+
   /** Move THIS tab towards the application. Never submits anything. */
-  function followApply() {
+  async function followApply() {
     const hop = redirectInfo();
     if (hop && hop.target) {
       setTimeout(() => location.assign(hop.target), 50);
@@ -197,6 +228,9 @@
       setTimeout(() => location.assign(a.target), 50);
       return { ok: true, action: 'navigate', to: a.target, kind: a.kind };
     }
+    // Scripted button: click it and wait for the pop-up / redirect (only on job boards and aggregators,
+    // where Apply leads elsewhere; on an employer's own page Claude should click it itself).
+    if (a.kind === 'external') return Object.assign({ kind: a.kind }, await clickAndWait(a.selector, 8000));
     return { ok: false, kind: a.kind, selector: a.selector, reason: 'The Apply button has no link (it is scripted). Click it; it usually opens a new tab, then look at detect().openedTabs.' };
   }
 

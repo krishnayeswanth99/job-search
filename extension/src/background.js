@@ -23,9 +23,19 @@ chrome.tabs.onUpdated.addListener((tabId, info, tab) => {
   if (!info.url && !info.title) return;
   for (const list of childTabs.values()) for (const c of list) if (c.tabId === tabId) Object.assign(c, { url: tab.url || c.url, title: tab.title || c.title });
 });
+// Tabs that open and close again within seconds (Jobright does this before its pop-up). Their
+// address is often the real application link, so keep it, reported as detect().flashedTabs.
+const flashedTabs = new Map(); // openerTabId -> [{ url, openedAt, closedAt }]
 chrome.tabs.onRemoved.addListener((tabId) => {
   childTabs.delete(tabId);
-  for (const [k, list] of childTabs) childTabs.set(k, list.filter((c) => c.tabId !== tabId));
+  flashedTabs.delete(tabId);
+  for (const [k, list] of childTabs) {
+    const gone = list.find((c) => c.tabId === tabId);
+    if (gone && Date.now() - Date.parse(gone.openedAt) < 15000 && /^https?:/.test(gone.url)) {
+      flashedTabs.set(k, (flashedTabs.get(k) || []).concat({ url: gone.url, openedAt: gone.openedAt, closedAt: new Date().toISOString() }).slice(-5));
+    }
+    childTabs.set(k, list.filter((c) => c.tabId !== tabId));
+  }
 });
 
 async function runInFrames(tabId, cmd, payload) {
@@ -168,6 +178,8 @@ async function runCommand(tabId, cmd, payload, origin) {
   if (cmd === 'detect') {
     const kids = (childTabs.get(tabId) || []).filter((c) => /^https?:/.test(c.url));
     if (kids.length) out.openedTabs = kids;
+    const flashed = flashedTabs.get(tabId) || [];
+    if (flashed.length) out.flashedTabs = flashed.map((f) => Object.assign({}, f, { url: self.JC.unwrapUrl ? self.JC.unwrapUrl(f.url) : f.url }));
   }
   return out;
 }

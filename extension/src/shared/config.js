@@ -7,7 +7,7 @@
 (function (root) {
   const JC = (root.JC = root.JC || {});
 
-  JC.VERSION = '0.7.0';
+  JC.VERSION = '0.7.1';
   JC.BRIDGE_CHANNEL = 'job-copilot';
 
   /**
@@ -63,6 +63,21 @@
     domain = String(domain || '').toLowerCase().replace(/^\*\./, '').trim();
     if (!domain) return false;
     return hostname === domain || hostname.endsWith('.' + domain);
+  };
+
+  /** Follow redirect params (?url=https%3A...) to the real destination, up to twice. */
+  JC.unwrapUrl = function unwrapUrl(u) {
+    for (let i = 0; i < 2; i++) {
+      let next = '';
+      try {
+        for (const [k, v] of new URL(u).searchParams) if (/^(url|u|dest|destination|target|redirect|redirect_url|to|link|joburl|apply_url|applyurl)$/i.test(k) && /^https?:\/\//i.test(v)) next = v;
+      } catch (_) {
+        break;
+      }
+      if (!next) break;
+      u = next;
+    }
+    return u;
   };
 
   JC.portalForHost = function portalForHost(hostname) {

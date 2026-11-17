@@ -241,7 +241,7 @@
   function valueForKey(profile, key, now) {
     if (!profile) return '';
     const p = profile.personal || {};
-    const d = now instanceof Date ? now : new Date();
+    const d = now && typeof now.getFullYear === 'function' ? now : new Date();
     const pad = (n) => String(n).padStart(2, '0');
     switch (key) {
       case 'todayDate': // US order; autofill uses YYYY-MM-DD for <input type=date>

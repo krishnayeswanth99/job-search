@@ -28,6 +28,7 @@ const ROUTES = {
   'https://job-boards.greenhouse.io/globex/jobs/77': fx('greenhouse-job.html'),
   'https://job-boards.greenhouse.io/acme/jobs/124': fx('greenhouse-job.html'),
   'https://job-boards.greenhouse.io/initech/jobs/5': fx('greenhouse-job.html'),
+  'https://careers-acme.icims.com/jobs/1234/data-scientist/candidate': fx('icims-like.html'),
   'https://www.linkedin.com/jobs/view/4000000009/': fx('linkedin-external.html'),
   'https://job-boards.greenhouse.io/acme/jobs/123?gh_src=linkedin': fx('greenhouse-job.html'),
   'https://www.indeed.com/applystart?jk=abc&url=https%3A%2F%2Fjob-boards.greenhouse.io%2Facme%2Fjobs%2F123': fx('indeed-applystart.html'),
@@ -753,6 +754,20 @@ try {
     assert.equal(await g.evaluate(() => q6.value), 'Your robots help people.');
     assert.equal(await g.evaluate(() => q6.style.outline), '', 'outline cleared once answered');
     await pop.close();
+  });
+
+  await check('iCIMS-style form: custom dropdown chosen by clicking, phone "Type" -> Mobile, former-employee ID left alone', async () => {
+    const p = await open('https://careers-acme.icims.com/jobs/1234/data-scientist/candidate');
+    const r = await bridge(p, () => window.jobCopilot.autofill());
+    assert.equal(r.ok, true, r.error);
+    const v = await p.evaluate(() => ({ fn: fn.value, pt: pt.selectedOptions[0].text, hear: hear.value, eid: eid.value, listOpen: !document.getElementById('hear-list').hidden }));
+    assert.equal(v.pt, 'Mobile');
+    assert.equal(v.hear, 'Job Board - LinkedIn');
+    assert.equal(v.eid, '');
+    assert.equal(v.listOpen, false, 'dropdown closed after choosing');
+    assert.ok(v.fn.length > 0);
+    const labels = r.needsInput.map((f) => f.label);
+    assert.ok(!labels.some((l) => /employee id|hear about|^type$/i.test(l)), JSON.stringify(labels));
   });
 
   await check('recorder: logs clicks, window.open, flashed tab and the pop-up with its links', async () => {

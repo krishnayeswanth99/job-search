@@ -28,7 +28,11 @@
     { key: 'firstName', re: /\b(first|given|fore) ?name\b|\bfname\b/ },
     { key: 'lastName', re: /\b(last|family|sur) ?name\b|\blname\b/ },
     { key: 'phoneCountryCode', re: /\b((phone )?country (phone )?code|dial(ing)? code|calling code)\b/ },
-    { key: 'skip', re: /\b(phone (device|type)|device type|extension)\b/ },
+    // Phone type next to the number (iCIMS "Type", Workday "Phone Device Type"): Mobile.
+    { key: 'phoneType', re: /\b(phone (device )?type|device type|phone number type|type of phone)\b|\bphone\b.*\btype\b/ },
+    { key: 'skip', re: /\b(extension|ext)\b/ },
+    // Former-employee ID questions: only for people who worked there; left empty, never flagged.
+    { key: 'formerEmployeeId', re: /\b(previous|former|prior|past) [a-z0-9 ]{0,30}(employee|worker|associate) (id|number|#)\b|\bemployee (id|number) \(if applicable\)/, q: true },
     { key: 'phone', re: /\b(phone|mobile|cell|telephone|tel)\b/ },
     { key: 'linkedin', re: /\blinked ?in\b/, q: true },
     { key: 'github', re: /\bgit ?hub\b/, q: true },
@@ -192,7 +196,10 @@
       case 'coverLetter':
       case 'desiredPay': // period unclear, monthly or daily: never guess or convert
       case 'currentPay':
+      case 'formerEmployeeId':
         return '';
+      case 'phoneType':
+        return 'Mobile';
       default:
         return get(profile, key);
     }

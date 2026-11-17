@@ -93,7 +93,9 @@
     for (const el of controls) {
       const type = (el.type || el.tagName).toLowerCase();
       if (['hidden', 'submit', 'button', 'reset', 'image', 'search'].includes(type)) continue;
-      if (el.disabled || el.readOnly) continue;
+      if (el.disabled) continue;
+      // Read-only inputs are skipped, except custom dropdowns (you click them to pick an option).
+      if (el.readOnly && !(el.getAttribute('role') === 'combobox' || el.getAttribute('aria-haspopup') || el.closest('[role="combobox"]'))) continue;
       if (el.closest('[aria-hidden="true"]') && type !== 'file') continue;
       if (type !== 'file' && !isVisible(el)) {
         // react-select & custom checkboxes hide the real input; keep them if their wrapper is visible.
@@ -165,7 +167,17 @@
         profileHints.push(c.key);
       }
     }
-    return out;
+    return contextKeys(out);
+  }
+
+  /** Labels that only make sense next to the field before them: "Type" after a phone number. */
+  function contextKeys(fields) {
+    for (let i = 1; i < fields.length; i++) {
+      const f = fields[i];
+      const prev = fields[i - 1];
+      if (!f.key && /^(type|number type|phone type)$/i.test((f.label || '').trim()) && prev && (prev.key === 'phone' || prev.key === 'phoneCountryCode')) f.key = 'phoneType';
+    }
+    return fields;
   }
 
   /** Heuristic: does this frame contain a job application form? */

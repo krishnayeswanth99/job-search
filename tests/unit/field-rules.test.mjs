@@ -44,7 +44,12 @@ test('long questions only match question rules', () => {
 test('uses attributes and autocomplete', () => {
   assert.equal(key({ name: 'job_application[first_name]' }), 'firstName');
   assert.equal(key({ automationId: 'legalNameSection_lastName' }), 'lastName');
-  assert.equal(key({ automationId: 'phone-device-type' }), null);
+  assert.equal(key({ automationId: 'phone-device-type' }), 'phoneType');
+  assert.equal(key({ label: 'Phone Type' }), 'phoneType');
+  assert.equal(JC.rules.valueForKey(JC.normalizeProfile({}), 'phoneType'), 'Mobile');
+  assert.equal(key({ label: 'Previous HERE Employee ID' }), 'formerEmployeeId');
+  assert.equal(JC.rules.valueForKey(JC.normalizeProfile({}), 'formerEmployeeId'), '');
+  assert.equal(key({ label: 'Phone' }), 'phone');
   assert.equal(key({ automationId: 'countryPhoneCode' }), 'phoneCountryCode');
   assert.equal(key({ autocomplete: 'given-name', label: 'Something odd' }), 'firstName');
   assert.equal(key({ type: 'password', label: 'Password' }), null);

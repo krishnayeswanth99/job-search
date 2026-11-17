@@ -103,8 +103,9 @@
    *   overrides  { [ref|label|profileKey]: value }   answers supplied by Claude
    *   overwrite  replace fields that already have a value (default false)
    */
-  function autofill(opts) {
+  async function autofill(opts) {
     const profile = JC.normalizeProfile(opts.profile);
+    const combos = [];
     const files = opts.files || {};
     const fields = JC.fields.scan();
     const filled = [];
@@ -145,8 +146,8 @@
         }
         let ok = false;
         if (f.combobox) {
-          // Custom dropdowns (react-select, Workday) need real clicks; leave to Claude.
-          needsInput.push(Object.assign(d, { reason: 'custom dropdown: type/click to choose', suggested: r.value }));
+          // Custom dropdowns (react-select, select2, iCIMS, Workday): handled after the plain fields.
+          combos.push({ f, d, r });
           continue;
         } else if (f.type === 'select') ok = fillSelect(f.el, r.value);
         else if (f.els && f.els.length > 1) ok = fillGroup(f, r.value);
@@ -170,6 +171,17 @@
         needsInput.push(Object.assign(d, { reason: 'error: ' + e.message }));
       }
     }
+    // Custom dropdowns: open, type to filter, click the matching option.
+    for (const { f, d, r } of combos) {
+      let ok = false;
+      try {
+        ok = await fillCombobox(f.el, r.value);
+      } catch (_) {
+        ok = false;
+      }
+      if (ok) filled.push(Object.assign(d, { source: r.source, profileKey: f.key }));
+      else needsInput.push(Object.assign(d, { reason: 'custom dropdown: no matching option found, choose by hand', suggested: r.value }));
+    }
     highlight(needsInput);
     return {
       frame: location.href,
@@ -178,6 +190,66 @@
       skipped: skipped.map((f) => ({ label: f.label, selector: f.selector, reason: f.reason })),
       needsInput,
     };
+  }
+
+  const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
+  const fireMouse = (el) => {
+    for (const type of ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click']) {
+      const Ev = type.startsWith('pointer') && typeof PointerEvent !== 'undefined' ? PointerEvent : MouseEvent;
+      el.dispatchEvent(new Ev(type, { bubbles: true, cancelable: true, view: window }));
+    }
+  };
+
+  /** Type into a search box without blurring it (blur closes most dropdown menus). */
+  function typeInto(el, value) {
+    const desc = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
+    el.focus({ preventScroll: true });
+    if (desc && desc.set) desc.set.call(el, value);
+    else el.value = value;
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, key: value.slice(-1) || 'a' }));
+  }
+
+  const OPTION_SEL = '[role="option"], .select2-results__option, li[class*="option" i], div[class*="option" i]:not(:has(div[class*="option" i])), .dropdown-menu li, ul[role="listbox"] li, [class*="listbox" i] li, [data-automation-id="promptOption"]';
+
+  function visibleOptions() {
+    return [...document.querySelectorAll(OPTION_SEL)].filter((o) => JC.dom.isVisible(o) && JC.dom.clean(o.innerText).length && !o.closest('select')).slice(0, 300);
+  }
+
+  /**
+   * Fill a custom dropdown: click its control, type the value to filter when it has a search box,
+   * then click the option that best matches (same matching as native selects). Escape on no match.
+   */
+  async function fillCombobox(el, desired) {
+    const control =
+      el.closest('[role="combobox"], .select2-container, .select2, [class*="select__control"], [class*="Select-control"], [class*="dropdown" i], [class*="Dropdown"]') ||
+      (el.id && document.querySelector(`[aria-controls="${CSS.escape(el.id)}"], [aria-owns="${CSS.escape(el.id)}"]`)) ||
+      el;
+    fireMouse(control);
+    if (control !== el) fireMouse(el);
+    await sleep(300);
+    // A search box: the field itself, or one that appears in the opened menu (select2, iCIMS).
+    const search = (el.tagName === 'INPUT' && !el.readOnly && el.type !== 'hidden' ? el : null) || document.querySelector('.select2-search__field, input[role="searchbox"], input[aria-autocomplete="list"]:focus, [class*="dropdown" i] input[type="text"]:not([readonly])');
+    let opts = visibleOptions();
+    if (search && JC.dom.isVisible(search)) {
+      typeInto(search, String(desired).slice(0, 40));
+      await sleep(600);
+      opts = visibleOptions();
+      if (!opts.length) {
+        typeInto(search, ''); // filter too strict: show all and match ourselves
+        await sleep(400);
+        opts = visibleOptions();
+      }
+    }
+    const i = R.chooseOption(opts.map((o) => ({ text: JC.dom.clean(o.innerText), value: o.getAttribute('data-value') || o.getAttribute('id') || '' })), desired);
+    if (i < 0) {
+      document.activeElement && document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, bubbles: true }));
+      fireMouse(document.body);
+      return false;
+    }
+    fireMouse(opts[i]);
+    await sleep(250);
+    return true;
   }
 
   /**

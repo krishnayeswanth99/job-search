@@ -240,32 +240,66 @@ $('btn-ask-local').addEventListener('click', async () => {
   $('btn-ask-local').disabled = true;
   const status = (t) => ($('ask-status').textContent = t);
   let session;
+  const lang = { expectedInputs: [{ type: 'text', languages: ['en'] }], expectedOutputs: [{ type: 'text', languages: ['en'] }] };
+  const monitor = (m) => m.addEventListener('downloadprogress', (e) => status(`Downloading Chrome's on-device model: ${Math.round((e.loaded || 0) * 100)}% (one time)…`));
   try {
     status('Starting the on-device model… keep this popup open.');
-    session = await LanguageModel.create({
-      expectedInputs: [{ type: 'text', languages: ['en'] }],
-      expectedOutputs: [{ type: 'text', languages: ['en'] }],
-      monitor(m) {
-        m.addEventListener('downloadprogress', (e) => status(`Downloading Chrome's on-device model: ${Math.round((e.loaded || 0) * 100)}% (one time)…`));
-      },
-    });
+    // Some Chrome builds reject the language options: fall back to a plain session.
+    try {
+      session = await LanguageModel.create(Object.assign({ monitor }, lang));
+    } catch (_) {
+      session = await LanguageModel.create({ monitor });
+    }
     const job = await send('extractJob').catch(() => null);
     const { profile, resumeText } = await chrome.storage.local.get(['profile', 'resumeText']);
     const overrides = {};
     const askMe = [];
-    const groups = JCa.batches(qs, 4);
+    const problems = [];
+    const groups = JCa.batches(qs, 3);
     for (let i = 0; i < groups.length; i++) {
-      status(`Answering questions ${i * 4 + 1}-${Math.min(qs.length, (i + 1) * 4)} of ${qs.length} on your device…`);
+      status(`Answering questions ${i * 3 + 1}-${Math.min(qs.length, (i + 1) * 3)} of ${qs.length} on your device…`);
       const prompt = JCa.buildCompactPrompt({ questions: groups[i], job: job && job.job, profile, resumeText });
-      const reply = await session.prompt(prompt, { responseConstraint: JCa.schemaFor(groups[i]) });
-      const parsed = JCa.parseReply(reply, groups[i]);
-      Object.assign(overrides, parsed.overrides);
-      askMe.push(...parsed.askMe);
+      let reply = null;
+      // 1) with the JSON schema (keeps choices to real options), 2) without it, 3) shorter prompt, fresh session.
+      const tries = [
+        () => session.prompt(prompt, { responseConstraint: JCa.schemaFor(groups[i]) }),
+        () => session.prompt(prompt + '\n\nReply with only the JSON object {"answers": {"<id>": "<answer>"}}.'),
+        async () => {
+          session.destroy();
+          session = await LanguageModel.create({ monitor });
+          return session.prompt(JCa.buildCompactPrompt({ questions: groups[i], job: job && job.job ? { title: job.job.title, company: job.job.company } : null, profile, resumeText: '' }) + '\n\nReply with only the JSON object {"answers": {"<id>": "<answer>"}}.');
+        },
+      ];
+      for (let t = 0; t < tries.length && reply === null; t++) {
+        try {
+          reply = await tries[t]();
+        } catch (e) {
+          problems.push(`questions ${i * 3 + 1}+, attempt ${t + 1}: ${e.message || e}`);
+        }
+      }
+      if (reply === null) continue;
+      try {
+        const parsed = JCa.parseReply(reply, groups[i]);
+        // Without the schema a choice answer may not be an option: keep only real options.
+        for (const q of groups[i]) {
+          const v = parsed.overrides[q.id];
+          if (v && q.options && q.options.length && !q.options.includes(v)) delete parsed.overrides[q.id];
+        }
+        Object.assign(overrides, parsed.overrides);
+        askMe.push(...parsed.askMe);
+      } catch (e) {
+        problems.push(`questions ${i * 3 + 1}+: reply was not JSON`);
+      }
     }
-    const r = Object.keys(overrides).length ? await send('autofill', { overrides }) : { filledCount: 0 };
-    status(`On-device AI drafted ${Object.keys(overrides).length} answer(s) (filled ${r.filledCount || 0}). Please read them before submitting: a small model can be wrong.${askMe.length ? ` Needs your own answer: ${askMe.join('; ')}.` : ''}`);
+    const n = Object.keys(overrides).length;
+    const r = n ? await send('autofill', { overrides }) : { filledCount: 0 };
+    status(
+      n
+        ? `On-device AI drafted ${n} answer(s) (filled ${r.filledCount || 0}). Please read them before submitting: a small model can be wrong.${askMe.length ? ` Needs your own answer: ${askMe.join('; ')}.` : ''}${problems.length ? ` (Some questions failed: ${problems.slice(0, 2).join(' | ')})` : ''}`
+        : `On-device AI couldn't answer (${problems.slice(0, 3).join(' | ') || 'no usable answers'}). Use "Copy prompt" with Claude or ChatGPT instead.`
+    );
   } catch (e) {
-    status('On-device AI failed: ' + (e.message || e) + '. Use "Copy prompt" with Claude or ChatGPT instead.');
+    status('On-device AI failed to start: ' + (e.message || e) + '. Use "Copy prompt" with Claude or ChatGPT instead.');
   } finally {
     if (session) session.destroy();
     $('btn-ask-local').disabled = false;

@@ -14,8 +14,11 @@ forms.
 6. Review → screenshot → confirm → submit → check for a confirmation.
 
 ## Site notes
-- **iCIMS:** the form is inside the iframe `#icims_content_iframe`. There's an email-first login, then a resume-parse
-  step, then the form. Always review the parsed values.
+- **iCIMS:** the form is inside the iframe `#icims_content_iframe`. The flow is an email-first login (the user's step,
+  sometimes with hCaptcha), then a resume upload or parse step, then multi-page forms. Job Copilot autofills each new step
+  by itself when the tab came from a job board. It picks custom dropdowns such as "How did you hear about us?" by
+  clicking, sets a phone "Type" to Mobile, and leaves "Previous <company> Employee ID" empty. Always review the parsed
+  values.
 - **SmartRecruiters:** a single page with a "Confirm your email" step. Its "Autofill with LinkedIn" button needs the user.
 - **Workable:** a single page. The resume parses into the fields. Questions are under "Details".
 - **Taleo / SuccessFactors:** long multi-page forms that time out quickly. Save often ("Save as Draft").

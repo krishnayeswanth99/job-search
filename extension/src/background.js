@@ -219,9 +219,11 @@ async function markApplied(tabId, msg, senderUrl) {
 
 // Autofill an employer form opened from a job board, once it has loaded (setting autoFillOpened).
 const autofillDone = new Set();
-function scheduleAutofill(tabId, openerTabId) {
-  if (autofillDone.has(tabId)) return;
-  autofillDone.add(tabId);
+const autofillPending = new Map(); // tabId -> timer (debounce: several load events per step)
+function scheduleAutofill(tabId, openerTabId, pageKey) {
+  clearTimeout(autofillPending.get(tabId));
+  // Once per distinct form (multi-step forms: iCIMS, Workday, Taleo… get each step), identified by
+  // the form's question labels, since some systems keep the same URL path across steps.
   const attempt = async (n) => {
     const { settings } = await chrome.storage.local.get('settings');
     if (settings && settings.autoFillOpened === false) return;
@@ -233,19 +235,40 @@ function scheduleAutofill(tabId, openerTabId) {
     }
     if (tab.status !== 'complete' && n < 10) return setTimeout(() => attempt(n + 1), 1000);
     const d = await runCommand(tabId, 'detect', {}, 'popup').catch(() => null);
+    if (d && d.login && d.login.required) return; // sign-in / create-account steps are the user's
     if (!d || !d.application) {
       if (n < 6) setTimeout(() => attempt(n + 1), 1500); // forms rendered by JavaScript
       return;
     }
+    const scan = await runCommand(tabId, 'scanForm', {}, 'popup').catch(() => null);
+    const sig = tabId + '|' + ((scan && scan.fields) || []).map((f) => f.label).slice(0, 12).join('|');
+    if (autofillDone.has(sig)) return;
+    autofillDone.add(sig);
     const r = await runCommand(tabId, 'autofill', {}, 'popup').catch((e) => ({ ok: false, error: String(e) }));
+    debugAdd(tabId, { type: 'extension-step', detail: { step: 'auto-filled application page', page: pageKey || tab.url, filled: r && r.filledCount, needsInput: r && r.needsInput && r.needsInput.length, error: r && r.error } });
     if (openerTabId) recAdd(openerTabId, { type: 'extension-step', detail: { step: 'autofilled employer form', tabId, filled: r && r.filledCount, needsInput: r && r.needsInput && r.needsInput.length, error: r && r.error } });
     if (r && r.ok) {
       await chrome.action.setBadgeText({ tabId, text: 'FILL' }).catch(() => {});
       await chrome.action.setBadgeBackgroundColor({ tabId, color: '#16a34a' }).catch(() => {});
     }
   };
-  setTimeout(() => attempt(0), 1500);
+  autofillPending.set(tabId, setTimeout(() => attempt(0), 1500));
 }
+
+// Application tabs (opened from a job board): autofill each new page or step as it loads.
+chrome.tabs.onUpdated.addListener(async (tabId, info, tab) => {
+  if (info.status !== 'complete' && !info.url) return;
+  const applying = await getApplying(tabId);
+  if (!applying) return;
+  let page = '';
+  try {
+    const u = new URL(tab.url || info.url || '');
+    page = u.origin + u.pathname; // query strings change on every step reload; the path marks the step
+  } catch (_) {
+    return;
+  }
+  scheduleAutofill(tabId, applying.openerTabId || null, page);
+});
 
 // Tabs whose job link is already known (opened by Job Copilot itself, or credited once): later
 // redirects in those tabs (login pages, error pages, ATS hops) must not overwrite the saved link.

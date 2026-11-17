@@ -39,6 +39,9 @@ the page (click Apply, let the pop-up appear…), reopen the popup, click **Stop
 lists clicks (element text, link, trimmed HTML), `window.open` calls, tabs opened and closed, pop-ups with their links
 and buttons, and URL changes. It never includes typed values, and emails and phone numbers are blanked.
 
+Debug logs also list "learned a field label from another autofill" entries (label and profile key only). Turn the
+recurring ones into rules in `src/shared/field-rules.js` with a unit test, so everyone gets them.
+
 Good requests name the portal or ATS and paste a snippet of the page's HTML (or the output of
 `jobCopilot.scanForm()`). For example: "Indeed changed its job cards. Here's the outer HTML of one card; update the
 extractor and the fixture."

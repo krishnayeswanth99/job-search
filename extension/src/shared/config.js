@@ -7,7 +7,7 @@
 (function (root) {
   const JC = (root.JC = root.JC || {});
 
-  JC.VERSION = '0.18.0';
+  JC.VERSION = '0.19.0';
   JC.BRIDGE_CHANNEL = 'job-copilot';
 
   /**
@@ -60,6 +60,7 @@
     answerAppliedPrompt: true, // after a confirmed submission, answer the job board's "Did you apply?" with Yes
     autoContinue: true, // you click Apply on a job board: take its "Apply Without Customizing" and open the employer form
     autoFillOpened: true, // autofill the employer form when it opens from a job board (never submits)
+    learnFromOtherAutofill: true, // learn field labels from what other autofills fill in (label -> profile field only)
     profileWins: true, // profile is the source of truth: upload resume first, let the site parse, then correct it
   };
 

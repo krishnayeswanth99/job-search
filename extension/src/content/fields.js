@@ -161,6 +161,15 @@
         tag: f.tag,
         optionsText: (f.options || []).slice(0, 12).map((o) => o.text).join(' | '),
       });
+      // A label learned from another autofill (e.g. "Contact No." -> phone) when no rule knows it.
+      if (!c && JC.learn) {
+        const lk = JC.learn.keyForLabel(f.label);
+        if (lk) {
+          f.key = lk;
+          f.learned = true;
+          profileHints.push(lk);
+        }
+      }
       if (c) {
         f.key = c.key;
         if (c.period) f.period = c.period;

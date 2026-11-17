@@ -125,7 +125,8 @@
           if (!profile) return { ok: false, frame: location.href, error: 'No profile saved in Job Copilot. Open the options page and import profile.json.' };
           const files = { resume: payload.files?.resume || resume, coverLetter: payload.files?.coverLetter || coverLetter };
           const st = await settings();
-          const r = await JC.autofill.autofill({ profile, files, overrides: payload.overrides, overwrite: !!payload.overwrite, profileWins: st.profileWins !== false });
+          const run = () => JC.autofill.autofill({ profile, files, overrides: payload.overrides, overwrite: !!payload.overwrite, profileWins: st.profileWins !== false });
+          const r = await (JC.learn ? JC.learn.ours(run) : run());
           return Object.assign({ ok: true }, r);
         }
         case 'nextStep': {
@@ -151,7 +152,7 @@
           return { ok: false, frame: location.href, reason: 'No Next or Submit button found in this frame.' };
         }
         case 'fillField':
-          return Object.assign({ frame: location.href }, JC.autofill.fillOne(payload));
+          return Object.assign({ frame: location.href }, JC.learn ? await JC.learn.ours(() => JC.autofill.fillOne(payload)) : JC.autofill.fillOne(payload));
         case 'attachFile': {
           const fields = JC.fields.scan().filter((f) => f.type === 'file');
           const kind = payload.kind || 'resume';

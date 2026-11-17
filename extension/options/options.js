@@ -196,7 +196,7 @@ $('clear-jobs').addEventListener('click', async () => {
 async function renderSettings() {
   const { settings } = await chrome.storage.local.get('settings');
   const s = Object.assign({}, JC.DEFAULT_SETTINGS, settings || {});
-  for (const k of ['bridgeEnabled', 'bridgeAutofill', 'showBadge', 'rememberAnswers', 'answerAppliedPrompt', 'autoContinue', 'autoFillOpened', 'profileWins']) {
+  for (const k of ['bridgeEnabled', 'bridgeAutofill', 'showBadge', 'rememberAnswers', 'answerAppliedPrompt', 'autoContinue', 'autoFillOpened', 'profileWins', 'learnFromOtherAutofill']) {
     $(k).checked = !!s[k];
     $(k).onchange = async () => {
       s[k] = $(k).checked;
@@ -211,6 +211,7 @@ async function renderSettings() {
     await chrome.storage.local.set({ settings: s });
     flash(s.realClicks ? 'Real clicks on' : 'Real clicks off');
   };
+  renderLearned();
   $('trustedDomains').value = (s.trustedDomains || []).join('\n');
   $('trustedDomains').oninput = () => {
     clearTimeout(renderSettings.t);
@@ -254,3 +255,20 @@ window.JCOptions = {
   renderSettings();
   readyResolve();
 })();
+
+// Labels learned from other autofills ("Contact No." -> phone), removable one by one.
+async function renderLearned() {
+  const { learnedLabels } = await chrome.storage.local.get('learnedLabels');
+  const box = $('learned-list');
+  const entries = Object.entries(learnedLabels || {});
+  box.replaceChildren(entries.length ? el('div', {}, 'Learned labels:') : el('div', {}, 'No labels learned yet.'));
+  for (const [k, v] of entries) {
+    const rm = el('button', { class: 'small', onclick: async () => {
+      const cur = (await chrome.storage.local.get('learnedLabels')).learnedLabels || {};
+      delete cur[k];
+      await chrome.storage.local.set({ learnedLabels: cur });
+      renderLearned();
+    } }, 'Remove');
+    box.append(el('div', { class: 'learned-row' }, `"${v.display || k}" → ${v.key}${v.host ? ` (seen on ${v.host})` : ''} `, rm));
+  }
+}

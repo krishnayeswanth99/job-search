@@ -29,6 +29,8 @@ const ROUTES = {
   'https://job-boards.greenhouse.io/acme/jobs/124': fx('greenhouse-job.html'),
   'https://job-boards.greenhouse.io/initech/jobs/5': fx('greenhouse-job.html'),
   'https://jobs.lever.co/parsetest/22222222-3333-4444-5555-666666666666/apply': fx('lever-parse.html'),
+  'https://jobs.lever.co/learntest/apply-1': fx('learn-form.html'),
+  'https://jobs.lever.co/learntest/apply-2': fx('learn-form.html'),
   'https://careers-acme.icims.com/jobs/1234/data-scientist/candidate': fx('icims-like.html'),
   'https://www.linkedin.com/jobs/view/4000000009/': fx('linkedin-external.html'),
   'https://job-boards.greenhouse.io/acme/jobs/123?gh_src=linkedin': fx('greenhouse-job.html'),
@@ -215,6 +217,29 @@ try {
     await p.evaluate(() => { ln.value = 'Changed by site'; });
     await p.waitForTimeout(1500);
     assert.equal(await p.evaluate(() => ln.value), 'Changed by site');
+  });
+
+  await check('learn from another autofill: label -> profile field learned (no values), sensitive labels never, reused next time', async () => {
+    const before = await ext.evaluate(async () => Object.keys((await chrome.storage.local.get('learnedLabels')).learnedLabels || {}).length);
+    const p = await open('https://jobs.lever.co/learntest/apply-1');
+    // Another extension fills two fields (script events, not the user's typing).
+    await p.evaluate(() => {
+      const fill = (id, v) => { const el = document.getElementById(id); el.value = v; el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); };
+      fill('cn', '+1 555 0100');
+      fill('dob', '1815-12-10');
+    });
+    await p.waitForTimeout(600);
+    const learned = await ext.evaluate(async () => (await chrome.storage.local.get('learnedLabels')).learnedLabels || {});
+    assert.equal(learned['contact no'] && learned['contact no'].key, 'phone', JSON.stringify(learned));
+    assert.ok(!Object.keys(learned).some((k) => /birth/.test(k)), 'date of birth never learned');
+    assert.ok(!JSON.stringify(learned).includes('555'), 'values are never stored');
+    // Next form: Job Copilot fills "Contact No." itself, and its own filling teaches nothing new.
+    const q = await open('https://jobs.lever.co/learntest/apply-2');
+    await bridge(q, () => window.jobCopilot.autofill({}));
+    assert.equal(await q.evaluate(() => cn.value), '+1 555 0100');
+    assert.equal(await q.evaluate(() => dob.value), '');
+    const after = await ext.evaluate(async () => Object.keys((await chrome.storage.local.get('learnedLabels')).learnedLabels || {}).length);
+    assert.equal(after, before + 1);
   });
 
   await check('bridge: fillField answers a custom question', async () => {

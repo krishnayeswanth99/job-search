@@ -41,6 +41,7 @@ async function recGet(tabId) {
 // confirmations, errors), so a problem can be reported without having started a recording.
 const DEBUG_MAX = 300;
 let debugQueue = Promise.resolve();
+let learnQueue = Promise.resolve();
 const DEBUG_TYPES = new Set(['extension-step', 'apply-link-saved', 'application-confirmed', 'tab-closed', 'autofill', 'error']);
 function debugAdd(tabId, ev) {
   if (!DEBUG_TYPES.has(ev.type)) return;
@@ -612,6 +613,23 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       if (msg.job && msg.job.key) await setApplying(t.id, Object.assign({}, msg.job, { openerTabId: sender.tab.id, applyUrl: msg.url }));
       if (msg.autofill) scheduleAutofill(t.id, sender.tab.id);
       return { ok: true, tabId: t.id };
+    }
+    if (msg.type === 'jc:learn-label' && sender.tab && !fromExt) {
+      // Label learned from another autofill: label text and profile key only, never the value.
+      const label = String(msg.label || '').slice(0, 120);
+      const key = String(msg.key || '');
+      const allowed = ['firstName', 'lastName', 'preferredName', 'email', 'phone', 'address1', 'address2', 'city', 'state', 'postalCode', 'country', 'linkedin', 'github', 'portfolio', 'website', 'twitter', 'currentTitle', 'currentCompany', 'school', 'degree', 'fieldOfStudy'];
+      if (!label || !allowed.includes(key)) return { ok: false };
+      learnQueue = learnQueue.then(async () => {
+        const { learnedLabels } = await chrome.storage.local.get('learnedLabels');
+        const all = learnedLabels || {};
+        const prev = all[label];
+        all[label] = { key, display: String(msg.display || label).slice(0, 120), host: String(msg.host || '').slice(0, 120), count: prev && prev.key === key ? (prev.count || 1) + 1 : 1, at: new Date().toISOString(), replaces: msg.replaces || undefined };
+        await chrome.storage.local.set({ learnedLabels: all });
+      });
+      await learnQueue;
+      debugAdd(sender.tab.id, { type: 'extension-step', detail: { step: 'learned a field label from another autofill', label: String(msg.display || label).slice(0, 120), key, host: msg.host } });
+      return { ok: true };
     }
     if (msg.type === 'jc:debug' && sender.tab && !fromExt) {
       debugAdd(sender.tab.id, Object.assign({}, msg.event));

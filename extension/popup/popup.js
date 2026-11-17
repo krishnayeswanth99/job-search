@@ -180,14 +180,27 @@ $('btn-more').addEventListener('click', async () => {
 
 $('btn-links').addEventListener('click', async () => {
   $('btn-links').disabled = true;
-  $('btn-links').textContent = 'Opening jobs… (about 2 s each)';
-  // Jobright and similar only reveal the employer link after clicking Apply, so click through there.
-  const r = await send('resolveApplyLinks', isAggregator() ? { limit: 10, viaApply: true } : { limit: 15 });
+  const agg = isAggregator();
+  $('btn-links').textContent = agg ? 'Going through jobs… (progress on the icon)' : 'Opening jobs… (about 2 s each)';
+  $('btn-stop').hidden = !agg;
+  if (agg) $('result-title').textContent = 'Clicking Apply on each job and saving the employer links. Links are saved as they are found, so you can close this popup.';
+  // Jobright and similar only reveal the employer link after clicking Apply: go through every job.
+  const r = await send('resolveApplyLinks', agg ? { limit: 50, viaApply: true } : { limit: 15 });
   $('btn-links').disabled = false;
   $('btn-links').textContent = 'Find apply links';
+  $('btn-stop').hidden = true;
   if (!r || r.ok === false) return showResult('Could not find apply links', el('p', {}, (r && r.error) || ''), r);
-  const head = r.blocked ? `${r.resolved} found, then the site showed a security check. Open a job by hand to continue.` : `Found ${r.resolved} apply link${r.resolved === 1 ? '' : 's'}${r.failed ? `, ${r.failed} not found` : ''}${r.remaining ? ` · ${r.remaining} more: click again` : ''}`;
-  showResult(head, el('div', {}, r.jobs.map(jobRow)), r, r.jobs);
+  const head = r.blocked
+    ? `${r.resolved} found, then the site showed a security check. Open a job by hand to continue.`
+    : `Found ${r.resolved} apply link${r.resolved === 1 ? '' : 's'}${r.failed ? `, ${r.failed} not found` : ''}${r.stopped ? ' (stopped)' : ''}${r.remaining ? ` · ${r.remaining} left: click again` : ''}`;
+  const body = el('div', {}, r.jobs.map(jobRow));
+  if (r.failed && r.log) body.prepend(el('details', {}, el('summary', {}, 'What happened (for troubleshooting)'), el('pre', {}, JSON.stringify(r.log.filter((x) => x.result === 'not found').slice(0, 5), null, 1))));
+  showResult(head, body, r, r.jobs);
+});
+
+$('btn-stop').addEventListener('click', async () => {
+  await send('stopResolve');
+  $('btn-stop').textContent = 'Stopping…';
 });
 
 $('btn-save-all').addEventListener('click', async () => {

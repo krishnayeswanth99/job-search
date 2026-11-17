@@ -45,8 +45,16 @@ this:
 - It then opens the address itself, in the same tab, or next to Jobright with `followApply({ newTab: true })`.
 - Answer "Did you apply?" only after a confirmed submission. Otherwise close it or answer "No".
 
-On the feed, `resolveApplyLinks({ viaApply: true })` does the same per card without leaving the page. It closes
-Jobright's pop-ups without answering them, about one job every 2 s, 10 per run.
+On the feed, `resolveApplyLinks({ viaApply: true, limit: 50 })` does the same for every card, one after another,
+scrolling for more as it goes.
+- It closes Jobright's pop-ups without answering them.
+- Each link is saved permanently, so a reload still shows it.
+- The result's `log` lists every step for each job, so you can see where a job failed.
+- `stopResolve()` stops a run.
+- When the user applies by hand, the link of the tab Jobright opens is saved for the card they clicked (`applyVia:
+  'your-click'`).
+- If every job fails with "nothing happened", the site is ignoring script clicks. Ask the user to turn on **Use real
+  mouse clicks on job boards** in the Job Copilot options.
 
 ## Pre-apply pop-ups (upsells)
 

@@ -99,9 +99,140 @@
     return hit || { none: true };
   }
 
+  // ------------------------------------------------ saved apply links (persist across reloads)
+  // { [jobKey]: { applyUrl, applyHost, via, at, title, company } }, written by the service worker.
+  const known = {};
+  const jobKey = (j) => j.url || (j.jobId ? location.hostname + ':' + j.jobId : '');
+  try {
+    chrome.storage.local.get('applyLinks').then((v) => Object.assign(known, v.applyLinks || {}));
+    chrome.storage.onChanged.addListener((ch, area) => {
+      if (area === 'local' && ch.applyLinks) Object.assign(known, ch.applyLinks.newValue || {});
+    });
+  } catch (_) {
+    /* not in an extension context (unit tests) */
+  }
+
+  /** Copy saved links onto listed jobs (called by JC.extract.listings). */
+  function merge(j) {
+    const k = jobKey(j);
+    const hit = k && known[k];
+    if (hit && !j.applyUrl) Object.assign(j, { applyUrl: hit.applyUrl, applyHost: hit.applyHost, applyVia: hit.via });
+    return j;
+  }
+
+  function save(j, url, via) {
+    const key = jobKey(j);
+    const data = { applyUrl: url, applyHost: hostOf(url), via, at: new Date().toISOString(), title: j.title || '', company: j.company || '' };
+    if (key) known[key] = data;
+    Object.assign(j, { applyUrl: url, applyHost: data.applyHost, applyVia: via });
+    if (key) chrome.runtime.sendMessage({ type: 'jc:apply-link-save', key, data }).catch(() => {});
+  }
+
+  // Links caught from the user's own clicks (the service worker sees the tab Jobright opens).
+  try {
+    chrome.runtime.onMessage.addListener((msg) => {
+      if (msg && msg.type === 'jc:apply-link-seen' && msg.key && msg.data) {
+        known[msg.key] = msg.data;
+        for (const j of JC.extract.listings()) if (jobKey(j) === msg.key) Object.assign(j, { applyUrl: msg.data.applyUrl, applyHost: msg.data.applyHost, applyVia: msg.data.via });
+      }
+    });
+  } catch (_) {
+    /* ignore */
+  }
+
+  // Remember which job card the user clicked last, so a tab Jobright opens a moment later
+  // (after "Apply Without Customizing") can be credited to that job.
+  if (typeof document !== 'undefined') document.addEventListener(
+    'click',
+    (e) => {
+      const portal = JC.portalForHost(location.hostname);
+      if (!portal || !portal.aggregator || window !== window.top) return;
+      const card = e.target && e.target.closest && e.target.closest('div[id]');
+      let c = card;
+      while (c && !/^[0-9a-f]{24}$/i.test(c.id)) c = c.parentElement && c.parentElement.closest('div[id]');
+      if (!c) return;
+      const j = JC.extract.listings().find((x) => x.jobId === c.id);
+      if (j) chrome.runtime.sendMessage({ type: 'jc:last-job', key: jobKey(j), title: j.title, company: j.company }).catch(() => {});
+    },
+    true
+  );
+
+  // ------------------------------------------------------------- resolving
+  let stopRequested = false;
+  function stop() {
+    stopRequested = true;
+    return { ok: true };
+  }
+  const progress = (text) => chrome.runtime.sendMessage({ type: 'jc:progress', text }).catch(() => {});
+
+  /** Cards currently in the page, in order, each with its job record. */
+  function cardsOnPage() {
+    const jobs = JC.extract.listings();
+    return jobs.filter((j) => j.selector && document.querySelector(j.selector));
+  }
+
+  /**
+   * Click-through mode (Jobright & co.): for each card, click its Apply, take the pop-up's skip
+   * option, catch the employer address, close the site's pop-ups unanswered. Scrolls for more
+   * cards as it goes. Every step is logged in `log`.
+   */
+  async function resolveByClicking(opts) {
+    const limit = Math.min(opts.limit || 50, 100);
+    const delayMs = Math.max(opts.delayMs === undefined ? 1200 : opts.delayMs, 0);
+    stopRequested = false;
+    const log = [];
+    const done = new Set();
+    let resolved = 0;
+    let failed = 0;
+    let emptyScrolls = 0;
+    while (done.size < limit && !stopRequested) {
+      const next = cardsOnPage().find((j) => !done.has(jobKey(j)) && !j.applyUrl);
+      if (!next) {
+        // Everything visible is done: scroll for more cards.
+        const r = await JC.extract.loadMore({ rounds: 1 });
+        if (!r.added && ++emptyScrolls >= 2) break;
+        if (r.added) emptyScrolls = 0;
+        continue;
+      }
+      done.add(jobKey(next));
+      const card = document.querySelector(next.selector);
+      card.scrollIntoView({ block: 'center' });
+      await sleep(300);
+      const trace = [];
+      progress(`${done.size}/${limit}`);
+      let f;
+      try {
+        f = await JC.nav.followApply({ scope: next.selector, navigate: false, trace });
+      } catch (e) {
+        f = { ok: false, reason: String(e.message || e) };
+      }
+      await sleep(500);
+      JC.nav.closeDialogs();
+      await sleep(400);
+      JC.nav.closeDialogs();
+      if (f && f.ok && f.to) {
+        save(next, f.to, 'apply-button');
+        resolved++;
+      } else {
+        next.applyError = (f && f.reason) || 'Apply did not reveal an employer link';
+        failed++;
+      }
+      log.push({ job: `${next.title} @ ${next.company}`, key: jobKey(next), result: next.applyUrl || 'not found', steps: trace });
+      if (JC.recorder && JC.recorder.note) JC.recorder.note({ job: next.title, applyUrl: next.applyUrl || null, steps: trace });
+      if (delayMs) await sleep(delayMs);
+    }
+    progress('');
+    const jobs = JC.extract.listings();
+    return { resolved, failed, stopped: stopRequested, remaining: jobs.filter((j) => !j.applyUrl && !done.has(jobKey(j))).length, jobs, log };
+  }
+
   async function resolve(opts) {
-    const limit = Math.min((opts && opts.limit) || (opts && opts.viaApply ? 10 : 15), 40);
-    const delayMs = Math.max((opts && opts.delayMs) || 1500, 0);
+    opts = opts || {};
+    // Aggregators like Jobright only reveal the employer link through their Apply flow, and fetching
+    // their job pages may hit a security check, so go straight to clicking through.
+    if (opts.viaApply) return resolveByClicking(opts);
+    const limit = Math.min(opts.limit || 15, 40);
+    const delayMs = Math.max(opts.delayMs === undefined ? 1500 : opts.delayMs, 0);
     const jobs = JC.extract.listings();
     const self = location.hostname.replace(/^www\./, '');
     let resolved = 0;
@@ -119,17 +250,6 @@
         else if (j.url && ATS.test(j.url)) r = { url: j.url, via: 'listing' };
         // Clicking is the last resort, only for cards with no job link at all (a click may load another page).
         if (!r && j.selector) r = await fromCardClick(j.selector);
-        // opts.viaApply: click the card's own Apply button and catch where it sends you (Jobright:
-        // the employer link only exists once you click Apply then "Apply Without Customizing").
-        // The site's pop-ups are closed without answering them.
-        if ((!r || r.none) && opts && opts.viaApply && j.selector && JC.nav) {
-          const f = await JC.nav.followApply({ scope: j.selector, navigate: false });
-          await sleep(500);
-          JC.nav.closeDialogs();
-          await sleep(400);
-          JC.nav.closeDialogs();
-          r = f && f.ok && f.to ? { url: f.to, via: 'apply-button' } : { error: (f && f.reason) || 'Apply did not reveal an employer link' };
-        }
       } catch (e) {
         r = { error: String(e.message || e) };
       }
@@ -139,9 +259,7 @@
         break;
       }
       if (r && r.url) {
-        j.applyUrl = r.url;
-        j.applyHost = hostOf(r.url);
-        j.applyVia = r.via;
+        save(j, r.url, r.via);
         resolved++;
       } else {
         j.applyError = (r && r.error) || 'no employer link found on the job page';
@@ -154,10 +272,10 @@
       failed,
       blocked,
       remaining: jobs.filter((j) => !j.applyUrl && !j.applyTried).length,
-      note: blocked ? 'The site answered with a security check. Stop here and ask the user to open one job by hand (do not try to get around it).' : undefined,
+      note: blocked ? 'The site answered with a security check. Try resolveApplyLinks({ viaApply: true }) (clicks through Apply instead), or ask the user to open one job by hand. Never try to get around the check.' : undefined,
       jobs,
     };
   }
 
-  JC.applyLinks = { findIn, resolve, ATS };
+  JC.applyLinks = { findIn, resolve, stop, merge, save, jobKey, ATS };
 })(typeof globalThis !== 'undefined' ? globalThis : self);

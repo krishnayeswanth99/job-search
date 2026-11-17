@@ -169,5 +169,10 @@
     /* ignore */
   }
 
-  JC.recorder = { start, stop, describe };
+  /** Extension's own steps (followApply / resolveApplyLinks) while recording. */
+  function note(detail) {
+    if (on) send({ type: 'extension-step', detail });
+  }
+
+  JC.recorder = { start, stop, describe, note };
 })(typeof globalThis !== 'undefined' ? globalThis : self);

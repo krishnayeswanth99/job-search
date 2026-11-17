@@ -11,7 +11,8 @@ Aggregators are good for **discovering** jobs. The application almost always hap
    - Run `loadMoreJobs({ rounds: 8 })` to scroll the feed and collect more. Jobs that scroll off the page are kept.
    - If nothing is found, fall back to `read_page` with `filter: "interactive"`. Send a card's HTML so the extractor
      can be fixed.
-2. **Find the real application links in bulk:** run `resolveApplyLinks({ viaApply: true, limit: 10 })` on the feed. On
+2. **Find the real application links in bulk:** run `resolveApplyLinks({ viaApply: true, limit: 50 })` on the feed. It goes
+   through every card and scrolls for more. Links are saved permanently, and the result includes a per-job `log`. On
    Jobright the employer link only appears after clicking Apply and then "Apply Without Customizing", so this clicks
    through each card. It catches the address, and closes Jobright's pop-ups without answering them. Each job gets
    `applyUrl` (the employer's Greenhouse, Lever, Workday or careers page) when Jobright's job page reveals it. Run it

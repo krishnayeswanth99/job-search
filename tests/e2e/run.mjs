@@ -34,6 +34,8 @@ const ROUTES = {
   'https://jobright.ai/jobs/info/def456': fx('jobright-modal.html'),
   'https://jobright.ai/jobs/recommend': fx('jobright-feed.html'),
   'https://jobright.ai/jobs/recommend?v=2': fx('jobright-feed.html'),
+  'https://jobright.ai/jobs/recommend?v=3': fx('jobright-feed.html'),
+  'https://jobright.ai/jobs/recommend?v=4': fx('jobright-feed.html'),
   'https://jobright.ai/jobs/info/real01': fx('jobright-real-job.html'),
   'https://jobright.ai/jobs/info/real01?nt=1': fx('jobright-real-job.html'),
   'https://jobright.ai/jobs/info/fab001': fx('jobright-flash.html'),
@@ -587,19 +589,45 @@ try {
     assert.equal(await p.evaluate(() => typeof window.open === 'function' && !String(window.open).includes('fakeWindow')), true, 'window.open restored');
   });
 
-  await check('Jobright feed: resolveApplyLinks({ viaApply }) clicks Apply per card, closes pop-ups unanswered', async () => {
+  await check('Jobright feed: resolveApplyLinks({ viaApply }) goes through every card one after another, scrolling for more', async () => {
     const p = await open('https://jobright.ai/jobs/recommend?v=2');
     const jobs = await bridge(p, () => window.jobCopilot.extractJobs());
     assert.equal(jobs.jobs[0].jobId, '0000a1b2c3d4e5f6a7b8c9d0');
-    const r = await bridge(p, () => window.jobCopilot.resolveApplyLinks({ limit: 3, delayMs: 0, viaApply: true }));
-    assert.equal(r.resolved, 3, JSON.stringify(r.jobs.slice(0, 3).map((j) => [j.applyUrl, j.applyError])));
-    assert.equal(r.jobs[0].applyVia, 'page-data');
-    assert.equal(r.jobs[2].applyVia, 'apply-button');
-    assert.equal(r.jobs[2].applyUrl, 'https://job-boards.greenhouse.io/embed/job_app?for=kodiak&token=4511215002&jr_id=0002a1b2c3d4e5f6a7b8c9d0');
+    assert.equal(jobs.count, 8, 'only 8 cards loaded at first');
+    const r = await bridge(p, () => window.jobCopilot.resolveApplyLinks({ viaApply: true, limit: 12, delayMs: 0 }));
+    assert.equal(r.resolved, 12, JSON.stringify(r.log && r.log.filter((x) => x.result === 'not found').slice(0, 2)));
+    // Jobs resolved by an earlier test are already saved and skipped; everything this run touched was resolved.
+    assert.equal(r.log.length, 12);
+    assert.ok(r.log.every((x) => x.result !== 'not found'));
+    assert.equal(r.jobs.find((j) => j.jobId === '0007a1b2c3d4e5f6a7b8c9d0').applyVia, 'apply-button');
+    const j11 = r.jobs.find((j) => j.jobId === '000ba1b2c3d4e5f6a7b8c9d0');
+    assert.equal(j11.applyUrl, 'https://job-boards.greenhouse.io/embed/job_app?for=kodiak&token=4511215011&jr_id=000ba1b2c3d4e5f6a7b8c9d0', 'reached a card that needed scrolling');
+    assert.ok(r.log[0].steps.some((x) => /caught employer address/.test(x.step)), JSON.stringify(r.log[0].steps));
     await p.waitForTimeout(800);
     assert.equal(await p.evaluate(() => document.querySelectorAll('.ant-modal-root').length), 0, 'pop-ups closed');
     assert.equal(await p.evaluate(() => window.__answered), null, '"Did you apply?" left unanswered');
     assert.equal(await p.evaluate(() => !!window.__fixResume), false);
+    // Saved permanently: a fresh load of the feed shows the links again.
+    const saved = await ext.evaluate(async () => (await chrome.storage.local.get('applyLinks')).applyLinks);
+    assert.equal(saved['https://jobright.ai/jobs/info/0007a1b2c3d4e5f6a7b8c9d0'].applyHost, 'job-boards.greenhouse.io');
+    const again = await open('https://jobright.ai/jobs/recommend?v=4');
+    await again.waitForTimeout(300);
+    const j7 = (await bridge(again, () => window.jobCopilot.extractJobs())).jobs.find((j) => j.jobId === '0007a1b2c3d4e5f6a7b8c9d0');
+    assert.match(j7.applyUrl, /token=4511215007/);
+  });
+
+  await check('Jobright by hand: the link a tab opens after your own clicks is saved for that job', async () => {
+    const p = await open('https://jobright.ai/jobs/recommend?v=3');
+    const card = '[id="0003a1b2c3d4e5f6a7b8c9d0"] button';
+    await p.click(card); // your click on Apply with Autofill
+    await p.waitForSelector('.index_cancelButton__hvybW');
+    const [tab] = await Promise.all([context.waitForEvent('page'), p.click('.index_cancelButton__hvybW')]); // Apply Without Customizing
+    await tab.waitForLoadState('domcontentloaded');
+    await p.waitForTimeout(800);
+    const j = (await bridge(p, () => window.jobCopilot.extractJobs())).jobs.find((x) => x.jobId === '0003a1b2c3d4e5f6a7b8c9d0');
+    assert.equal(j.applyUrl, 'https://job-boards.greenhouse.io/embed/job_app?for=kodiak&token=4511215003&jr_id=0003a1b2c3d4e5f6a7b8c9d0');
+    assert.equal(j.applyVia, 'your-click');
+    await tab.close();
   });
 
   await check('recorder: logs clicks, window.open, flashed tab and the pop-up with its links', async () => {

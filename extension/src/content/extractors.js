@@ -584,7 +584,8 @@
         const prev = seen.map.get(k);
         seen.map.set(k, prev ? Object.assign(prev, Object.fromEntries(Object.entries(j).filter(([, v]) => v))) : j);
       }
-      return [...seen.map.values()].slice(0, 500);
+      const all = [...seen.map.values()].slice(0, 500);
+      return JC.applyLinks ? all.map((j) => JC.applyLinks.merge(j)) : all;
     },
     /** Scroll the results list (and click "Show more") to load more jobs, collecting as it goes. */
     async loadMore(opts) {

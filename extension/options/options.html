@@ -117,6 +117,9 @@
         <label class="check"><input type="checkbox" id="bridgeAutofill" /> Allow Claude to trigger autofill on trusted sites</label>
         <label class="check"><input type="checkbox" id="showBadge" /> Show job count badge on the toolbar icon</label>
         <label class="check"><input type="checkbox" id="rememberAnswers" /> Remember my answers to new application questions and reuse them</label>
+        <label class="check"><input type="checkbox" id="realClicks" /> Use real mouse clicks on job boards (for sites like Jobright that ignore automated clicks)</label>
+        <p class="muted small">Real clicks use Chrome's debugging interface. Chrome asks for permission once, and shows a
+          "Job Copilot started debugging this browser" bar while clicks are sent. Only used for Apply buttons and their pop-ups.</p>
         <label class="block">Extra trusted sites (one domain per line, e.g. <code>careers.example.com</code>)<textarea id="trustedDomains" rows="4"></textarea></label>
         <details>
           <summary>Built-in trusted sites</summary>

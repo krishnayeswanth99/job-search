@@ -7,7 +7,7 @@
  */
 importScripts('shared/config.js', 'shared/profile-schema.js', 'shared/field-rules.js');
 
-const FRAME_CMDS = new Set(['ping', 'detect', 'extractJobs', 'loadMoreJobs', 'resolveApplyLinks', 'extractJob', 'scanForm', 'autofill', 'fillField', 'attachFile', 'followApply']);
+const FRAME_CMDS = new Set(['ping', 'detect', 'extractJobs', 'loadMoreJobs', 'resolveApplyLinks', 'stopResolve', 'extractJob', 'scanForm', 'autofill', 'fillField', 'attachFile', 'followApply']);
 
 // ---------------------------------------------------- tabs opened by Apply buttons
 // Job boards often open the employer's site in a new tab. Remember child tabs per
@@ -72,8 +72,73 @@ chrome.tabs.onCreated.addListener((tab) => {
   list.push({ tabId: tab.id, url: tab.pendingUrl || tab.url || '', title: tab.title || '', openedAt: new Date().toISOString() });
   childTabs.set(tab.openerTabId, list.slice(-5));
 });
+// ---------------------------------------------------- saved apply links
+// Employer application links found for jobs on boards/aggregators: { [jobKey]: { applyUrl, ... } }.
+let linkQueue = Promise.resolve();
+function saveApplyLink(key, data) {
+  linkQueue = linkQueue.then(async () => {
+    const { applyLinks } = await chrome.storage.local.get('applyLinks');
+    const all = applyLinks || {};
+    all[key] = data;
+    const keys = Object.keys(all);
+    if (keys.length > 2000) for (const k of keys.slice(0, keys.length - 2000)) delete all[k];
+    await chrome.storage.local.set({ applyLinks: all });
+  });
+  return linkQueue;
+}
+
+// The job card the user clicked last, per tab: a tab the site opens shortly after (Jobright's
+// "Apply Without Customizing") is credited to that job.
+const lastJob = new Map(); // tabId -> { key, title, company, at }
+async function creditOpenedTab(openerId, url) {
+  const lj = lastJob.get(openerId);
+  if (!lj || Date.now() - lj.at > 90000) return;
+  let opener;
+  try {
+    opener = await chrome.tabs.get(openerId);
+  } catch (_) {
+    return;
+  }
+  const real = self.JC.unwrapUrl(url);
+  const host = (u) => {
+    try {
+      return new URL(u).hostname.replace(/^www\./, '');
+    } catch (_) {
+      return '';
+    }
+  };
+  if (!/^https?:/i.test(real) || host(real) === host(opener.url || '')) return;
+  const data = { applyUrl: real, applyHost: host(real), via: 'your-click', at: new Date().toISOString(), title: lj.title || '', company: lj.company || '' };
+  lastJob.delete(openerId);
+  await saveApplyLink(lj.key, data);
+  chrome.tabs.sendMessage(openerId, { type: 'jc:apply-link-seen', key: lj.key, data }).catch(() => {});
+  recAdd(openerId, { type: 'apply-link-saved', key: lj.key, url: real });
+}
+
+// ---------------------------------------------------- real clicks (optional)
+// With the user's opt-in (debugger permission), click like a real mouse via the DevTools protocol,
+// so sites that ignore script clicks respond. Chrome shows a "debugging this browser" bar meanwhile.
+const debugAttached = new Map(); // tabId -> detach timer
+async function realClick(tabId, x, y) {
+  if (!chrome.debugger) return { ok: false, error: 'Real clicks need the debugger permission (Job Copilot options).' };
+  const target = { tabId };
+  try {
+    if (!debugAttached.has(tabId)) await chrome.debugger.attach(target, '1.3');
+    clearTimeout(debugAttached.get(tabId));
+    debugAttached.set(tabId, setTimeout(() => chrome.debugger.detach(target).catch(() => {}), 30000));
+    await chrome.debugger.sendCommand(target, 'Input.dispatchMouseEvent', { type: 'mouseMoved', x, y });
+    await chrome.debugger.sendCommand(target, 'Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', clickCount: 1 });
+    await chrome.debugger.sendCommand(target, 'Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', clickCount: 1 });
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: String(e.message || e) };
+  }
+}
+if (chrome.debugger) chrome.debugger.onDetach.addListener((src) => debugAttached.delete(src.tabId));
+
 chrome.tabs.onUpdated.addListener((tabId, info, tab) => {
   if (info.url && tab.openerTabId !== undefined) recAdd(tab.openerTabId, { type: 'tab-url', tabId, url: info.url });
+  if (info.url && tab.openerTabId !== undefined && /^https?:/i.test(info.url)) creditOpenedTab(tab.openerTabId, info.url);
   if (!info.url && !info.title) return;
   for (const list of childTabs.values()) for (const c of list) if (c.tabId === tabId) Object.assign(c, { url: tab.url || c.url, title: tab.title || c.title });
 });
@@ -289,6 +354,24 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (msg.type === 'jc:status' && sender.tab && !fromExt) {
       if (sender.frameId === 0) await setBadge(sender.tab.id, msg.status);
       return { ok: true };
+    }
+    if (msg.type === 'jc:apply-link-save' && sender.tab && !fromExt) {
+      if (msg.key && msg.data && /^https?:/i.test(String(msg.data.applyUrl || ''))) await saveApplyLink(String(msg.key).slice(0, 500), msg.data);
+      return { ok: true };
+    }
+    if (msg.type === 'jc:last-job' && sender.tab && !fromExt) {
+      lastJob.set(sender.tab.id, { key: String(msg.key || '').slice(0, 500), title: msg.title, company: msg.company, at: Date.now() });
+      return { ok: true };
+    }
+    if (msg.type === 'jc:progress' && sender.tab && !fromExt) {
+      await chrome.action.setBadgeText({ tabId: sender.tab.id, text: String(msg.text || '').slice(0, 5) });
+      if (msg.text) await chrome.action.setBadgeBackgroundColor({ tabId: sender.tab.id, color: '#7c3aed' });
+      return { ok: true };
+    }
+    if (msg.type === 'jc:real-click' && sender.tab && !fromExt && sender.frameId === 0) {
+      const { settings } = await chrome.storage.local.get('settings');
+      if (!settings || !settings.realClicks) return { ok: false, error: 'Real clicks are turned off.' };
+      return realClick(sender.tab.id, Number(msg.x), Number(msg.y));
     }
     if (msg.type === 'jc:open-tab' && sender.tab && !fromExt) {
       // followApply({ newTab: true }): open the employer's application next to the job board tab.

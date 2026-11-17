@@ -198,30 +198,74 @@
    * skip option is clicked too), or a window.open() carrying the employer's address.
    * Returns { url } | { navigated } | { ok: false }.
    */
-  async function clickAndWait(selector, timeoutMs) {
+  /**
+   * Click an element. With the "real clicks" setting on (and Chrome's debugger permission granted),
+   * the service worker sends a real mouse click, which sites treat like the user's own; otherwise
+   * a normal script click.
+   */
+  async function click(el, trace) {
+    let real = false;
+    try {
+      const { settings } = await chrome.storage.local.get('settings');
+      if (settings && settings.realClicks && window === window.top) {
+        el.scrollIntoView({ block: 'center' });
+        await sleep(150);
+        const r = el.getBoundingClientRect();
+        const res = await chrome.runtime.sendMessage({ type: 'jc:real-click', x: r.left + r.width / 2, y: r.top + r.height / 2 });
+        real = !!(res && res.ok);
+        if (!real && trace) trace.push({ step: 'real click failed, using script click', error: res && res.error });
+      }
+    } catch (e) {
+      if (trace) trace.push({ step: 'real click failed, using script click', error: String(e.message || e) });
+    }
+    if (!real) el.click();
+    return real;
+  }
+
+  async function clickAndWait(selector, timeoutMs, trace) {
+    trace = trace || [];
+    const t0 = Date.now();
+    const note = (step, extra) => trace.push(Object.assign({ ms: Date.now() - t0, step }, extra || {}));
     const el = document.querySelector(selector);
-    if (!el) return { ok: false, reason: 'Apply button disappeared.' };
+    if (!el) {
+      note('apply button not found');
+      return { ok: false, reason: 'Apply button disappeared.' };
+    }
     const before = location.href;
     captured = null;
     captureOpen(true);
     await sleep(60);
     const clickedGates = new Set();
     try {
-      el.click();
+      const real = await click(el, trace);
+      note(`clicked "${label(el)}"`, { realClick: real });
       const end = Date.now() + (timeoutMs || 10000);
+      let sawGate = false;
       while (Date.now() < end) {
         await sleep(300);
-        if (captured) return { ok: true, url: captured, via: 'window-open' };
-        if (location.href !== before) return { ok: true, navigated: location.href };
+        if (captured) {
+          note('caught employer address', { url: captured });
+          return { ok: true, url: captured, via: 'window-open' };
+        }
+        if (location.href !== before) {
+          note('page changed', { url: location.href });
+          return { ok: true, navigated: location.href };
+        }
         const gate = interstitial();
         if (gate && !clickedGates.has(gate.selector)) {
+          sawGate = true;
+          note(`pop-up: "${gate.text.slice(0, 60)}"`, { option: gate.button, href: gate.href || undefined });
           if (gate.href) return { ok: true, url: gate.href, via: `pop-up link "${gate.button}"` };
           clickedGates.add(gate.selector);
           const b = document.querySelector(gate.selector);
-          if (b) b.click(); // e.g. "Apply Without Customizing": opens the employer site via window.open
+          if (b) {
+            const realB = await click(b, trace); // e.g. "Apply Without Customizing": opens the employer site via window.open
+            note(`clicked "${gate.button}"`, { realClick: realB });
+          }
         }
       }
-      return { ok: false, reason: 'Clicked Apply, but no pop-up, new address or page change followed. Click it yourself, then call followApply() again.' };
+      note(sawGate ? 'timed out after the pop-up: no address was caught' : 'timed out: no pop-up, address or page change after the click');
+      return { ok: false, reason: sawGate ? 'The pop-up appeared but no employer address was caught after choosing its option.' : 'Clicked Apply, but nothing happened (the site may ignore script clicks: try the "real clicks" option).' };
     } finally {
       await sleep(200);
       captureOpen(false);
@@ -266,7 +310,7 @@
       const gate = interstitial();
       if (gate) {
         if (gate.href) return go(gate.href, `pop-up "${gate.button}"`);
-        return fromClick(await clickAndWait(gate.selector, 8000));
+        return fromClick(await clickAndWait(gate.selector, 8000, opts.trace));
       }
     }
     const a = applyInfo(opts.scope);
@@ -275,9 +319,9 @@
     if (a.target) return Object.assign(go(a.target, a.targetVia || 'apply link'), { kind: a.kind });
     // Scripted button: click it and follow through (only on job boards and aggregators,
     // where Apply leads elsewhere; on an employer's own page Claude should click it itself).
-    if (a.kind === 'external') return fromClick(await clickAndWait(a.selector, 10000), a.kind);
+    if (a.kind === 'external') return fromClick(await clickAndWait(a.selector, 10000, opts.trace), a.kind);
     return { ok: false, kind: a.kind, selector: a.selector, reason: 'The Apply button has no link (it is scripted). Click it; it usually opens a new tab, then look at detect().openedTabs.' };
   }
 
-  JC.nav = { applyInfo, redirectInfo, interstitial, appliedPrompt, followApply, closeDialogs, resolveTarget };
+  JC.nav = { applyInfo, redirectInfo, interstitial, appliedPrompt, followApply, closeDialogs, click, resolveTarget };
 })(typeof globalThis !== 'undefined' ? globalThis : self);

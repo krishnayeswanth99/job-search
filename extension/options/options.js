@@ -204,6 +204,17 @@ async function renderSettings() {
       flash('Saved');
     };
   }
+  // Real clicks need Chrome's optional "debugger" permission, requested when the box is ticked.
+  $('realClicks').checked = !!s.realClicks;
+  $('realClicks').onchange = async () => {
+    let on = $('realClicks').checked;
+    if (on) on = await chrome.permissions.request({ permissions: ['debugger'] }).catch(() => false);
+    else await chrome.permissions.remove({ permissions: ['debugger'] }).catch(() => {});
+    $('realClicks').checked = on;
+    s.realClicks = on;
+    await chrome.storage.local.set({ settings: s });
+    flash(on ? 'Real clicks on' : 'Real clicks off');
+  };
   $('trustedDomains').value = (s.trustedDomains || []).join('\n');
   $('trustedDomains').oninput = () => {
     clearTimeout(renderSettings.t);

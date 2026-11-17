@@ -28,6 +28,7 @@ const ROUTES = {
   'https://job-boards.greenhouse.io/globex/jobs/77': fx('greenhouse-job.html'),
   'https://job-boards.greenhouse.io/acme/jobs/124': fx('greenhouse-job.html'),
   'https://job-boards.greenhouse.io/initech/jobs/5': fx('greenhouse-job.html'),
+  'https://jobs.lever.co/parsetest/22222222-3333-4444-5555-666666666666/apply': fx('lever-parse.html'),
   'https://careers-acme.icims.com/jobs/1234/data-scientist/candidate': fx('icims-like.html'),
   'https://www.linkedin.com/jobs/view/4000000009/': fx('linkedin-external.html'),
   'https://job-boards.greenhouse.io/acme/jobs/123?gh_src=linkedin': fx('greenhouse-job.html'),
@@ -194,6 +195,28 @@ try {
     assert.equal(amb.payPeriod, 'unknown');
     assert.match(amb.reason, /hourly or annual/);
   });
+  await check('profile is the source of truth: resume first, site parsing corrected, late overwrite restored, user edits respected', async () => {
+    const p = await open('https://jobs.lever.co/parsetest/22222222-3333-4444-5555-666666666666/apply');
+    const r = await bridge(p, () => window.jobCopilot.autofill());
+    assert.equal(r.ok, true, r.error);
+    assert.ok(r.parseWaitMs >= 800, 'waited for the site to parse the resume');
+    const v = await p.evaluate(() => ({ fn: fn.value, ln: ln.value, ph: ph.value, li: li.value, proud: proud.value }));
+    assert.equal(v.fn, 'ADA', 'same name in other case: left as the site wrote it');
+    assert.equal(v.ln, 'Lovelace', 'different last name: profile wins');
+    assert.equal(v.ph, '+1 555 0100', 'different phone: profile wins');
+    assert.equal(v.li, 'linkedin.com/in/ada/', 'same link in another format: left alone');
+    assert.match(v.proud, /analytical engine/, "the site's answer to a custom question is kept");
+    assert.deepEqual(r.corrected.map((c) => c.label).sort(), ['Last name ✱', 'Phone'].sort());
+    // The site changes the email again later: the guard puts the profile email back.
+    await p.waitForTimeout(4500);
+    assert.equal(await p.evaluate(() => em.value), 'ada@example.com');
+    // You edit a field yourself: the guard leaves it alone from then on.
+    await p.fill('#ln', 'Byron');
+    await p.evaluate(() => { ln.value = 'Changed by site'; });
+    await p.waitForTimeout(1500);
+    assert.equal(await p.evaluate(() => ln.value), 'Changed by site');
+  });
+
   await check('bridge: fillField answers a custom question', async () => {
     const r = await bridge(gh, () => window.jobCopilot.fillField({ label: 'What is your favorite robot?', value: 'Curiosity rover' }));
     assert.equal(r.ok, true, r.error);

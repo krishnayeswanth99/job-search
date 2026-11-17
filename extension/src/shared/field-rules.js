@@ -466,7 +466,45 @@
     return { answers: list, added, updated };
   }
 
-  JC.rules = { timeZoneCandidates, classifyField, valueForKey, chooseOption, matchSavedAnswer, mergeAnswers, isCompanySpecific, looksSensitive, NEVER_REMEMBER, humanize, norm, payPeriod, amounts, parseAmount, toNumberValue, emptyReason, LONG_LABEL };
+  /**
+   * Do a site's value and our profile value mean the same thing? Formatting differences (phone
+   * punctuation and country code, URL scheme/www/trailing slash, case, spacing, punctuation) don't count.
+   */
+  function sameValue(key, site, ours) {
+    const a = String(site == null ? '' : site).trim();
+    const b = String(ours == null ? '' : ours).trim();
+    if (!a || !b) return a === b;
+    const loose = (s) => s.toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
+    switch (key) {
+      case 'phone': {
+        const da = a.replace(/\D/g, '');
+        const db = b.replace(/\D/g, '');
+        return da.slice(-10) === db.slice(-10) && Math.min(da.length, db.length) >= 7;
+      }
+      case 'email':
+        return a.toLowerCase() === b.toLowerCase();
+      case 'linkedin':
+      case 'github':
+      case 'portfolio':
+      case 'website':
+      case 'twitter': {
+        const u = (s) => s.toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/[?#].*$/, '').replace(/\/+$/, '');
+        return u(a) === u(b);
+      }
+      case 'location':
+        // "London, United Kingdom" vs "London": the site's value only needs our city in it.
+        return loose(a).includes(loose(b).split(' ')[0]) || loose(b).includes(loose(a));
+      case 'fullName': {
+        const ta = loose(a).split(' ');
+        const tb = loose(b).split(' ');
+        return ta[0] === tb[0] && ta[ta.length - 1] === tb[tb.length - 1];
+      }
+      default:
+        return loose(a) === loose(b);
+    }
+  }
+
+  JC.rules = { sameValue, timeZoneCandidates, classifyField, valueForKey, chooseOption, matchSavedAnswer, mergeAnswers, isCompanySpecific, looksSensitive, NEVER_REMEMBER, humanize, norm, payPeriod, amounts, parseAmount, toNumberValue, emptyReason, LONG_LABEL };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = JC;
 })(typeof globalThis !== 'undefined' ? globalThis : self);

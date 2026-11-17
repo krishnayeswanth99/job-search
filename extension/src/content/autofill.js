@@ -122,14 +122,39 @@
    */
   async function autofill(opts) {
     const profile = JC.normalizeProfile(opts.profile);
+    const profileWins = opts.profileWins !== false;
     const combos = [];
     const files = opts.files || {};
-    const fields = JC.fields.scan();
     const filled = [];
     const skipped = [];
     const needsInput = [];
+    const corrected = [];
+    const guardList = [];
+    let parseWaitMs = 0;
+
+    // 1) Upload files first: many sites (iCIMS, Lever, Workday, Ashby) parse the resume and fill the
+    //    form themselves. Let them finish, then fill from the profile, so the profile has the last word.
+    let fields = JC.fields.scan();
+    const fileDone = new Set();
+    let attached = false;
+    for (const f of fields.filter((x) => x.type === 'file')) {
+      fileDone.add(f.ref);
+      const d = JC.fields.describe(f);
+      const kind = f.key === 'coverLetter' ? 'coverLetter' : f.key === 'resume' ? 'resume' : null;
+      if (!kind) needsInput.push(Object.assign(d, { reason: 'unrecognized file upload' }));
+      else if (f.hasValue && !opts.overwrite) skipped.push(Object.assign(d, { reason: 'already has a file' }));
+      else if (files[kind] && attachFile(f.el, files[kind])) {
+        filled.push(Object.assign(d, { source: kind, value: files[kind].name }));
+        if (kind === 'resume') attached = true;
+      } else needsInput.push(Object.assign(d, { reason: `no ${kind} file stored in Job Copilot` }));
+    }
+    if (attached && opts.waitForParse !== false) {
+      parseWaitMs = await waitForQuiet(9000);
+      fields = JC.fields.scan();
+    }
 
     for (const f of fields) {
+      if (f.type === 'file' && fileDone.has(f.ref)) continue;
       const d = JC.fields.describe(f);
       try {
         if (f.key === 'consent') {
@@ -149,11 +174,20 @@
           }
           continue;
         }
+        let r = null;
         if (f.hasValue && !opts.overwrite) {
-          skipped.push(Object.assign(d, { reason: 'already filled' }));
-          continue;
+          // Profile fields: if the site (usually its resume parser) put in something that means
+          // something different, the profile value replaces it. Answers to other questions are kept.
+          r = profileWins && f.key && !f.combobox ? resolve(f, profile, opts.overrides) : null;
+          const site = currentValue(f);
+          if (!r || r.source !== 'profile' || matches(f, site, r.value)) {
+            skipped.push(Object.assign(d, { reason: 'already filled' }));
+            if (r && r.source === 'profile') guardList.push({ f, value: r.value });
+            continue;
+          }
+          corrected.push({ label: f.label, site: String(site).slice(0, 80) });
         }
-        const r = resolve(f, profile, opts.overrides);
+        r = r || resolve(f, profile, opts.overrides);
         if (!r) {
           const reason = f.key ? R.emptyReason(f.key, f.period, profile) : 'custom question';
           // Pay questions always go to Claude/the user, even when optional.
@@ -182,8 +216,10 @@
           setValue(f.el, r.value);
           ok = true;
         }
-        if (ok) filled.push(Object.assign(d, { source: r.source, profileKey: f.key }));
-        else needsInput.push(Object.assign(d, { reason: 'no option matched', suggested: r.value }));
+        if (ok) {
+          filled.push(Object.assign(d, { source: r.source, profileKey: f.key }));
+          if (r.source === 'profile' && !f.combobox) guardList.push({ f, value: r.value });
+        } else needsInput.push(Object.assign(d, { reason: 'no option matched', suggested: r.value }));
       } catch (e) {
         needsInput.push(Object.assign(d, { reason: 'error: ' + e.message }));
       }
@@ -206,8 +242,11 @@
         );
     }
     highlight(needsInput);
+    if (profileWins && guardList.length) guard(guardList, opts.guardMs || 90000);
     return {
       frame: location.href,
+      parseWaitMs: parseWaitMs || undefined,
+      corrected,
       filledCount: filled.length,
       filled: filled.map((f) => ({ label: f.label, selector: f.selector, profileKey: f.profileKey, source: f.source })),
       skipped: skipped.map((f) => ({ label: f.label, selector: f.selector, reason: f.reason })),
@@ -216,6 +255,97 @@
   }
 
   const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
+
+  /** What the field shows now, as text (selected option text for choices). */
+  function currentValue(f) {
+    if (f.els && f.els.length > 1) {
+      const c = f.els.find((e) => e.checked);
+      return c ? JC.fields.labelFor(c) || c.value : '';
+    }
+    if (f.type === 'select') return f.el.selectedIndex > 0 || f.el.value ? (f.el.options[f.el.selectedIndex] || {}).text || '' : '';
+    if (f.type === 'checkbox') return f.el.checked ? 'yes' : 'no';
+    return f.el.value || '';
+  }
+
+  /** Does what the field shows already mean our value? */
+  function matches(f, site, ours) {
+    if (f.type === 'select') {
+      const opts = [...f.el.options].map((o) => ({ value: o.value, text: o.text }));
+      const i = chooseFrom(opts, choices(f.key, ours));
+      return i < 0 || i === f.el.selectedIndex; // no matching option: nothing better to put there
+    }
+    if (f.els && f.els.length > 1) {
+      const i = R.chooseOption(f.options, ours);
+      return i < 0 || !!(f.els[i] && f.els[i].checked);
+    }
+    if (f.type === 'checkbox') return true;
+    return R.sameValue(f.key, site, ours);
+  }
+
+  /** Wait until the form stops changing (a site's resume parser filling fields), up to maxMs. */
+  async function waitForQuiet(maxMs) {
+    const t0 = Date.now();
+    const snap = () => [...document.querySelectorAll('input, select, textarea')].map((e) => (e.type === 'checkbox' || e.type === 'radio' ? e.checked : e.value)).join('\u0001');
+    let last = snap();
+    let stableSince = Date.now();
+    await sleep(800); // parsing usually starts after an upload request
+    while (Date.now() - t0 < maxMs) {
+      await sleep(300);
+      const now = snap();
+      if (now !== last) {
+        last = now;
+        stableSince = Date.now();
+      } else if (Date.now() - stableSince >= 1500) break;
+    }
+    return Date.now() - t0;
+  }
+
+  // Fields the user has typed in, picked or pasted into: never touched again by the guard.
+  const touched = new WeakSet();
+  if (typeof document !== 'undefined') {
+    for (const type of ['keydown', 'paste', 'mousedown', 'input', 'change']) {
+      document.addEventListener(
+        type,
+        (e) => {
+          if (e.isTrusted && e.target && e.target.nodeType === 1) touched.add(e.target.closest('input, select, textarea') || e.target);
+        },
+        true
+      );
+    }
+  }
+
+  /**
+   * After filling: for a while, if the SITE changes a field we filled from the profile (a late
+   * resume parser, a re-render), put the profile value back. Stops for a field as soon as the user
+   * edits it. Corrections are logged in the debug log.
+   */
+  let guardTimer = null;
+  function guard(list, ms) {
+    clearInterval(guardTimer);
+    const end = Date.now() + ms;
+    const items = list.map(({ f, value }) => ({ el: f.el, f, key: f.key, label: f.label, value }));
+    guardTimer = setInterval(() => {
+      if (Date.now() > end) return clearInterval(guardTimer);
+      let fresh = null;
+      for (const it of items) {
+        if (touched.has(it.el)) continue;
+        if (!it.el.isConnected) {
+          // The site re-rendered the section: find the same question again.
+          fresh = fresh || JC.fields.scan();
+          const again = fresh.find((x) => x.key === it.key && x.label === it.label);
+          if (!again) continue;
+          it.el = again.el;
+          it.f = again;
+        }
+        const site = currentValue(it.f);
+        if (matches(it.f, site, it.value)) continue;
+        if (it.f.type === 'select') fillSelect(it.el, it.value, it.key);
+        else if (it.f.els && it.f.els.length > 1) fillGroup(it.f, it.value);
+        else setValue(it.el, it.value);
+        if (JC.recorder && JC.recorder.note) JC.recorder.note({ step: 'restored profile value the site had changed', field: it.label, site: String(site).slice(0, 60) });
+      }
+    }, 700);
+  }
   const fireMouse = (el) => {
     for (const type of ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click']) {
       const Ev = type.startsWith('pointer') && typeof PointerEvent !== 'undefined' ? PointerEvent : MouseEvent;

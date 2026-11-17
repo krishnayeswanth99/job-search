@@ -438,10 +438,12 @@ function merge(cmd, frames) {
       return { ok: true, application: frames.some((f) => f.application), count: fields.length, fields };
     }
     case 'autofill': {
-      const out = { ok: errors.length < frames.length, filledCount: 0, filled: [], skipped: [], needsInput: [], errors };
+      const out = { ok: errors.length < frames.length, filledCount: 0, filled: [], skipped: [], needsInput: [], corrected: [], errors };
       for (const f of frames) {
         if (!f.ok) continue;
         out.filledCount += f.filledCount || 0;
+        if (f.parseWaitMs) out.parseWaitMs = Math.max(out.parseWaitMs || 0, f.parseWaitMs);
+        out.corrected.push(...(f.corrected || []));
         const tag = (x) => Object.assign({ frame: f.isTop === false ? f.frame : 'top' }, x);
         out.filled.push(...(f.filled || []).map(tag));
         out.skipped.push(...(f.skipped || []).map(tag));
@@ -510,7 +512,7 @@ async function runCommand(tabId, cmd, payload, origin) {
   const out = merge(cmd, await runInFrames(tabId, cmd, payload));
   if (cmd === 'autofill') {
     const tab = await chrome.tabs.get(tabId).catch(() => ({}));
-    debugAdd(tabId, { type: 'autofill', url: tab.url, from: origin, ok: out.ok, error: out.error, filled: out.filledCount, needsInput: (out.needsInput || []).map((f) => `${(f.label || '').slice(0, 80)} (${f.reason})`).slice(0, 30) });
+    debugAdd(tabId, { type: 'autofill', url: tab.url, from: origin, ok: out.ok, error: out.error, filled: out.filledCount, needsInput: (out.needsInput || []).map((f) => `${(f.label || '').slice(0, 80)} (${f.reason})`).slice(0, 30), corrected: (out.corrected || []).map((c) => c.label), parseWaitMs: out.parseWaitMs });
   } else if (out && out.ok === false && out.error) {
     debugAdd(tabId, { type: 'error', cmd, from: origin, error: String(out.error).slice(0, 300) });
   }

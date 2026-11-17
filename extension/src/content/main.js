@@ -124,7 +124,8 @@
           const { profile, resume, coverLetter } = await storage(['profile', 'resume', 'coverLetter']);
           if (!profile) return { ok: false, frame: location.href, error: 'No profile saved in Job Copilot. Open the options page and import profile.json.' };
           const files = { resume: payload.files?.resume || resume, coverLetter: payload.files?.coverLetter || coverLetter };
-          const r = await JC.autofill.autofill({ profile, files, overrides: payload.overrides, overwrite: !!payload.overwrite });
+          const st = await settings();
+          const r = await JC.autofill.autofill({ profile, files, overrides: payload.overrides, overwrite: !!payload.overwrite, profileWins: st.profileWins !== false });
           return Object.assign({ ok: true }, r);
         }
         case 'nextStep': {

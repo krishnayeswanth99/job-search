@@ -178,3 +178,16 @@ test('iCIMS profile labels: Source, Time Zone, sign-off', () => {
   const opts = [{ text: '(GMT-08:00) Pacific Time' }, { text: '(GMT-05:00) Eastern Time (US & Canada)' }];
   assert.equal(c.map((d) => JC.rules.chooseOption(opts, d)).find((i) => i >= 0), 1);
 });
+
+test('sameValue: formatting differences are not conflicts', () => {
+  const same = JC.rules.sameValue;
+  assert.ok(same('phone', '(415) 555-0134', '+1 415-555-0134'));
+  assert.ok(!same('phone', '(415) 555-0199', '+1 415-555-0134'));
+  assert.ok(same('linkedin', 'linkedin.com/in/ada/', 'https://www.linkedin.com/in/ada'));
+  assert.ok(same('email', 'Ada@Example.com', 'ada@example.com'));
+  assert.ok(same('firstName', 'ADA', 'Ada'));
+  assert.ok(!same('firstName', 'Ava', 'Ada'));
+  assert.ok(same('location', 'London, England, United Kingdom', 'London, United Kingdom'));
+  assert.ok(same('fullName', 'Ada King Lovelace', 'Ada Lovelace'));
+  assert.ok(!same('currentTitle', 'Engineer II', 'Senior Engineer'));
+});

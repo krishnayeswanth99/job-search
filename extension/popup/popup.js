@@ -154,6 +154,7 @@ $('btn-autofill').addEventListener('click', async () => {
   if (!r || r.ok === false) return showResult('Autofill failed', el('p', {}, (r && r.error) || 'Unknown error'), r);
   const body = el('div', {},
     el('p', { class: 'ok' }, `Filled ${r.filledCount} field${r.filledCount === 1 ? '' : 's'}.`),
+    r.corrected && r.corrected.length ? el('p', {}, `Corrected what the site's resume reader filled in: ${r.corrected.map((c) => c.label).join(', ')}. These stay as in your profile while you review (unless you edit them).`) : null,
     r.needsInput.length ? el('div', {}, el('strong', {}, `Needs your input (${r.needsInput.length}):`), el('ul', { class: 'plain' }, r.needsInput.map((f) => el('li', {}, f.label || '(unlabelled)', f.required ? ' *' : '', el('span', { class: 'muted' }, ` — ${f.reason}`))))) : null,
     el('p', { class: 'muted' }, 'Review everything before you submit. Ask Claude to answer the custom questions.')
   );

@@ -182,6 +182,7 @@
     if (f.key) d.profileKey = f.key;
     if (f.period) d.payPeriod = f.period;
     if (f.combobox) d.combobox = true;
+    if (f.el && f.el.maxLength > 0 && f.el.maxLength < 100000) d.maxLength = f.el.maxLength;
     if (f.options) d.options = f.options.slice(0, 50).map((o) => o.text).filter(Boolean);
     if (f.els && f.els.length > 1) d.optionSelectors = f.els.map((o) => `[data-jc-ref="${o.getAttribute('data-jc-ref')}"]`);
     return d;

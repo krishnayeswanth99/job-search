@@ -27,6 +27,7 @@ const ROUTES = {
   'https://www.acme-robotics.com/careers': fx('company-embed.html'),
   'https://job-boards.greenhouse.io/globex/jobs/77': fx('greenhouse-job.html'),
   'https://job-boards.greenhouse.io/acme/jobs/124': fx('greenhouse-job.html'),
+  'https://job-boards.greenhouse.io/initech/jobs/5': fx('greenhouse-job.html'),
   'https://www.linkedin.com/jobs/view/4000000009/': fx('linkedin-external.html'),
   'https://job-boards.greenhouse.io/acme/jobs/123?gh_src=linkedin': fx('greenhouse-job.html'),
   'https://www.indeed.com/applystart?jk=abc&url=https%3A%2F%2Fjob-boards.greenhouse.io%2Facme%2Fjobs%2F123': fx('indeed-applystart.html'),
@@ -727,6 +728,31 @@ try {
     await ext.evaluate((id) => chrome.runtime.sendMessage({ type: 'jc:queue-stop', tabId: id }), tabId);
     assert.equal((await state()).active, false);
     await t3.close();
+  });
+
+  await check('ask Claude/ChatGPT bridge: unanswered questions outlined, prompt built, pasted reply fills the right fields', async () => {
+    const g = await open('https://job-boards.greenhouse.io/initech/jobs/5');
+    await bridge(g, () => window.jobCopilot.autofill());
+    // "What excites you about joining us?" was remembered for Acme only, so it's open here, and outlined.
+    assert.equal(await g.evaluate(() => q6.value), '');
+    assert.match(await g.evaluate(() => q6.style.outline), /124, 58, 237|#7c3aed/);
+    const tabId = await ext.evaluate(async (url) => (await chrome.tabs.query({ url })).at(0)?.id, g.url());
+    const pop = await context.newPage();
+    await pop.goto(`chrome-extension://${extId}/popup/popup.html`);
+    const out = await pop.evaluate(async (tabId) => {
+      const send = (cmd, payload) => chrome.runtime.sendMessage({ type: 'jc:popup', tabId, cmd, payload: payload || {} });
+      const qs = JC.ask.questionsFrom((await send('scanForm')).fields);
+      const q6 = qs.find((q) => /excites you/.test(q.label));
+      const prompt = JC.ask.buildPrompt({ questions: qs, job: (await send('extractJob')).job, profile: (await chrome.storage.local.get('profile')).profile });
+      const reply = '```json\n' + JSON.stringify({ answers: { [q6.id]: 'Your robots help people.', [qs[0].id === q6.id ? 'x' : qs[0].id]: 'ASK_ME' } }) + '\n```';
+      const parsed = JC.ask.parseReply(reply, qs);
+      const r = await send('autofill', { overrides: parsed.overrides });
+      return { n: qs.length, hasQ6: !!q6, promptHasQ6: prompt.includes(q6.id), askMe: parsed.askMe.length, filled: r.filledCount };
+    }, tabId);
+    assert.ok(out.hasQ6 && out.promptHasQ6, JSON.stringify(out));
+    assert.equal(await g.evaluate(() => q6.value), 'Your robots help people.');
+    assert.equal(await g.evaluate(() => q6.style.outline), '', 'outline cleared once answered');
+    await pop.close();
   });
 
   await check('recorder: logs clicks, window.open, flashed tab and the pop-up with its links', async () => {

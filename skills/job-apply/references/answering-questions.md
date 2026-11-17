@@ -36,6 +36,14 @@ Sources, in priority order: what the user said this session → `profile.json` (
 
 Style: first person, plain, specific, and confident. No clichés, no em dashes, no "As an AI".
 
+## Without Claude Code (Claude Pro / ChatGPT Plus in the browser)
+
+The Job Copilot popup's **Questions left** section builds a prompt with the open questions (and their ids), the job
+description, the profile, the resume text and saved answers. The user pastes it into claude.ai, chatgpt.com, or the
+Claude in Chrome side panel, then pastes the JSON reply back, and **Fill answers** fills each field. If you are the
+Claude in Chrome side panel receiving that prompt, you can also fill the fields directly on the page instead of
+replying with JSON. The same rules apply: `ASK_ME` for anything not in the data, and never submit.
+
 ## Reuse
 
 If a free-text answer is generic enough to reuse (for example "Why are you looking for a new role?"), add it to

@@ -254,6 +254,10 @@ async function readAndReview(file, opts) {
   const model = (JC.claudeResume.MODELS.find((m) => m.id === settings.model) || { label: settings.model }).label.split(' (')[0];
   box.replaceChildren(el('p', { class: 'muted' }, useClaude ? `Sending ${file.name} to ${model}…` : `Reading ${file.name}…`));
   if (useClaude) {
+    // Keep the resume's text for "Ask Claude / ChatGPT" prompts, whichever reader is used.
+    extractText(file.name, file.type, file.buffer)
+      .then((t) => chrome.storage.local.set({ resumeText: String(t).slice(0, 40000) }))
+      .catch(() => {});
     try {
       renderReview(await claudeExtract(file, settings), `${file.name} (read by ${model})`);
       return;
@@ -273,6 +277,7 @@ async function readAndReview(file, opts) {
     const text = await extractText(file.name, file.type, file.buffer);
     const result = JC.resume.parse(text);
     window.JCOptions.lastResumeText = text;
+    chrome.storage.local.set({ resumeText: text.slice(0, 40000) }); // used by "Ask Claude / ChatGPT" prompts
     renderReview(result, file.name);
   } catch (e) {
     box.replaceChildren(el('p', { class: 'warn-text' }, `Could not read ${file.name}: ${e.message}`));

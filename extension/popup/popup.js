@@ -118,6 +118,7 @@ async function init() {
     $('btn-follow').classList.add('primary');
     $('btn-follow').textContent = d.interstitial ? `Continue: ${d.interstitial.button}` : ext && d.apply.target ? `Go to application (${new URL(d.apply.target).hostname})` : 'Go to application';
   }
+  if (d.application) refreshAsk();
   if (isAggregator()) {
     $('btn-queue').hidden = false;
     refreshQueue();
@@ -210,6 +211,47 @@ $('btn-stop').addEventListener('click', async () => {
 $('btn-save-all').addEventListener('click', async () => {
   const n = await saveJobs(lastJobs);
   $('btn-save-all').textContent = `Saved ${n}`;
+});
+
+// ------------------------------------------------- ask Claude / ChatGPT (no API)
+async function currentQuestions() {
+  const scan = await send('scanForm');
+  return globalThis.JC.ask.questionsFrom((scan && scan.fields) || []);
+}
+async function refreshAsk() {
+  const qs = await currentQuestions();
+  $('ask').hidden = false;
+  $('ask-count').textContent = qs.length ? `${qs.length} unanswered` : 'none left';
+}
+$('btn-ask-copy').addEventListener('click', async () => {
+  const qs = await currentQuestions();
+  if (!qs.length) return ($('ask-status').textContent = 'No unanswered questions on this form. Run Autofill first if you haven\'t.');
+  const job = await send('extractJob').catch(() => null);
+  const { profile, resumeText } = await chrome.storage.local.get(['profile', 'resumeText']);
+  const prompt = globalThis.JC.ask.buildPrompt({ questions: qs, job: job && job.job, profile, resumeText });
+  await navigator.clipboard.writeText(prompt);
+  $('ask-status').textContent = `Prompt copied (${qs.length} question${qs.length === 1 ? '' : 's'}, ${Math.round(prompt.length / 1000)}k characters). Paste it into Claude or ChatGPT, then paste the reply here.`;
+});
+$('btn-ask-claude').addEventListener('click', () => chrome.tabs.create({ url: 'https://claude.ai/new' }));
+$('btn-ask-gpt').addEventListener('click', () => chrome.tabs.create({ url: 'https://chatgpt.com/' }));
+$('btn-ask-fill').addEventListener('click', async () => {
+  let parsed;
+  try {
+    parsed = globalThis.JC.ask.parseReply($('ask-reply').value, await currentQuestions());
+  } catch (e) {
+    $('ask-status').textContent = e.message;
+    return;
+  }
+  const n = Object.keys(parsed.overrides).length;
+  if (!n && !parsed.askMe.length) return ($('ask-status').textContent = 'The reply had no answers for the questions on this form (was it for another page?).');
+  const r = await send('autofill', { overrides: parsed.overrides });
+  const manual = ((r && r.needsInput) || []).filter((f) => parsed.overrides[(f.selector || '').replace(/^\[data-jc-ref="|"\]$/g, '')]);
+  const parts = [`Filled ${r && r.filledCount != null ? r.filledCount : n} field(s).`];
+  if (parsed.askMe.length) parts.push(`Needs your own answer: ${parsed.askMe.join('; ')}.`);
+  if (manual.length) parts.push(`Pick by hand (custom dropdowns): ${manual.map((f) => `${f.label} → ${f.suggested || ''}`).join('; ')}.`);
+  parts.push('Review, then Submit yourself. Answers you submit are remembered for next time.');
+  $('ask-status').textContent = parts.join(' ');
+  refreshAsk();
 });
 
 // ------------------------------------------------------- apply one by one

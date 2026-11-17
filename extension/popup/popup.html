@@ -33,6 +33,19 @@
       <button id="btn-job">Read this job posting</button>
     </section>
 
+    <section id="ask" class="card" hidden>
+      <div class="row"><strong>Questions left</strong><span id="ask-count" class="muted"></span></div>
+      <p class="muted small-text">Get answers from Claude or ChatGPT (works with Claude Pro / ChatGPT Plus, no API): copy the prompt, paste it in a chat, then paste the reply below.</p>
+      <div class="buttons-row">
+        <button id="btn-ask-copy" class="small">Copy prompt</button>
+        <button id="btn-ask-claude" class="small">Open Claude</button>
+        <button id="btn-ask-gpt" class="small">Open ChatGPT</button>
+      </div>
+      <textarea id="ask-reply" rows="3" placeholder="Paste the reply here ({&quot;answers&quot;: …})"></textarea>
+      <button id="btn-ask-fill" class="small primary">Fill answers</button>
+      <div id="ask-status" class="small-text"></div>
+    </section>
+
     <section id="result" class="card" hidden>
       <div class="result-head">
         <strong id="result-title"></strong>
@@ -61,6 +74,7 @@
     </footer>
 
     <script src="../src/shared/config.js"></script>
+    <script src="../src/shared/ask-prompt.js"></script>
     <script src="popup.js"></script>
   </body>
 </html>

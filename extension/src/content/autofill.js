@@ -170,6 +170,7 @@
         needsInput.push(Object.assign(d, { reason: 'error: ' + e.message }));
       }
     }
+    highlight(needsInput);
     return {
       frame: location.href,
       filledCount: filled.length,
@@ -177,6 +178,29 @@
       skipped: skipped.map((f) => ({ label: f.label, selector: f.selector, reason: f.reason })),
       needsInput,
     };
+  }
+
+  /**
+   * Outline the questions autofill couldn't answer, so the user (or Claude in the side panel) sees
+   * what's left. Outlines don't change layout; each one goes away once the field has a value.
+   */
+  function highlight(items) {
+    for (const it of items) {
+      const el = it.selector && document.querySelector(it.selector);
+      if (!el || it.type === 'hidden') continue;
+      const target = it.type === 'radio' || it.type === 'checkbox' ? el.closest('fieldset, [role="radiogroup"], .field, .application-question') || el : el;
+      target.style.outline = '2px solid #7c3aed';
+      target.style.outlineOffset = '2px';
+      target.setAttribute('data-jc-needs-input', it.reason || 'needs your answer');
+      if (!target.title) target.title = 'Job Copilot: needs your answer';
+      const clear = () => {
+        target.style.outline = '';
+        target.style.outlineOffset = '';
+        target.removeAttribute('data-jc-needs-input');
+      };
+      el.addEventListener('change', clear, { once: true });
+      el.addEventListener('input', clear, { once: true });
+    }
   }
 
   /** Fill one field chosen by Claude. Accepts selector, ref, or label text. */

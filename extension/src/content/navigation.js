@@ -311,7 +311,7 @@
     const go = (url, why) => {
       if (opts.navigate === false) return { ok: true, action: 'found', to: url, reason: why };
       if (opts.newTab) {
-        chrome.runtime.sendMessage({ type: 'jc:open-tab', url, job }).catch(() => {});
+        chrome.runtime.sendMessage({ type: 'jc:open-tab', url, job, autofill: true, queue: !!opts.queue }).catch(() => {});
         return { ok: true, action: 'opened-tab', to: url, reason: why };
       }
       chrome.runtime.sendMessage({ type: 'jc:applying', url, job }).catch(() => {});

@@ -54,6 +54,10 @@ When the **user** clicks Apply on Jobright themselves, Job Copilot continues for
 
 Before clicking Apply yourself on the user's behalf, check whether a new employer tab has already appeared.
 
+**Apply one by one** (Job Copilot popup on a Jobright feed): it opens each job's employer form in turn, autofilled. The
+user reviews it and submits. After the employer's confirmation the tab closes and the next job opens. Closing a tab
+skips that job. While it runs, help with the open form (custom questions) and don't start your own clicks on the feed.
+
 On the feed, `resolveApplyLinks({ viaApply: true, limit: 50 })` does the same for every card, one after another,
 scrolling for more as it goes.
 - It closes Jobright's pop-ups without answering them.

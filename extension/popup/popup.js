@@ -118,6 +118,10 @@ async function init() {
     $('btn-follow').classList.add('primary');
     $('btn-follow').textContent = d.interstitial ? `Continue: ${d.interstitial.button}` : ext && d.apply.target ? `Go to application (${new URL(d.apply.target).hostname})` : 'Go to application';
   }
+  if (isAggregator()) {
+    $('btn-queue').hidden = false;
+    refreshQueue();
+  }
   if (d.apply && d.apply.kind === 'easy-apply') $('page-type').textContent += ` · ${d.apply.text} (on-site)`;
   if (d.pageType === 'listings' || d.jobCount) $('btn-jobs').classList.add('primary');
 }
@@ -207,6 +211,28 @@ $('btn-save-all').addEventListener('click', async () => {
   const n = await saveJobs(lastJobs);
   $('btn-save-all').textContent = `Saved ${n}`;
 });
+
+// ------------------------------------------------------- apply one by one
+async function refreshQueue() {
+  const q = await chrome.runtime.sendMessage({ type: 'jc:queue-state', tabId });
+  const on = !!(q && q.active);
+  $('btn-queue').hidden = on || !isAggregator();
+  $('queue-box').hidden = !on && !(q && q.finishedReason);
+  if (!q) return;
+  const counts = `Applied ${q.applied || 0} · skipped ${q.skipped || 0}${q.failed ? ` · couldn't open ${q.failed}` : ''}`;
+  $('queue-status').textContent = on
+    ? `${q.current ? `Now: ${q.current.title || 'job'} (fill in anything missing, then Submit; closing its tab skips it).` : 'Opening the next job…'} ${counts}`
+    : `Finished: ${q.finishedReason || ''}. ${counts}${q.lastError ? ` · last problem: ${q.lastError}` : ''}`;
+  $('btn-q-skip').hidden = $('btn-q-stop').hidden = !on;
+  if (on) setTimeout(refreshQueue, 1500);
+}
+$('btn-queue').addEventListener('click', async () => {
+  await chrome.runtime.sendMessage({ type: 'jc:queue-start', tabId });
+  $('btn-queue').hidden = true;
+  refreshQueue();
+});
+$('btn-q-skip').addEventListener('click', () => chrome.runtime.sendMessage({ type: 'jc:queue-skip', tabId }).then(refreshQueue));
+$('btn-q-stop').addEventListener('click', () => chrome.runtime.sendMessage({ type: 'jc:queue-stop', tabId }).then(refreshQueue));
 
 // ---------------------------------------------------------------- recorder
 async function refreshRec() {

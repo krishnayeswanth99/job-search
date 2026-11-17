@@ -108,6 +108,62 @@ async function getApplying(tabId) {
   }
 }
 
+// ------------------------------------------------ "Apply one by one" queue
+// queues: feedTabId -> { active, done: [jobKey], applied, skipped, failed, current: { key, title, tabId } }
+// Kept in session storage too: the service worker is stopped after ~30 s idle (while you fill a form).
+const queues = new Map();
+const queuesReady = chrome.storage.session
+  .get('queues')
+  .then((v) => {
+    for (const [k, q] of Object.entries(v.queues || {})) queues.set(Number(k), q);
+  })
+  .catch(() => {});
+function qSave() {
+  return chrome.storage.session.set({ queues: Object.fromEntries(queues) }).catch(() => {});
+}
+const QUEUE_MAX_FAILS = 3;
+async function queueAdvance(feedTabId, why) {
+  await queuesReady;
+  const q = queues.get(feedTabId);
+  if (!q || !q.active) return;
+  q.current = null;
+  await qSave();
+  await chrome.action.setBadgeText({ tabId: feedTabId, text: `Q${q.applied + q.skipped + q.failed + 1}` }).catch(() => {});
+  await chrome.action.setBadgeBackgroundColor({ tabId: feedTabId, color: '#7c3aed' }).catch(() => {});
+  let r;
+  try {
+    await chrome.tabs.update(feedTabId, { active: true });
+    r = await chrome.tabs.sendMessage(feedTabId, { type: 'jc:queue-next', skip: q.done });
+  } catch (e) {
+    r = { ok: false, done: true, reason: 'The job board tab is gone: ' + (e.message || e) };
+  }
+  recAdd(feedTabId, { type: 'extension-step', detail: { queue: true, why, next: r } });
+  if (!r || r.done) {
+    q.active = false;
+    q.finishedReason = (r && r.reason) || 'finished';
+    await qSave();
+    await chrome.action.setBadgeText({ tabId: feedTabId, text: '' }).catch(() => {});
+    return;
+  }
+  if (!r.ok) {
+    q.done.push(r.key);
+    q.failed++;
+    q.lastError = `${r.title}: ${r.reason}`;
+    if (q.failed >= QUEUE_MAX_FAILS && q.applied + q.skipped === 0) {
+      q.active = false;
+      q.finishedReason = 'Stopped: the first jobs could not be opened (' + r.reason + ')';
+      await qSave();
+      return;
+    }
+    await qSave();
+    setTimeout(() => queueAdvance(feedTabId, 'previous job failed'), 1500);
+    return;
+  }
+  // The employer tab was opened by jc:open-tab (queue: true), which sets q.current.
+  q.done.push(r.key);
+  await qSave();
+}
+
 async function markApplied(tabId, msg, senderUrl) {
   const info = await getApplying(tabId);
   const at = new Date().toISOString();
@@ -124,6 +180,19 @@ async function markApplied(tabId, msg, senderUrl) {
   if (info && info.openerTabId) chrome.tabs.sendMessage(info.openerTabId, { type: 'jc:applied', key: record.key, at }).catch(() => {});
   recAdd(tabId, { type: 'application-confirmed', key: record.key, url: senderUrl, text: record.confirmation });
   if (info && info.openerTabId) recAdd(info.openerTabId, { type: 'application-confirmed', key: record.key, url: senderUrl });
+  // Apply one by one: move on to the next job after a confirmed submission.
+  await queuesReady;
+  for (const [feedTabId, q] of queues) {
+    if (q.active && q.current && q.current.tabId === tabId) {
+      q.applied++;
+      q.current = null;
+      await qSave();
+      setTimeout(async () => {
+        await chrome.tabs.remove(tabId).catch(() => {});
+        queueAdvance(feedTabId, 'applied');
+      }, 3000);
+    }
+  }
   return { ok: true, key: record.key };
 }
 
@@ -223,6 +292,18 @@ chrome.tabs.onUpdated.addListener((tabId, info, tab) => {
 // address is often the real application link, so keep it, reported as detect().flashedTabs.
 const flashedTabs = new Map(); // openerTabId -> [{ url, openedAt, closedAt }]
 chrome.tabs.onRemoved.addListener((tabId) => {
+  // Apply one by one: closing the employer tab without submitting skips that job.
+  queuesReady.then(() => {
+    for (const [feedTabId, q] of queues) {
+      if (q.active && q.current && q.current.tabId === tabId) {
+        q.skipped++;
+        q.current = null;
+        setTimeout(() => queueAdvance(feedTabId, 'skipped (tab closed)'), 800);
+      }
+      if (feedTabId === tabId) queues.delete(tabId);
+    }
+    qSave();
+  });
   for (const [opener, list] of childTabs) {
     const c = list.find((x) => x.tabId === tabId);
     if (c) recAdd(opener, { type: 'tab-closed', tabId, url: c.url, openForMs: Date.now() - Date.parse(c.openedAt) });
@@ -465,6 +546,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       if (!/^https?:\/\//i.test(String(msg.url || ''))) return { ok: false };
       const t = await chrome.tabs.create({ url: msg.url, openerTabId: sender.tab.id, index: sender.tab.index + 1 });
       linkSettledTabs.add(t.id);
+      if (msg.queue) {
+        await queuesReady;
+        const q = queues.get(sender.tab.id);
+        if (q && q.active) {
+          q.current = { key: msg.job && msg.job.key, title: msg.job && msg.job.title, tabId: t.id };
+          await qSave();
+        }
+      }
       if (msg.job && msg.job.key) await setApplying(t.id, Object.assign({}, msg.job, { openerTabId: sender.tab.id, applyUrl: msg.url }));
       if (msg.autofill) scheduleAutofill(t.id, sender.tab.id);
       return { ok: true, tabId: t.id };
@@ -475,6 +564,32 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     }
     if (msg.type === 'jc:rec-status' && sender.tab && !fromExt) {
       return { on: !!(await recGet(sender.tab.id)) };
+    }
+    if (msg.type && msg.type.startsWith('jc:queue-')) await queuesReady;
+    if (msg.type === 'jc:queue-start' && fromExt) {
+      queues.set(msg.tabId, { active: true, done: [], applied: 0, skipped: 0, failed: 0, current: null, startedAt: Date.now() });
+      await qSave();
+      queueAdvance(msg.tabId, 'start');
+      return { ok: true };
+    }
+    if (msg.type === 'jc:queue-skip' && fromExt) {
+      const q = queues.get(msg.tabId);
+      if (q && q.current) await chrome.tabs.remove(q.current.tabId).catch(() => {}); // onRemoved moves on
+      return { ok: true };
+    }
+    if (msg.type === 'jc:queue-stop' && fromExt) {
+      const q = queues.get(msg.tabId);
+      if (q) {
+        q.active = false;
+        q.finishedReason = 'stopped';
+        await qSave();
+      }
+      await chrome.action.setBadgeText({ tabId: msg.tabId, text: '' }).catch(() => {});
+      return { ok: true };
+    }
+    if (msg.type === 'jc:queue-state' && fromExt) {
+      const q = queues.get(msg.tabId);
+      return q ? { active: q.active, applied: q.applied, skipped: q.skipped, failed: q.failed, current: q.current, lastError: q.lastError, finishedReason: q.finishedReason } : { active: false };
     }
     if (msg.type === 'jc:rec-start' && fromExt) return recStart(msg.tabId);
     if (msg.type === 'jc:rec-stop' && fromExt) return recStop(msg.tabId);

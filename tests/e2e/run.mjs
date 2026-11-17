@@ -37,6 +37,7 @@ const ROUTES = {
   'https://jobright.ai/jobs/recommend?v=3': fx('jobright-feed.html'),
   'https://jobright.ai/jobs/recommend?v=4': fx('jobright-feed.html'),
   'https://jobright.ai/jobs/recommend?v=5': fx('jobright-feed.html'),
+  'https://jobright.ai/jobs/recommend?v=6': fx('jobright-feed.html'),
   'https://jobright.ai/jobs/info/real01': fx('jobright-real-job.html'),
   'https://jobright.ai/jobs/info/real01?nt=1': fx('jobright-real-job.html'),
   'https://jobright.ai/jobs/info/fab001': fx('jobright-flash.html'),
@@ -684,6 +685,48 @@ try {
     assert.ok(!d.submitted, JSON.stringify(d.submitted));
     const apps = await ext.evaluate(async () => (await chrome.storage.local.get('applications')).applications || []);
     assert.ok(!apps.some((a) => /token=4511215099/.test(a.applyUrl)));
+  });
+
+  await check('Apply one by one: opens each job\'s employer form in turn; submit -> next, close tab -> skip -> next', async () => {
+    const p = await open('https://jobright.ai/jobs/recommend?v=6');
+    const tabId = await ext.evaluate(async (url) => (await chrome.tabs.query({ url })).at(0)?.id, p.url());
+    const waitForAppTab = async (seen) => {
+      for (let i = 0; i < 80; i++) {
+        const t = context.pages().find((pg) => !seen.has(pg) && /job-boards\.greenhouse\.io\//.test(pg.url()));
+        if (t) return t;
+        await p.waitForTimeout(250);
+      }
+      return null;
+    };
+    const state = () => ext.evaluate((id) => chrome.runtime.sendMessage({ type: 'jc:queue-state', tabId: id }), tabId);
+    let seen = new Set(context.pages());
+    await ext.evaluate((id) => chrome.runtime.sendMessage({ type: 'jc:queue-start', tabId: id }), tabId);
+    const t1 = await waitForAppTab(seen);
+    assert.ok(t1, 'first job opened');
+    const s1 = await state();
+    assert.equal(s1.current.title, 'Software Engineer 0');
+    // (extension-opened tabs skip the test routing on first load: load the fixture form, then submit)
+    await t1.goto('https://job-boards.greenhouse.io/embed/job_app?for=kodiak&token=4511215000&jr_id=0000a1b2c3d4e5f6a7b8c9d0');
+    seen = new Set(context.pages());
+    await t1.waitForFunction(() => window.jobCopilot && window.jobCopilot.installed);
+    await t1.click('#submit');
+    const t2 = await waitForAppTab(seen); // after the confirmation: tab closes, next job opens
+    assert.ok(t2, 'second job opened after the confirmed submission');
+    assert.equal(t1.isClosed(), true, 'applied tab closed');
+    const s2 = await state();
+    assert.equal(s2.applied, 1);
+    assert.equal(s2.current.title, 'Software Engineer 1');
+    assert.equal(await p.evaluate(() => window.__answered), 'yes', 'Jobright told "Yes, I applied!" for the submitted job');
+    // Closing the tab skips the job and moves on.
+    seen = new Set(context.pages());
+    await t2.close();
+    const t3 = await waitForAppTab(seen);
+    assert.ok(t3, 'third job opened after skipping');
+    const s3 = await state();
+    assert.deepEqual([s3.applied, s3.skipped, s3.current.title], [1, 1, 'Software Engineer 2']);
+    await ext.evaluate((id) => chrome.runtime.sendMessage({ type: 'jc:queue-stop', tabId: id }), tabId);
+    assert.equal((await state()).active, false);
+    await t3.close();
   });
 
   await check('recorder: logs clicks, window.open, flashed tab and the pop-up with its links', async () => {

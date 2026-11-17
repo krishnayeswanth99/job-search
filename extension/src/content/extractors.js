@@ -443,7 +443,7 @@
             postedAt: pick(c, ['[class*="publish" i]', '[class*="time" i]']),
             jobId: c.id,
             url: `https://jobright.ai/jobs/info/${c.id}`,
-            selector: cardRef(c),
+            selector: `[id="${c.id}"]`, // Jobright reuses card elements while scrolling: select by job id
           };
         });
       }
@@ -528,6 +528,7 @@
       const links =
         [...el.querySelectorAll('a[href]')].filter((a) => jobLinks.has(a.href)).length ||
         el.querySelectorAll('[data-jc-ref^="jc-card-"], [data-job-id], [data-occludable-job-id], [data-jk]').length ||
+        [...el.querySelectorAll('div[id]')].filter((d) => /^[0-9a-f]{24}$/i.test(d.id)).length || // Jobright cards
         el.querySelectorAll('li').length / 10;
       if (links > bestScore) {
         bestScore = links;

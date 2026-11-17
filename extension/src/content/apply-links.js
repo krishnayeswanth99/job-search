@@ -200,7 +200,51 @@
   /** Cards currently in the page, in order, each with its job record. */
   function cardsOnPage() {
     const jobs = JC.extract.listings();
-    return jobs.filter((j) => j.selector && document.querySelector(j.selector));
+    // Only cards whose element still shows the same job (feeds reuse elements while scrolling).
+    return jobs.filter((j) => {
+      const el = j.selector && document.querySelector(j.selector);
+      return el && (!j.jobId || !/^[0-9a-f]{24}$/i.test(j.jobId) || el.id === j.jobId);
+    });
+  }
+
+  // ------------------------------------------------ "Apply one by one" (queue)
+  // The service worker drives it: it asks this feed tab for the next job, opens the employer form
+  // (autofilled) in a new tab, and asks for the next one after a confirmed submission or when the
+  // user closes / skips the tab.
+  async function queueNext(skip) {
+    const skipKeys = new Set(skip || []);
+    JC.nav.closeDialogs(); // e.g. Jobright's "Did you apply?" left from the previous job
+    await sleep(400);
+    for (let scrolls = 0; scrolls < 6; scrolls++) {
+      const next = cardsOnPage().find((j) => !skipKeys.has(jobKey(j)) && !j.appliedAt);
+      if (next) {
+        document.querySelector(next.selector).scrollIntoView({ block: 'center' });
+        await sleep(300);
+        const trace = [];
+        const f = await JC.nav.followApply({ scope: next.selector, newTab: true, queue: true, trace });
+        if (JC.recorder && JC.recorder.note) JC.recorder.note({ queue: true, job: next.title, result: f && (f.to || f.reason), steps: trace });
+        if (f && f.ok && f.to) {
+          save(next, f.to, 'apply-button');
+          return { ok: true, key: jobKey(next), title: next.title, company: next.company };
+        }
+        return { ok: false, key: jobKey(next), title: next.title, reason: (f && f.reason) || 'no employer address', trace };
+      }
+      const r = await JC.extract.loadMore({ rounds: 1 });
+      if (!r.added && scrolls > 1) break;
+    }
+    return { ok: false, done: true, reason: 'No more jobs in the feed.' };
+  }
+
+  try {
+    chrome.runtime.onMessage.addListener((msg, sender, reply) => {
+      if (msg && msg.type === 'jc:queue-next' && window === window.top) {
+        queueNext(msg.skip).then(reply);
+        return true;
+      }
+      return false;
+    });
+  } catch (_) {
+    /* ignore */
   }
 
   /**

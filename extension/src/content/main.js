@@ -61,6 +61,7 @@
 
   JC.handle = async function handle(cmd, payload) {
     payload = payload || {};
+    if (JC.recorder && JC.recorder.note && isTop && !['ping', 'detect'].includes(cmd)) JC.recorder.note({ command: cmd, from: payload._origin });
     try {
       const denied = await checkWrite(cmd, payload);
       if (denied) return { ok: false, frame: location.href, error: denied };

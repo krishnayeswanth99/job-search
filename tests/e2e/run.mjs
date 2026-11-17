@@ -36,6 +36,7 @@ const ROUTES = {
   'https://jobright.ai/jobs/recommend?v=2': fx('jobright-feed.html'),
   'https://jobright.ai/jobs/recommend?v=3': fx('jobright-feed.html'),
   'https://jobright.ai/jobs/recommend?v=4': fx('jobright-feed.html'),
+  'https://jobright.ai/jobs/recommend?v=5': fx('jobright-feed.html'),
   'https://jobright.ai/jobs/info/real01': fx('jobright-real-job.html'),
   'https://jobright.ai/jobs/info/real01?nt=1': fx('jobright-real-job.html'),
   'https://jobright.ai/jobs/info/fab001': fx('jobright-flash.html'),
@@ -616,7 +617,13 @@ try {
     assert.match(j7.applyUrl, /token=4511215007/);
   });
 
+  const setSetting = (patch) => ext.evaluate(async (patch) => {
+    const { settings } = await chrome.storage.local.get('settings');
+    await chrome.storage.local.set({ settings: Object.assign({}, settings, patch) });
+  }, patch);
+
   await check('Jobright by hand: the link a tab opens after your own clicks is saved for that job', async () => {
+    await setSetting({ autoContinue: false, autoFillOpened: false }); // purely manual here
     const p = await open('https://jobright.ai/jobs/recommend?v=3');
     const card = '[id="0003a1b2c3d4e5f6a7b8c9d0"] button';
     await p.click(card); // your click on Apply with Autofill
@@ -643,6 +650,29 @@ try {
     assert.ok(j2.appliedAt, 'job marked applied');
     const apps = await ext.evaluate(async () => (await chrome.storage.local.get('applications')).applications);
     assert.ok(apps.some((a) => a.key === 'https://jobright.ai/jobs/info/0003a1b2c3d4e5f6a7b8c9d0' && /thank you for applying/i.test(a.confirmation)));
+    await tab.close();
+    await setSetting({ autoContinue: true, autoFillOpened: true });
+  });
+
+  await check('Jobright assist: you click Apply, it takes "Apply Without Customizing", opens the employer form and autofills it', async () => {
+    const p = await open('https://jobright.ai/jobs/recommend?v=5');
+    const before = new Set(context.pages());
+    await p.click('[id="0004a1b2c3d4e5f6a7b8c9d0"] button');
+    // Jobright's own pop-up check opens (and closes) a blank tab first; wait for the employer form tab.
+    let tab = null;
+    for (let i = 0; i < 60 && !tab; i++) {
+      tab = context.pages().find((pg) => !before.has(pg) && /job-boards\.greenhouse\.io\//.test(pg.url()));
+      if (!tab) await p.waitForTimeout(250);
+    }
+    assert.ok(tab, 'employer form opened in a new tab');
+    // Tabs opened by the extension skip the test's request routing on their first load (they'd hit the
+    // real site); load the same address again through the routing, within the autofill retry window.
+    await tab.goto('https://job-boards.greenhouse.io/embed/job_app?for=kodiak&token=4511215004&jr_id=0004a1b2c3d4e5f6a7b8c9d0');
+    await tab.waitForFunction(() => document.getElementById('email') && document.getElementById('email').value !== '', null, { timeout: 15000 });
+    assert.equal(await p.evaluate(() => !!window.__fixResume), false, 'never chose "Fix My Resume Now"');
+    assert.equal(await p.evaluate(() => window.__answered), null, '"Did you apply?" not answered before a submission');
+    const j = (await bridge(p, () => window.jobCopilot.extractJobs())).jobs.find((x) => x.jobId === '0004a1b2c3d4e5f6a7b8c9d0');
+    assert.match(j.applyUrl, /token=4511215004/);
     await tab.close();
   });
 

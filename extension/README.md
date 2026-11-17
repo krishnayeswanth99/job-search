@@ -64,6 +64,9 @@ Full reference for skill authors: [`../shared/browser.md`](../shared/browser.md)
 - `<all_urls>` host access and content scripts: needed to detect jobs and autofill on any company careers site.
   The scripts are idle until asked, apart from a light status check for the badge.
 - `scripting`: runs commands in every frame of the tab (application forms often live in iframes).
+- `debugger`: only for the optional **real mouse clicks** setting, which is off by default. Chrome doesn't allow this
+  permission to be optional, so it's requested at install. Nothing attaches to a tab unless the setting is on, and
+  Chrome shows a "started debugging this browser" bar whenever it does.
 - `storage` and `unlimitedStorage`: the profile and resume file.
 
 ## Files

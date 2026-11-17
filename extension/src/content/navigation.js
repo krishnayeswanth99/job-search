@@ -225,7 +225,11 @@
   async function clickAndWait(selector, timeoutMs, trace) {
     trace = trace || [];
     const t0 = Date.now();
-    const note = (step, extra) => trace.push(Object.assign({ ms: Date.now() - t0, step }, extra || {}));
+    const note = (step, extra) => {
+      const entry = Object.assign({ ms: Date.now() - t0, step }, extra || {});
+      trace.push(entry);
+      if (JC.recorder && JC.recorder.note) JC.recorder.note(entry);
+    };
     const el = document.querySelector(selector);
     if (!el) {
       note('apply button not found');
@@ -337,6 +341,90 @@
     // where Apply leads elsewhere; on an employer's own page Claude should click it itself).
     if (a.kind === 'external') return fromClick(await clickAndWait(a.selector, 10000, opts.trace), a.kind);
     return { ok: false, kind: a.kind, selector: a.selector, reason: 'The Apply button has no link (it is scripted). Click it; it usually opens a new tab, then look at detect().openedTabs.' };
+  }
+
+  // ------------------------------------------------ assist your own Apply clicks
+  // On a job board / aggregator, when YOU click Apply (a real click), carry on for you: take the
+  // pop-up's skip option ("Apply Without Customizing", never the upsell), catch the employer
+  // address and open it in a new tab, where it gets autofilled (setting autoContinue).
+  let assisting = false;
+  async function assist(job) {
+    if (assisting) return;
+    assisting = true;
+    const t0 = Date.now();
+    const note = (step, extra) => JC.recorder && JC.recorder.note && JC.recorder.note(Object.assign({ assist: true, ms: Date.now() - t0, step }, extra || {}));
+    captured = null;
+    captureOpen(true); // the site's own window.open calls are caught from here on
+    try {
+      note('you clicked Apply: watching for the pop-up');
+      const end = Date.now() + 12000;
+      let clicked = false;
+      let url = null;
+      while (Date.now() < end && !url) {
+        await sleep(250);
+        if (captured) {
+          url = captured;
+          break;
+        }
+        const gate = interstitial();
+        if (gate && !clicked) {
+          note(`pop-up: choosing "${gate.button}"`, { href: gate.href || undefined });
+          if (gate.href) {
+            url = gate.href;
+            break;
+          }
+          clicked = true;
+          const b = document.querySelector(gate.selector);
+          if (b) await click(b);
+        }
+      }
+      if (!url) {
+        note(clicked ? 'pop-up option clicked but no employer address was caught' : 'no pop-up appeared');
+        return;
+      }
+      note('opening the employer application', { url });
+      if (JC.applyLinks && job) JC.applyLinks.save(job, url, 'your-click');
+      const info = job ? { key: JC.applyLinks.jobKey(job), title: job.title || '', company: job.company || '' } : null;
+      chrome.runtime.sendMessage({ type: 'jc:open-tab', url, job: info, autofill: true }).catch(() => {});
+    } finally {
+      await sleep(200);
+      captureOpen(false);
+      assisting = false;
+    }
+  }
+
+  if (typeof document !== 'undefined' && window === window.top) {
+    document.addEventListener(
+      'click',
+      async (e) => {
+        if (!e.isTrusted || assisting) return;
+        const portal = JC.portalForHost(location.hostname);
+        if (!portal || !portal.aggregator) return;
+        const b = e.target && e.target.closest && e.target.closest('a, button, [role="button"]');
+        if (!b || !APPLY_RE.test(label(b)) || SKIP_UPSELL.test(label(b))) return;
+        try {
+          const { settings } = await chrome.storage.local.get('settings');
+          if (settings && settings.autoContinue === false) return;
+        } catch (_) {
+          return;
+        }
+        // Which job: the card that holds the button, else this job page.
+        let job = null;
+        let c = b.closest('div[id]');
+        while (c && !/^[0-9a-f]{24}$/i.test(c.id)) c = c.parentElement && c.parentElement.closest('div[id]');
+        if (c && JC.extract) job = JC.extract.listings().find((x) => x.jobId === c.id) || null;
+        if (!job && JC.extract) {
+          try {
+            job = JC.extract.job();
+          } catch (_) {
+            job = null;
+          }
+        }
+        if (!job) job = { url: location.origin + location.pathname };
+        assist(job);
+      },
+      true
+    );
   }
 
   JC.nav = { applyInfo, redirectInfo, interstitial, appliedPrompt, followApply, closeDialogs, click, resolveTarget };

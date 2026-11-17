@@ -47,6 +47,13 @@ this:
   itself: when the employer's site confirms the application (`detect().submitted`), it marks the job applied and answers
   the board's prompt with **Yes, I applied!** for that job only. The user can turn this off in the options.
 
+When the **user** clicks Apply on Jobright themselves, Job Copilot continues for them (setting `autoContinue`):
+1. It takes "Apply Without Customizing".
+2. It opens the employer's form in a new tab.
+3. It autofills that form (setting `autoFillOpened`). It never submits.
+
+Before clicking Apply yourself on the user's behalf, check whether a new employer tab has already appeared.
+
 On the feed, `resolveApplyLinks({ viaApply: true, limit: 50 })` does the same for every card, one after another,
 scrolling for more as it goes.
 - It closes Jobright's pop-ups without answering them.

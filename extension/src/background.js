@@ -127,7 +127,42 @@ async function markApplied(tabId, msg, senderUrl) {
   return { ok: true, key: record.key };
 }
 
+// Autofill an employer form opened from a job board, once it has loaded (setting autoFillOpened).
+const autofillDone = new Set();
+function scheduleAutofill(tabId, openerTabId) {
+  if (autofillDone.has(tabId)) return;
+  autofillDone.add(tabId);
+  const attempt = async (n) => {
+    const { settings } = await chrome.storage.local.get('settings');
+    if (settings && settings.autoFillOpened === false) return;
+    let tab;
+    try {
+      tab = await chrome.tabs.get(tabId);
+    } catch (_) {
+      return;
+    }
+    if (tab.status !== 'complete' && n < 10) return setTimeout(() => attempt(n + 1), 1000);
+    const d = await runCommand(tabId, 'detect', {}, 'popup').catch(() => null);
+    if (!d || !d.application) {
+      if (n < 6) setTimeout(() => attempt(n + 1), 1500); // forms rendered by JavaScript
+      return;
+    }
+    const r = await runCommand(tabId, 'autofill', {}, 'popup').catch((e) => ({ ok: false, error: String(e) }));
+    if (openerTabId) recAdd(openerTabId, { type: 'extension-step', detail: { step: 'autofilled employer form', tabId, filled: r && r.filledCount, needsInput: r && r.needsInput && r.needsInput.length, error: r && r.error } });
+    if (r && r.ok) {
+      await chrome.action.setBadgeText({ tabId, text: 'FILL' }).catch(() => {});
+      await chrome.action.setBadgeBackgroundColor({ tabId, color: '#16a34a' }).catch(() => {});
+    }
+  };
+  setTimeout(() => attempt(0), 1500);
+}
+
+// Tabs whose job link is already known (opened by Job Copilot itself, or credited once): later
+// redirects in those tabs (login pages, error pages, ATS hops) must not overwrite the saved link.
+const linkSettledTabs = new Set();
+
 async function creditOpenedTab(openerId, url, childTabId) {
+  if (childTabId && linkSettledTabs.has(childTabId)) return;
   const lj = lastJob.get(openerId);
   if (!lj || Date.now() - lj.at > 90000) return;
   let opener;
@@ -147,8 +182,12 @@ async function creditOpenedTab(openerId, url, childTabId) {
   if (!/^https?:/i.test(real) || host(real) === host(opener.url || '')) return;
   const data = { applyUrl: real, applyHost: host(real), via: 'your-click', at: new Date().toISOString(), title: lj.title || '', company: lj.company || '' };
   lastJob.delete(openerId);
+  if (childTabId) linkSettledTabs.add(childTabId);
   await saveApplyLink(lj.key, data);
-  if (childTabId) await setApplying(childTabId, { key: lj.key, title: lj.title, company: lj.company, openerTabId: openerId, applyUrl: real });
+  if (childTabId) {
+    await setApplying(childTabId, { key: lj.key, title: lj.title, company: lj.company, openerTabId: openerId, applyUrl: real });
+    scheduleAutofill(childTabId, openerId);
+  }
   chrome.tabs.sendMessage(openerId, { type: 'jc:apply-link-seen', key: lj.key, data }).catch(() => {});
   recAdd(openerId, { type: 'apply-link-saved', key: lj.key, url: real });
 }
@@ -425,7 +464,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       // followApply({ newTab: true }): open the employer's application next to the job board tab.
       if (!/^https?:\/\//i.test(String(msg.url || ''))) return { ok: false };
       const t = await chrome.tabs.create({ url: msg.url, openerTabId: sender.tab.id, index: sender.tab.index + 1 });
+      linkSettledTabs.add(t.id);
       if (msg.job && msg.job.key) await setApplying(t.id, Object.assign({}, msg.job, { openerTabId: sender.tab.id, applyUrl: msg.url }));
+      if (msg.autofill) scheduleAutofill(t.id, sender.tab.id);
       return { ok: true, tabId: t.id };
     }
     if (msg.type === 'jc:rec-event' && sender.tab && !fromExt) {

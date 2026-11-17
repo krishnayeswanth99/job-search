@@ -73,7 +73,9 @@
       }
     }
     if (el.placeholder) tries.push(clean(el.placeholder));
-    const best = tries.map((t) => t.replace(/\s*\*\s*$/, '').trim()).find((t) => t && t.length <= 300);
+    const best = tries
+      .map((t) => t.replace(/\s+(select one|select|choose one)(\s+required)?\s*$/i, '').replace(/\s*\*\s*$/, '').trim())
+      .find((t) => t && t.length <= 300);
     return best || '';
   }
 
@@ -124,6 +126,14 @@
       });
     }
 
+    // Dropdowns built from buttons/divs (Workday "Select One" buttons, ARIA comboboxes without an input).
+    const PLACEHOLDER_TEXT = /^(select( one)?|choose( one)?|please select|--|—|make a selection|none selected)\b/i;
+    for (const el of document.querySelectorAll('button[aria-haspopup="listbox"], [role="combobox"]:not(input):not(:has(input))')) {
+      if (el.disabled || el.getAttribute('aria-disabled') === 'true' || !isVisible(el) || el.closest('[aria-hidden="true"]')) continue;
+      const text = clean(el.innerText || el.textContent);
+      out.push({ el, tag: el.tagName.toLowerCase(), type: 'listbox', name: el.getAttribute('name') || '', combobox: true, listboxText: text, listboxEmpty: !text || PLACEHOLDER_TEXT.test(text) });
+    }
+
     const profileHints = [];
     for (const f of out) {
       const el = f.el;
@@ -145,6 +155,7 @@
         if (f.type === 'select') f.options = [...el.options].map((o) => ({ value: o.value, text: clean(o.text) }));
         if (f.type === 'checkbox' || f.type === 'radio') f.hasValue = el.checked;
         else if (f.type === 'file') f.hasValue = !!(el.files && el.files.length);
+        else if (f.type === 'listbox') f.hasValue = !f.listboxEmpty;
         else f.hasValue = !!String(el.value || '').trim() && !(f.type === 'select' && el.selectedIndex <= 0 && !el.value);
       }
       f.ref = ref(el);

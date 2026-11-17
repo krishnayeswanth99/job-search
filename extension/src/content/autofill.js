@@ -264,6 +264,7 @@
     }
     if (f.type === 'select') return f.el.selectedIndex > 0 || f.el.value ? (f.el.options[f.el.selectedIndex] || {}).text || '' : '';
     if (f.type === 'checkbox') return f.el.checked ? 'yes' : 'no';
+    if (f.type === 'listbox') return f.listboxEmpty ? '' : f.listboxText || '';
     return f.el.value || '';
   }
 

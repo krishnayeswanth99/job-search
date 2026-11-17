@@ -129,6 +129,9 @@
           const r = await (JC.learn ? JC.learn.ours(run) : run());
           return Object.assign({ ok: true }, r);
         }
+        case 'startApplication':
+          if (!isTop) return null;
+          return Object.assign({ frame: location.href }, await JC.nav.startApplication());
         case 'nextStep': {
           // Multi-page forms: click Next / Continue / Save & Continue (even when the site's layout hid it).
           // Never Submit: that one is scrolled into view and outlined for the user.

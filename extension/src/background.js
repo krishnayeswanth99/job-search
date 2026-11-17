@@ -7,7 +7,7 @@
  */
 importScripts('shared/config.js', 'shared/profile-schema.js', 'shared/field-rules.js');
 
-const FRAME_CMDS = new Set(['nextStep', 'ping', 'detect', 'extractJobs', 'loadMoreJobs', 'resolveApplyLinks', 'stopResolve', 'extractJob', 'scanForm', 'autofill', 'fillField', 'attachFile', 'followApply']);
+const FRAME_CMDS = new Set(['startApplication', 'nextStep', 'ping', 'detect', 'extractJobs', 'loadMoreJobs', 'resolveApplyLinks', 'stopResolve', 'extractJob', 'scanForm', 'autofill', 'fillField', 'attachFile', 'followApply']);
 
 // ---------------------------------------------------- tabs opened by Apply buttons
 // Job boards often open the employer's site in a new tab. Remember child tabs per
@@ -220,7 +220,9 @@ async function markApplied(tabId, msg, senderUrl) {
 
 // Autofill an employer form opened from a job board, once it has loaded (setting autoFillOpened).
 const autofillDone = new Set();
-const autofillPending = new Map(); // tabId -> timer (debounce: several load events per step)
+const autofillPending = new Map();
+const startedApply = new Set(); // tabs where the employer's Apply was clicked already
+const loginNoted = new Set(); // tabId -> timer (debounce: several load events per step)
 function scheduleAutofill(tabId, openerTabId, pageKey) {
   clearTimeout(autofillPending.get(tabId));
   // Once per distinct form (multi-step forms: iCIMS, Workday, Taleo… get each step), identified by
@@ -236,7 +238,24 @@ function scheduleAutofill(tabId, openerTabId, pageKey) {
     }
     if (tab.status !== 'complete' && n < 10) return setTimeout(() => attempt(n + 1), 1000);
     const d = await runCommand(tabId, 'detect', {}, 'popup').catch(() => null);
-    if (d && d.login && d.login.required) return; // sign-in / create-account steps are the user's
+    if (d && d.login && d.login.required) {
+      // Sign-in / create-account steps are the user's; the next page gets autofilled after.
+      if (!loginNoted.has(tabId + '|' + tab.url)) {
+        loginNoted.add(tabId + '|' + tab.url);
+        debugAdd(tabId, { type: 'extension-step', detail: { step: 'sign-in or create-account page: waiting for you', url: tab.url } });
+      }
+      return;
+    }
+    if (d && !d.application && d.pageType === 'job' && !startedApply.has(tabId)) {
+      // The employer's own job page (Workday, iCIMS, SmartRecruiters…): start the application.
+      const { settings: st } = await chrome.storage.local.get('settings');
+      if (!st || st.autoContinue !== false) {
+        startedApply.add(tabId);
+        const s = await runCommand(tabId, 'startApplication', {}, 'popup').catch((e) => ({ ok: false, reason: String(e) }));
+        debugAdd(tabId, { type: 'extension-step', detail: { step: 'started the application on the employer page', result: s && (s.chose || (s.login && 'sign-in') || (s.form && 'form') || s.reason), steps: s && s.steps } });
+        return setTimeout(() => attempt(1), 2500);
+      }
+    }
     if (!d || !d.application) {
       if (n < 6) setTimeout(() => attempt(n + 1), 1500); // forms rendered by JavaScript
       return;
@@ -455,6 +474,8 @@ function merge(cmd, frames) {
       return out;
     }
     case 'followApply':
+      return frames.find((f) => f.frameId === 0) || frames[0];
+    case 'startApplication':
       return frames.find((f) => f.frameId === 0) || frames[0];
     case 'nextStep':
       return frames.find((f) => f.ok) || frames.find((f) => f.submit) || frames.find((f) => f.frameId === 0) || frames[0];

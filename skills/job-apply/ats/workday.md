@@ -21,6 +21,15 @@
    (today), plus the disability status per the profile. The default is "I do not want to answer".
 7. **Review:** screenshot it, confirm with the user, then **Submit**.
 
+## With Job Copilot
+- `jobCopilot.startApplication()` on the job page clicks **Apply** and chooses "Use My Last Application" or "Apply
+  Manually". It stops at sign-in or create-account, which is the user's step. Tabs opened from a job board do this by
+  themselves.
+- After sign-in, each step (My Information, My Experience, Application Questions…) is autofilled as it loads, including
+  Workday's button dropdowns (Phone Device Type, Country, State, yes/no questions), which it opens and picks from.
+- Multi-level "How Did You Hear About Us?" prompts may still need a click by hand.
+- `jobCopilot.nextStep()` clicks **Save and Continue**. It never submits.
+
 ## Technique
 - Workday inputs carry `data-automation-id` attributes, which the extension uses for matching. Dropdowns are
   `button[aria-haspopup="listbox"]`: click, then click the `[role="option"]` whose text matches.

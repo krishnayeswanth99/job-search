@@ -344,6 +344,65 @@
     return { ok: false, kind: a.kind, selector: a.selector, reason: 'The Apply button has no link (it is scripted). Click it; it usually opens a new tab, then look at detect().openedTabs.' };
   }
 
+  // ------------------------------------------------ employer job page -> application
+  /**
+   * On an employer's own job page (opened from a job board), start the application: click its
+   * Apply, then, if the site asks how to start (Workday: "Use My Last Application" / "Apply
+   * Manually" / "Autofill with Resume"), choose. Stops at sign-in pages: those are the user's.
+   */
+  async function startApplication(trace) {
+    trace = trace || [];
+    const t0 = Date.now();
+    const note = (step, extra) => {
+      const entry = Object.assign({ ms: Date.now() - t0, step }, extra || {});
+      trace.push(entry);
+      if (JC.recorder && JC.recorder.note) JC.recorder.note(entry);
+    };
+    if (JC.fields.looksLikeApplication()) return { ok: true, already: true, steps: trace };
+    const a = applyInfo();
+    if (!a) {
+      note('no Apply button on this page');
+      return { ok: false, reason: 'No Apply button found on this page.', steps: trace };
+    }
+    if (a.kind === 'easy-apply') return { ok: false, reason: 'On-site Easy Apply: use its own form.', steps: trace };
+    const before = location.href;
+    const el = document.querySelector(a.selector);
+    if (!el) return { ok: false, reason: 'Apply button disappeared.', steps: trace };
+    await click(el, trace);
+    note(`clicked the employer's "${a.text}"`);
+    // How-to-start choices, best first (Workday and similar).
+    const CHOICES = [/^use my last application$/i, /^apply manually$/i, /^autofill with resume$/i, /^apply with (my )?resume$/i, /^start (your |my )?application$/i];
+    const end = Date.now() + 7000;
+    while (Date.now() < end) {
+      await sleep(400);
+      const login = JC.login.detectLogin();
+      if (login.required) {
+        note('sign-in or create-account page: waiting for you');
+        return { ok: true, login: true, steps: trace };
+      }
+      if (JC.fields.looksLikeApplication()) {
+        note('application form is open');
+        return { ok: true, form: true, steps: trace };
+      }
+      const btns = [...document.querySelectorAll('a, button, [role="button"]')].filter((b) => isVisible(b));
+      for (const re of CHOICES) {
+        const b = btns.find((x) => re.test(label(x)));
+        if (b) {
+          await click(b, trace);
+          note(`chose "${label(b)}"`);
+          await sleep(1200);
+          return { ok: true, chose: label(b), steps: trace };
+        }
+      }
+      if (location.href !== before) {
+        note('page changed', { url: location.href });
+        return { ok: true, navigated: location.href, steps: trace };
+      }
+    }
+    note('clicked Apply, but no form, start choice or sign-in appeared');
+    return { ok: false, reason: 'Clicked Apply, but no form appeared.', steps: trace };
+  }
+
   // ------------------------------------------------ assist your own Apply clicks
   // On a job board / aggregator, when YOU click Apply (a real click), carry on for you: take the
   // pop-up's skip option ("Apply Without Customizing", never the upsell), catch the employer
@@ -428,5 +487,5 @@
     );
   }
 
-  JC.nav = { applyInfo, redirectInfo, interstitial, appliedPrompt, followApply, closeDialogs, click, resolveTarget };
+  JC.nav = { applyInfo, redirectInfo, interstitial, appliedPrompt, followApply, startApplication, closeDialogs, click, resolveTarget };
 })(typeof globalThis !== 'undefined' ? globalThis : self);

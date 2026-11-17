@@ -30,6 +30,7 @@ const ROUTES = {
   'https://job-boards.greenhouse.io/initech/jobs/5': fx('greenhouse-job.html'),
   'https://jobs.lever.co/parsetest/22222222-3333-4444-5555-666666666666/apply': fx('lever-parse.html'),
   'https://jobs.lever.co/learntest/apply-1': fx('learn-form.html'),
+  'https://acme.wd5.myworkdayjobs.com/en-US/careers/job/New-York-NY/ML-Engineer_123': fx('workday-job.html'),
   'https://jobs.lever.co/learntest/apply-2': fx('learn-form.html'),
   'https://careers-acme.icims.com/jobs/1234/data-scientist/candidate': fx('icims-like.html'),
   'https://www.linkedin.com/jobs/view/4000000009/': fx('linkedin-external.html'),
@@ -240,6 +241,24 @@ try {
     assert.equal(await q.evaluate(() => dob.value), '');
     const after = await ext.evaluate(async () => Object.keys((await chrome.storage.local.get('learnedLabels')).learnedLabels || {}).length);
     assert.equal(after, before + 1);
+  });
+
+  await check('Workday: employer Apply -> "Apply Manually" -> form; button dropdowns (Phone Device Type, Country) filled', async () => {
+    const p = await open('https://acme.wd5.myworkdayjobs.com/en-US/careers/job/New-York-NY/ML-Engineer_123');
+    assert.equal((await bridge(p, () => window.jobCopilot.detect())).pageType, 'job');
+    const s1 = await bridge(p, () => window.jobCopilot.startApplication());
+    assert.equal(s1.ok, true, JSON.stringify(s1));
+    assert.equal(s1.chose, 'Apply Manually');
+    await p.waitForSelector('#fn');
+    const scan = await bridge(p, () => window.jobCopilot.scanForm());
+    const dev = scan.fields.find((f) => f.label === 'Phone Device Type');
+    assert.ok(dev && dev.profileKey === 'phoneType' && dev.combobox, JSON.stringify(scan.fields.map((f) => [f.label, f.type, f.profileKey])));
+    const r = await bridge(p, () => window.jobCopilot.autofill());
+    const v = await p.evaluate(() => ({ fn: fn.value, dev: document.getElementById('phone-device-type').textContent, country: document.getElementById('country').textContent }));
+    assert.ok(v.fn.length > 0);
+    assert.equal(v.dev, 'Mobile');
+    assert.equal(v.country, 'United Kingdom');
+    assert.ok(!r.needsInput.some((f) => /device type|country/i.test(f.label)), JSON.stringify(r.needsInput));
   });
 
   await check('bridge: fillField answers a custom question', async () => {

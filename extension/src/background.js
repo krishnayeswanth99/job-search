@@ -36,7 +36,28 @@ async function recGet(tabId) {
     return null;
   }
 }
+// ---------------------------------------------------- always-on debug log
+// The last 300 notable events across tabs (extension steps, redirects caught, autofill results,
+// confirmations, errors), so a problem can be reported without having started a recording.
+const DEBUG_MAX = 300;
+let debugQueue = Promise.resolve();
+const DEBUG_TYPES = new Set(['extension-step', 'apply-link-saved', 'application-confirmed', 'tab-closed', 'autofill', 'error']);
+function debugAdd(tabId, ev) {
+  if (!DEBUG_TYPES.has(ev.type)) return;
+  const entry = Object.assign({ at: new Date().toISOString(), tabId }, ev);
+  debugQueue = debugQueue.then(async () => {
+    try {
+      const { debugLog } = await chrome.storage.session.get('debugLog');
+      const log = (debugLog || []).concat(entry).slice(-DEBUG_MAX);
+      await chrome.storage.session.set({ debugLog: log });
+    } catch (_) {
+      /* ignore */
+    }
+  });
+}
+
 async function recAdd(tabId, ev) {
+  debugAdd(tabId, ev);
   const r = await recGet(tabId);
   if (!r) return;
   if (Date.now() - r.startedAt > REC_MAX_MS) return recStop(tabId);
@@ -462,6 +483,12 @@ async function runCommand(tabId, cmd, payload, origin) {
     }
   }
   const out = merge(cmd, await runInFrames(tabId, cmd, payload));
+  if (cmd === 'autofill') {
+    const tab = await chrome.tabs.get(tabId).catch(() => ({}));
+    debugAdd(tabId, { type: 'autofill', url: tab.url, from: origin, ok: out.ok, error: out.error, filled: out.filledCount, needsInput: (out.needsInput || []).map((f) => `${(f.label || '').slice(0, 80)} (${f.reason})`).slice(0, 30) });
+  } else if (out && out.ok === false && out.error) {
+    debugAdd(tabId, { type: 'error', cmd, from: origin, error: String(out.error).slice(0, 300) });
+  }
   if (cmd === 'detect') {
     const kids = (childTabs.get(tabId) || []).filter((c) => /^https?:/.test(c.url));
     if (kids.length) out.openedTabs = kids;
@@ -557,6 +584,18 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       if (msg.job && msg.job.key) await setApplying(t.id, Object.assign({}, msg.job, { openerTabId: sender.tab.id, applyUrl: msg.url }));
       if (msg.autofill) scheduleAutofill(t.id, sender.tab.id);
       return { ok: true, tabId: t.id };
+    }
+    if (msg.type === 'jc:debug' && sender.tab && !fromExt) {
+      debugAdd(sender.tab.id, Object.assign({}, msg.event));
+      return { ok: true };
+    }
+    if (msg.type === 'jc:debug-get' && fromExt) {
+      const { debugLog } = await chrome.storage.session.get('debugLog').catch(() => ({}));
+      return { ok: true, log: debugLog || [], version: self.JC.VERSION, userAgent: navigator.userAgent };
+    }
+    if (msg.type === 'jc:debug-clear' && fromExt) {
+      await chrome.storage.session.remove('debugLog').catch(() => {});
+      return { ok: true };
     }
     if (msg.type === 'jc:rec-event' && sender.tab && !fromExt) {
       await recAdd(sender.tab.id, Object.assign({}, msg.event, { frameId: sender.frameId }));

@@ -127,7 +127,48 @@
     return { overrides, askMe, unknown };
   }
 
-  JC.ask = { questionsFrom, buildPrompt, parseReply, profileText };
+  // ------------------------------------------- on-device model (Chrome's Gemini Nano)
+  // Small context window: a compact prompt, a few questions at a time, and a JSON schema that
+  // limits choice questions to their real options (or ASK_ME).
+  function buildCompactPrompt({ questions, job, profile, resumeText }) {
+    const qs = (questions || []).map((q) => {
+      const o = { id: q.id, question: q.label };
+      if (q.options && q.options.length) o.choose_one_of = q.options;
+      if (q.maxLength) o.max_characters = q.maxLength;
+      return o;
+    });
+    return [
+      'Answer these job application questions for me. Use ONLY the facts below. If a fact is missing, or it is a personal choice, answer "ASK_ME". Never invent experience, numbers or dates. Choice questions: copy one option exactly. Free text: 1-3 short first-person sentences.',
+      `Job: ${(job && job.title) || ''} at ${(job && job.company) || ''}`,
+      job && job.description ? 'Job summary: ' + clip(job.description, 1200) : '',
+      'About me:\n' + profileText(profile),
+      resumeText ? 'Resume (excerpt):\n' + clip(resumeText, 2500) : '',
+      'Questions:\n' + JSON.stringify(qs),
+    ]
+      .filter(Boolean)
+      .join('\n\n');
+  }
+
+  function schemaFor(questions) {
+    const props = {};
+    for (const q of questions || []) {
+      props[q.id] = q.options && q.options.length ? { type: 'string', enum: q.options.concat(['ASK_ME']) } : { type: 'string' };
+    }
+    return {
+      type: 'object',
+      properties: { answers: { type: 'object', properties: props, required: Object.keys(props), additionalProperties: false } },
+      required: ['answers'],
+      additionalProperties: false,
+    };
+  }
+
+  function batches(questions, size) {
+    const out = [];
+    for (let i = 0; i < (questions || []).length; i += size || 4) out.push(questions.slice(i, i + (size || 4)));
+    return out;
+  }
+
+  JC.ask = { questionsFrom, buildPrompt, parseReply, profileText, buildCompactPrompt, schemaFor, batches };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = JC;
 })(typeof globalThis !== 'undefined' ? globalThis : self);

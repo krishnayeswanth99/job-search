@@ -779,6 +779,15 @@ try {
     assert.equal(q.on, false);
   });
 
+  await check('debug log (always on): extension steps and autofill results captured without starting a recording; no form values', async () => {
+    const r = await ext.evaluate(() => chrome.runtime.sendMessage({ type: 'jc:debug-get' }));
+    const types = new Set(r.log.map((e) => e.type));
+    assert.ok(types.has('extension-step') && types.has('autofill'), JSON.stringify([...types]));
+    assert.ok(r.log.some((e) => e.type === 'extension-step' && e.detail && /caught employer address|opening the employer application/.test(JSON.stringify(e.detail))));
+    const text = JSON.stringify(r.log);
+    assert.ok(!text.includes('ada@example.com') && !text.includes('Lovelace'), 'no profile values in the log');
+  });
+
   await check('bridge disabled: commands refused', async () => {
     await ext.evaluate(async () => {
       const { settings } = await chrome.storage.local.get('settings');

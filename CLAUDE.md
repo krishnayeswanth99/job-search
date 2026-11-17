@@ -32,7 +32,9 @@ npm run test:e2e     # needs Playwright + Chromium
 ```
 
 ## Asking for changes
-The fastest way to report a site that misbehaves: in the Job Copilot popup click **Record what I do**, do the steps on
+Quickest: right after something goes wrong, click **Copy debug log** in the Job Copilot popup and paste it (the last
+300 extension steps, always on). For the site's own behaviour (its pop-ups, tabs, links), use the recorder instead.
+In the Job Copilot popup click **Record what I do**, do the steps on
 the page (click Apply, let the pop-up appear…), reopen the popup, click **Stop & copy report** and paste the JSON. It
 lists clicks (element text, link, trimmed HTML), `window.open` calls, tabs opened and closed, pop-ups with their links
 and buttons, and URL changes. It never includes typed values, and emails and phone numbers are blanked.

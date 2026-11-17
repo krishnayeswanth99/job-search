@@ -222,7 +222,56 @@ async function refreshAsk() {
   const qs = await currentQuestions();
   $('ask').hidden = false;
   $('ask-count').textContent = qs.length ? `${qs.length} unanswered` : 'none left';
+  // Chrome's built-in on-device model (Gemini Nano, Prompt API): free, runs locally, no account.
+  const avail = typeof LanguageModel !== 'undefined' ? await LanguageModel.availability({ expectedInputs: [{ type: 'text', languages: ['en'] }], expectedOutputs: [{ type: 'text', languages: ['en'] }] }).catch(() => 'unavailable') : 'unavailable';
+  $('btn-ask-local').hidden = avail === 'unavailable' || !qs.length;
+  $('ask-local-note').textContent =
+    avail === 'unavailable'
+      ? "On-device AI isn't available in this Chrome/computer (it needs Chrome's built-in Gemini Nano)."
+      : avail === 'available'
+        ? ''
+        : 'First use downloads Chrome\'s on-device model once (a few GB).';
 }
+
+$('btn-ask-local').addEventListener('click', async () => {
+  const JCa = globalThis.JC.ask;
+  const qs = await currentQuestions();
+  if (!qs.length) return;
+  $('btn-ask-local').disabled = true;
+  const status = (t) => ($('ask-status').textContent = t);
+  let session;
+  try {
+    status('Starting the on-device model… keep this popup open.');
+    session = await LanguageModel.create({
+      expectedInputs: [{ type: 'text', languages: ['en'] }],
+      expectedOutputs: [{ type: 'text', languages: ['en'] }],
+      monitor(m) {
+        m.addEventListener('downloadprogress', (e) => status(`Downloading Chrome's on-device model: ${Math.round((e.loaded || 0) * 100)}% (one time)…`));
+      },
+    });
+    const job = await send('extractJob').catch(() => null);
+    const { profile, resumeText } = await chrome.storage.local.get(['profile', 'resumeText']);
+    const overrides = {};
+    const askMe = [];
+    const groups = JCa.batches(qs, 4);
+    for (let i = 0; i < groups.length; i++) {
+      status(`Answering questions ${i * 4 + 1}-${Math.min(qs.length, (i + 1) * 4)} of ${qs.length} on your device…`);
+      const prompt = JCa.buildCompactPrompt({ questions: groups[i], job: job && job.job, profile, resumeText });
+      const reply = await session.prompt(prompt, { responseConstraint: JCa.schemaFor(groups[i]) });
+      const parsed = JCa.parseReply(reply, groups[i]);
+      Object.assign(overrides, parsed.overrides);
+      askMe.push(...parsed.askMe);
+    }
+    const r = Object.keys(overrides).length ? await send('autofill', { overrides }) : { filledCount: 0 };
+    status(`On-device AI drafted ${Object.keys(overrides).length} answer(s) (filled ${r.filledCount || 0}). Please read them before submitting: a small model can be wrong.${askMe.length ? ` Needs your own answer: ${askMe.join('; ')}.` : ''}`);
+  } catch (e) {
+    status('On-device AI failed: ' + (e.message || e) + '. Use "Copy prompt" with Claude or ChatGPT instead.');
+  } finally {
+    if (session) session.destroy();
+    $('btn-ask-local').disabled = false;
+    refreshAsk();
+  }
+});
 $('btn-ask-copy').addEventListener('click', async () => {
   const qs = await currentQuestions();
   if (!qs.length) return ($('ask-status').textContent = 'No unanswered questions on this form. Run Autofill first if you haven\'t.');
@@ -275,6 +324,18 @@ $('btn-queue').addEventListener('click', async () => {
 });
 $('btn-q-skip').addEventListener('click', () => chrome.runtime.sendMessage({ type: 'jc:queue-skip', tabId }).then(refreshQueue));
 $('btn-q-stop').addEventListener('click', () => chrome.runtime.sendMessage({ type: 'jc:queue-stop', tabId }).then(refreshQueue));
+
+// ------------------------------------------------------------- debug log (always on)
+$('btn-debug').addEventListener('click', async () => {
+  const r = await chrome.runtime.sendMessage({ type: 'jc:debug-get' });
+  const text = JSON.stringify({ kind: 'job-copilot-debug-log', version: r.version, userAgent: r.userAgent, copiedAt: new Date().toISOString(), events: r.log }, null, 1);
+  try {
+    await navigator.clipboard.writeText(text);
+    $('debug-status').textContent = `Copied ${r.log.length} recent steps. Paste them to Claude.`;
+  } catch (_) {
+    $('debug-status').textContent = 'Copy failed.';
+  }
+});
 
 // ---------------------------------------------------------------- recorder
 async function refreshRec() {

@@ -15,7 +15,9 @@ const $ = (id) => document.getElementById(id);
 
 // --------------------------------------------------------------- text extraction
 async function pdfText(buf) {
-  const doc = await pdfjs.getDocument({ data: new Uint8Array(buf), isEvalSupported: false, disableFontFace: true, useSystemFonts: false }).promise;
+  // pdf.js transfers the bytes to its worker (detaching them), so give it a copy: the same file
+  // may also be sent to Claude or re-read by the fallback reader.
+  const doc = await pdfjs.getDocument({ data: new Uint8Array(buf.slice(0)), isEvalSupported: false, disableFontFace: true, useSystemFonts: false }).promise;
   const pages = [];
   for (let n = 1; n <= Math.min(doc.numPages, 6); n++) {
     const page = await doc.getPage(n);

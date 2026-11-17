@@ -38,3 +38,14 @@ test('reply parsing: code fences, ASK_ME, unknown ids', () => {
   assert.deepEqual([...r.unknown], ['zzz']);
   assert.throws(() => JC.ask.parseReply('no json here', qs), /No JSON/);
 });
+
+test('on-device: compact prompt, schema restricts choices, batching', () => {
+  const qs = JC.ask.questionsFrom(fields);
+  const p = JC.ask.buildCompactPrompt({ questions: qs, job: { title: 'X', company: 'Y', description: 'd'.repeat(5000) }, profile: JC.normalizeProfile({}), resumeText: 'r'.repeat(9000) });
+  assert.ok(p.length < 6500, String(p.length));
+  assert.ok(p.includes('ASK_ME'));
+  const sch = JC.ask.schemaFor(qs);
+  assert.deepEqual([...sch.properties.answers.properties['jc-a-3'].enum], ['SF', 'NYC', 'ASK_ME']);
+  assert.deepEqual([...sch.properties.answers.required], ['jc-a-2', 'jc-a-3', 'jc-a-7']);
+  assert.equal(JC.ask.batches(qs, 2).length, 2);
+});

@@ -172,6 +172,12 @@
   /** Extension's own steps (followApply / resolveApplyLinks) while recording. */
   function note(detail) {
     if (on) send({ type: 'extension-step', detail });
+    // Always-on debug log (no typed values: steps, labels, addresses only).
+    try {
+      chrome.runtime.sendMessage({ type: 'jc:debug', event: { type: 'extension-step', url: location.href, detail } }).catch(() => {});
+    } catch (_) {
+      /* extension reloaded */
+    }
   }
 
   JC.recorder = { start, stop, describe, note };

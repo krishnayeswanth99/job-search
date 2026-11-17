@@ -7,7 +7,7 @@
 (function (root) {
   const JC = (root.JC = root.JC || {});
 
-  JC.VERSION = '0.16.0';
+  JC.VERSION = '0.17.0';
   JC.BRIDGE_CHANNEL = 'job-copilot';
 
   /**
@@ -82,6 +82,24 @@
       u = next;
     }
     return u;
+  };
+
+  /**
+   * Make an application address suitable for opening in its own tab. Job boards often hand out
+   * the embedded variant (iCIMS "?in_iframe=1"), which expects a parent page to size it, so the
+   * form's buttons can end up out of view when opened directly.
+   */
+  JC.cleanApplyUrl = function cleanApplyUrl(u) {
+    try {
+      const url = new URL(JC.unwrapUrl(u));
+      if (/(^|\.)icims\.com$/i.test(url.hostname)) {
+        url.searchParams.delete('in_iframe');
+        url.searchParams.delete('iframe');
+      }
+      return url.href;
+    } catch (_) {
+      return u;
+    }
   };
 
   JC.portalForHost = function portalForHost(hostname) {

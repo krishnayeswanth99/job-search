@@ -17,6 +17,8 @@
 
   // Order matters: more specific rules first.
   const RULES = [
+    // Typed sign-offs / e-signatures attest the form is true: the user's call, like consent boxes.
+    { key: 'consent', re: /\b(sign[- ]?off|e-?signature|electronic signature|digital signature|signature)\b/, q: true },
     { key: 'consent', re: /\b(i (hereby )?(agree|acknowledge|consent|certify|confirm|attest|understand)|terms (of|and) (use|service|conditions)|privacy (policy|notice)|gdpr|data processing)\b/, q: true },
     { key: 'resume', re: /\b(resume|résumé|cv|curriculum vitae)\b/, fileOnly: true, q: true },
     { key: 'coverLetter', re: /\bcover ?letter\b/, fileOnly: true, q: true },
@@ -59,6 +61,8 @@
     { key: 'pay', re: /\b(salary|salaries|compensation|remuneration|wages?|ctc|lpa|(desired|expected|target|minimum) pay|pay (expectations?|range|rate)|(hourly|day|daily|bill|billing) rate|rate per (hour|day))\b/, q: true },
     { key: 'noticePeriod', re: /\bnotice period\b/, q: true },
     { key: 'earliestStartDate', re: /\b(start date|when can you start|available to start|earliest (start|availability)|date available)\b/, q: true },
+    { key: 'timeZone', re: /\btime ?zone\b/ },
+    { key: 'howDidYouHear', re: /^(source|candidate source|job source|recruiting source|referral source)$/ },
     { key: 'howDidYouHear', re: /\b(how did you (hear|find|learn)|where did you (hear|find|learn)|(referral|application|candidate) source|source of (application|referral)|how you heard)\b/, q: true },
     { key: 'sexualOrientation', re: /\b(sexual orientation|lgbtq?)\b/, q: true },
     { key: 'hispanicLatino', re: /\b(hispanic|latin[oax]|latine)\b/, q: true },
@@ -111,6 +115,36 @@
   function payPeriod(text) {
     for (const [period, re] of PERIODS) if (re.test(text)) return period;
     return 'unknown';
+  }
+
+  /**
+   * The browser's time zone as one value with alternatives ("America/New_York | Eastern | GMT-05:00 | …"):
+   * chooseOption tries the first; autofill tries each in turn (time-zone lists vary a lot by site).
+   */
+  function timeZoneGuess() {
+    let iana = '';
+    try {
+      iana = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
+    } catch (_) {
+      return '';
+    }
+    return iana;
+  }
+  function timeZoneCandidates(iana, offsetMin) {
+    if (!iana) return [];
+    const out = [iana, iana.split('/').pop().replace(/_/g, ' ')];
+    const US = { 'America/New_York': 'Eastern', 'America/Detroit': 'Eastern', 'America/Chicago': 'Central', 'America/Denver': 'Mountain', 'America/Phoenix': 'Arizona', 'America/Los_Angeles': 'Pacific', 'America/Anchorage': 'Alaska', 'Pacific/Honolulu': 'Hawaii' };
+    if (US[iana]) out.push(US[iana] + ' Time', US[iana]);
+    if (iana === 'Asia/Kolkata' || iana === 'Asia/Calcutta') out.push('India Standard Time', 'IST', 'Chennai', 'Mumbai', 'New Delhi');
+    if (iana === 'Europe/London') out.push('London', 'GMT', 'Greenwich Mean Time');
+    if (typeof offsetMin === 'number') {
+      const sign = offsetMin <= 0 ? '+' : '-';
+      const abs = Math.abs(offsetMin);
+      const hh = String(Math.floor(abs / 60)).padStart(2, '0');
+      const mm = String(abs % 60).padStart(2, '0');
+      out.push(`GMT${sign}${hh}:${mm}`, `UTC${sign}${hh}:${mm}`, `GMT${sign}${Number(hh)}`, `UTC${sign}${Number(hh)}`);
+    }
+    return out;
   }
 
   /** Profile key -> [section, field]. Keys not listed here are computed in valueForKey. */
@@ -200,6 +234,10 @@
         return '';
       case 'phoneType':
         return 'Mobile';
+      case 'timeZone':
+        return timeZoneGuess();
+      case 'howDidYouHearDetail':
+        return profile.howDidYouHear || '';
       default:
         return get(profile, key);
     }
@@ -428,7 +466,7 @@
     return { answers: list, added, updated };
   }
 
-  JC.rules = { classifyField, valueForKey, chooseOption, matchSavedAnswer, mergeAnswers, isCompanySpecific, looksSensitive, NEVER_REMEMBER, humanize, norm, payPeriod, amounts, parseAmount, toNumberValue, emptyReason, LONG_LABEL };
+  JC.rules = { timeZoneCandidates, classifyField, valueForKey, chooseOption, matchSavedAnswer, mergeAnswers, isCompanySpecific, looksSensitive, NEVER_REMEMBER, humanize, norm, payPeriod, amounts, parseAmount, toNumberValue, emptyReason, LONG_LABEL };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = JC;
 })(typeof globalThis !== 'undefined' ? globalThis : self);

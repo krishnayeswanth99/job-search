@@ -127,6 +127,28 @@
           const r = await JC.autofill.autofill({ profile, files, overrides: payload.overrides, overwrite: !!payload.overwrite });
           return Object.assign({ ok: true }, r);
         }
+        case 'nextStep': {
+          // Multi-page forms: click Next / Continue / Save & Continue (even when the site's layout hid it).
+          // Never Submit: that one is scrolled into view and outlined for the user.
+          const NEXT = /^(next|next step|next page|continue|save (and|&) continue|save (and|&) next|proceed|go to next step|continue to next step)\b(?!.*\bwith\b)/i;
+          const SUBMIT = /^(submit|submit application|submit my application|send application|apply|apply now|finish|complete application)\b/i;
+          const btns = [...document.querySelectorAll('button, input[type="submit"], input[type="button"], a, [role="button"]')].filter((b) => b.getClientRects().length && !b.disabled);
+          const label = (b) => JC.dom.clean(b.innerText || b.value || b.getAttribute('aria-label') || '');
+          const next = btns.find((b) => NEXT.test(label(b)) && label(b).length < 40);
+          if (next) {
+            next.scrollIntoView({ block: 'center' });
+            next.click();
+            return { ok: true, frame: location.href, clicked: label(next) };
+          }
+          const sub = btns.find((b) => SUBMIT.test(label(b)) && label(b).length < 40);
+          if (sub) {
+            sub.scrollIntoView({ block: 'center' });
+            sub.style.outline = '3px solid #16a34a';
+            sub.style.outlineOffset = '3px';
+            return { ok: false, frame: location.href, submit: label(sub), reason: 'This is the last step: review the form, then click the outlined submit button yourself.' };
+          }
+          return { ok: false, frame: location.href, reason: 'No Next or Submit button found in this frame.' };
+        }
         case 'fillField':
           return Object.assign({ frame: location.href }, JC.autofill.fillOne(payload));
         case 'attachFile': {

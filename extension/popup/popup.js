@@ -118,7 +118,10 @@ async function init() {
     $('btn-follow').classList.add('primary');
     $('btn-follow').textContent = d.interstitial ? `Continue: ${d.interstitial.button}` : ext && d.apply.target ? `Go to application (${new URL(d.apply.target).hostname})` : 'Go to application';
   }
-  if (d.application) refreshAsk();
+  if (d.application) {
+    refreshAsk();
+    $('btn-next').hidden = false;
+  }
   if (isAggregator()) {
     $('btn-queue').hidden = false;
     refreshQueue();
@@ -136,6 +139,12 @@ $('btn-follow').addEventListener('click', async () => {
   $('btn-follow').textContent = 'Go to application';
   if (r && r.ok) return window.close();
   showResult('Open the application', el('p', {}, (r && r.reason) || 'Click the Apply button on the page.'), r);
+});
+
+$('btn-next').addEventListener('click', async () => {
+  const r = await send('nextStep');
+  if (r && r.ok) return showResult('Next step', el('p', {}, `Clicked "${r.clicked}". The next page will be autofilled when it loads (or click Autofill).`), r);
+  showResult(r && r.submit ? 'Last step' : 'No Next button', el('p', {}, (r && r.reason) || 'No Next button found.'), r);
 });
 
 $('btn-autofill').addEventListener('click', async () => {

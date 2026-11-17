@@ -176,6 +176,8 @@
       const f = fields[i];
       const prev = fields[i - 1];
       if (!f.key && /^(type|number type|phone type)$/i.test((f.label || '').trim()) && prev && (prev.key === 'phone' || prev.key === 'phoneCountryCode')) f.key = 'phoneType';
+      // "Please specify" right after "Source / How did you hear about us?": the specific site (e.g. LinkedIn).
+      if (!f.key && /^(please specify|specify|if other,? please specify|which (one|site|job board)\??|other source|source details?)$/i.test((f.label || '').trim().replace(/[*:]+$/, '').trim()) && prev && prev.key === 'howDidYouHear') f.key = 'howDidYouHearDetail';
     }
     return fields;
   }

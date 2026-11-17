@@ -41,9 +41,26 @@
     }
   }
 
-  function fillSelect(el, desired) {
+  // "How did you hear about us?" lists often only have categories: if the source itself (e.g.
+  // LinkedIn) isn't an option, these are tried in order.
+  const HEAR_FALLBACKS = ['Job Board', 'Online Job Board', 'Job Posting', 'Job Site', 'Internet', 'Online', 'Social Media', 'Website', 'Company Website', 'Other'];
+  const choices = (key, value) =>
+    key === 'howDidYouHear'
+      ? [value].concat(HEAR_FALLBACKS)
+      : key === 'timeZone'
+        ? R.timeZoneCandidates(value, new Date().getTimezoneOffset())
+        : [value];
+  function chooseFrom(opts, desiredList) {
+    for (const d of desiredList) {
+      const i = R.chooseOption(opts, d);
+      if (i >= 0) return i;
+    }
+    return -1;
+  }
+
+  function fillSelect(el, desired, key) {
     const opts = [...el.options].map((o) => ({ value: o.value, text: o.text }));
-    const i = R.chooseOption(opts, desired);
+    const i = chooseFrom(opts, choices(key, desired));
     if (i < 0) return false;
     if (el.selectedIndex === i) return true;
     setValue(el, el.options[i].value);
@@ -149,7 +166,7 @@
           // Custom dropdowns (react-select, select2, iCIMS, Workday): handled after the plain fields.
           combos.push({ f, d, r });
           continue;
-        } else if (f.type === 'select') ok = fillSelect(f.el, r.value);
+        } else if (f.type === 'select') ok = fillSelect(f.el, r.value, f.key);
         else if (f.els && f.els.length > 1) ok = fillGroup(f, r.value);
         else if (f.type === 'checkbox') ok = fillCheckbox(f, r.value);
         else if (f.type === 'radio') ok = false;
@@ -173,14 +190,20 @@
     }
     // Custom dropdowns: open, type to filter, click the matching option.
     for (const { f, d, r } of combos) {
-      let ok = false;
+      let res = { ok: false, seen: [] };
       try {
-        ok = await fillCombobox(f.el, r.value);
-      } catch (_) {
-        ok = false;
+        res = await fillCombobox(f.el, choices(f.key, r.value));
+      } catch (e) {
+        res = { ok: false, seen: [], error: e.message };
       }
-      if (ok) filled.push(Object.assign(d, { source: r.source, profileKey: f.key }));
-      else needsInput.push(Object.assign(d, { reason: 'custom dropdown: no matching option found, choose by hand', suggested: r.value }));
+      if (res.ok) filled.push(Object.assign(d, { source: r.source, profileKey: f.key, chosen: res.chosen }));
+      else
+        needsInput.push(
+          Object.assign(d, {
+            reason: `custom dropdown: no matching option found, choose by hand${res.seen.length ? ` (options seen: ${res.seen.slice(0, 12).join(' | ')})` : ' (no options appeared after clicking it)'}`,
+            suggested: r.value,
+          })
+        );
     }
     highlight(needsInput);
     return {
@@ -220,36 +243,65 @@
    * Fill a custom dropdown: click its control, type the value to filter when it has a search box,
    * then click the option that best matches (same matching as native selects). Escape on no match.
    */
-  async function fillCombobox(el, desired) {
+  // Anything that could be an option in an opened menu (iCIMS, select2, MUI, Ant, react-select…).
+  const MENU_ITEM_SEL = OPTION_SEL + ', li, [role="menuitem"], [role="treeitem"], [class*="result" i], [class*="item" i] a, a[class*="option" i]';
+  function visibleMenuItems() {
+    return [...document.querySelectorAll(MENU_ITEM_SEL)]
+      .filter((o) => !o.closest('select') && JC.dom.isVisible(o))
+      .filter((o) => {
+        const t = JC.dom.clean(o.innerText);
+        return t && t.length <= 100;
+      })
+      .slice(0, 1500);
+  }
+
+  async function fillCombobox(el, desiredList) {
+    desiredList = [].concat(desiredList).filter(Boolean);
     const control =
       el.closest('[role="combobox"], .select2-container, .select2, [class*="select__control"], [class*="Select-control"], [class*="dropdown" i], [class*="Dropdown"]') ||
       (el.id && document.querySelector(`[aria-controls="${CSS.escape(el.id)}"], [aria-owns="${CSS.escape(el.id)}"]`)) ||
       el;
+    const before = new Set(visibleMenuItems());
     fireMouse(control);
     if (control !== el) fireMouse(el);
-    await sleep(300);
-    // A search box: the field itself, or one that appears in the opened menu (select2, iCIMS).
+    await sleep(350);
+    // Options = what newly appeared after the click (works whatever the menu's markup), plus known option markup.
+    const collect = () => {
+      const fresh = visibleMenuItems().filter((o) => !before.has(o));
+      const known = visibleOptions();
+      const all = [...new Set(known.concat(fresh))];
+      // Prefer the innermost element for each text (li > a > span all carry the same text).
+      return all.filter((o) => !all.some((x) => x !== o && o.contains(x) && JC.dom.clean(x.innerText) === JC.dom.clean(o.innerText)));
+    };
+    let opts = collect();
     const search = (el.tagName === 'INPUT' && !el.readOnly && el.type !== 'hidden' ? el : null) || document.querySelector('.select2-search__field, input[role="searchbox"], input[aria-autocomplete="list"]:focus, [class*="dropdown" i] input[type="text"]:not([readonly])');
-    let opts = visibleOptions();
-    if (search && JC.dom.isVisible(search)) {
-      typeInto(search, String(desired).slice(0, 40));
-      await sleep(600);
-      opts = visibleOptions();
-      if (!opts.length) {
-        typeInto(search, ''); // filter too strict: show all and match ourselves
+    const texts = () => opts.map((o) => ({ text: JC.dom.clean(o.innerText), value: o.getAttribute('data-value') || o.getAttribute('id') || '' }));
+    let i = chooseFrom(texts(), desiredList);
+    if (i < 0 && search && JC.dom.isVisible(search)) {
+      for (const d of desiredList.slice(0, 3)) {
+        typeInto(search, String(d).slice(0, 40));
+        await sleep(600);
+        opts = collect();
+        i = chooseFrom(texts(), desiredList);
+        if (i >= 0) break;
+      }
+      if (i < 0) {
+        typeInto(search, '');
         await sleep(400);
-        opts = visibleOptions();
+        opts = collect();
+        i = chooseFrom(texts(), desiredList);
       }
     }
-    const i = R.chooseOption(opts.map((o) => ({ text: JC.dom.clean(o.innerText), value: o.getAttribute('data-value') || o.getAttribute('id') || '' })), desired);
+    const seen = texts().map((t) => t.text).filter(Boolean);
     if (i < 0) {
       document.activeElement && document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, bubbles: true }));
       fireMouse(document.body);
-      return false;
+      return { ok: false, seen };
     }
+    const chosen = JC.dom.clean(opts[i].innerText);
     fireMouse(opts[i]);
     await sleep(250);
-    return true;
+    return { ok: true, chosen, seen };
   }
 
   /**

@@ -1,5 +1,7 @@
 <!doctype html><html><head><meta charset="utf-8"><title>Candidate Profile | Careers at Acme</title>
-<style>#hear-list{position:absolute;background:#fff;border:1px solid #999;list-style:none;margin:0;padding:0}#hear-list li{padding:4px 8px;cursor:pointer}</style></head><body>
+<style>#hear-list{position:absolute;background:#fff;border:1px solid #999;margin:0;padding:0}#hear-list .dropdown-result{padding:4px 8px;cursor:pointer}
+/* Embedded-mode layout: the page is clipped to a fixed height, so the buttons at the bottom are out of view. */
+body.clipped{height:420px;overflow:hidden}</style></head><body class="clipped">
 <h1>Candidate Profile</h1>
 <form id="icims_form">
   <div class="iCIMS_TableRow"><label for="fn">First Name *</label><input id="fn" name="PersonProfileFields.FirstName" required></div>
@@ -9,16 +11,19 @@
   <div class="iCIMS_TableRow"><label for="pt">Type</label><select id="pt" name="PhoneNumberType"><option value="">— Make a Selection —</option><option>Home</option><option>Mobile</option><option>Work</option></select></div>
   <div class="iCIMS_TableRow"><label for="hear">How did you hear about us?</label>
     <div class="iCIMS_Dropdown"><input id="hear" role="combobox" aria-controls="hear-list" aria-expanded="false" readonly placeholder="— Make a Selection —"></div>
-    <ul id="hear-list" role="listbox" hidden>
-      <li role="option" data-value="1">Company Website</li>
-      <li role="option" data-value="2">Job Board - Indeed</li>
-      <li role="option" data-value="3">Job Board - LinkedIn</li>
-      <li role="option" data-value="4">Employee Referral</li>
-    </ul>
+    <div id="hear-list" class="dropdown-results" hidden>
+      <div class="dropdown-result" data-value="1">Company Website</div>
+      <div class="dropdown-result" data-value="2">Career Fair</div>
+      <div class="dropdown-result" data-value="3">Job Board</div>
+      <div class="dropdown-result" data-value="4">Employee Referral</div>
+    </div>
   </div>
+  <div class="iCIMS_TableRow"><label for="spec">Please specify</label><input id="spec" name="SourceSpecify"></div>
+  <div class="iCIMS_TableRow"><label for="tz">Time Zone</label><select id="tz"><option value="">— Make a Selection —</option><option>(GMT-08:00) Pacific Time (US &amp; Canada)</option><option>(GMT-05:00) Eastern Time (US &amp; Canada)</option><option>(GMT+00:00) UTC</option><option>(GMT+05:30) Chennai, Kolkata, Mumbai, New Delhi</option></select></div>
   <div class="iCIMS_TableRow"><label for="eid">Previous Acme Employee ID</label><input id="eid" name="PrevEmployeeID"></div>
   <div class="iCIMS_TableRow"><label for="cv">Resume *</label><input id="cv" type="file" name="resume"></div>
-  <button type="button" id="next">Next</button>
+  <div style="height:900px"></div>
+  <button type="button" id="next" onclick="document.getElementById('icims_form').innerHTML = '<h2 id=step2>Application Questions</h2><label for=auth>Are you legally authorized to work in the United States?</label><select id=auth><option></option><option>Yes</option><option>No</option></select><input type=submit value=Submit id=sub>'">Next</button>
 </form>
 <script>
   // Custom dropdown: opens on click, closes on outside click; choosing an option sets the input.
@@ -26,7 +31,7 @@
   const list = document.getElementById('hear-list');
   hear.addEventListener('click', () => { list.hidden = false; hear.setAttribute('aria-expanded', 'true'); });
   list.addEventListener('click', (e) => {
-    const li = e.target.closest('li');
+    const li = e.target.closest('.dropdown-result');
     if (!li) return;
     hear.value = li.textContent;
     hear.dataset.value = li.dataset.value;

@@ -19,6 +19,12 @@ forms.
   by itself when the tab came from a job board. It picks custom dropdowns such as "How did you hear about us?" by
   clicking, sets a phone "Type" to Mobile, and leaves "Previous <company> Employee ID" empty. Always review the parsed
   values.
+  - Job boards often hand out the embedded link (`?in_iframe=1`), where the form's buttons can be out of view. Job
+    Copilot removes that parameter when opening the link, and `jobCopilot.nextStep()` clicks Next or Continue even if
+    it's hidden. It never clicks Submit: it scrolls to Submit and outlines it.
+  - Profile page fields: "Source" is the same as how you heard about the job, and "Please specify" is the specific site.
+    "Time Zone" is taken from the browser's time zone.
+  - "Candidate Sign-off on Information Provided", where you type your name, is an attestation. Leave it to the user.
 - **SmartRecruiters:** a single page with a "Confirm your email" step. Its "Autofill with LinkedIn" button needs the user.
 - **Workable:** a single page. The resume parses into the fields. Questions are under "Details".
 - **Taleo / SuccessFactors:** long multi-page forms that time out quickly. Save often ("Save as Draft").

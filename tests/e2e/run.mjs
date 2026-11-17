@@ -762,12 +762,23 @@ try {
     assert.equal(r.ok, true, r.error);
     const v = await p.evaluate(() => ({ fn: fn.value, pt: pt.selectedOptions[0].text, hear: hear.value, eid: eid.value, listOpen: !document.getElementById('hear-list').hidden }));
     assert.equal(v.pt, 'Mobile');
-    assert.equal(v.hear, 'Job Board - LinkedIn');
+    assert.equal(v.hear, 'Job Board', 'no LinkedIn option: falls back to the Job Board category');
     assert.equal(v.eid, '');
+    const extra = await p.evaluate(() => ({ spec: spec.value, tz: tz.selectedIndex }));
+    assert.ok(extra.spec.length > 0, '"Please specify" after the source gets the specific site');
+    assert.ok(extra.tz > 0, 'time zone chosen from the browser time zone');
     assert.equal(v.listOpen, false, 'dropdown closed after choosing');
     assert.ok(v.fn.length > 0);
     const labels = r.needsInput.map((f) => f.label);
     assert.ok(!labels.some((l) => /employee id|hear about|^type$/i.test(l)), JSON.stringify(labels));
+    // The Next button is below the clipped area: "Next step" clicks it anyway; on the last step it only points at Submit.
+    const n1 = await bridge(p, () => window.jobCopilot.nextStep());
+    assert.equal(n1.clicked, 'Next');
+    await p.waitForSelector('#step2');
+    const n2 = await bridge(p, () => window.jobCopilot.nextStep());
+    assert.equal(n2.ok, false);
+    assert.equal(n2.submit, 'Submit');
+    assert.match(await p.evaluate(() => sub.style.outline), /solid/);
   });
 
   await check('recorder: logs clicks, window.open, flashed tab and the pop-up with its links', async () => {

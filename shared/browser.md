@@ -35,6 +35,7 @@ Each call returns a Promise and also stores its result in `window.jobCopilot.las
 | `await jobCopilot.followApply({ newTab, navigate, scope })` | Moves **this tab** (or a new one with `newTab: true`) to the real application. `navigate: false` only returns the address, and `scope` is a job card's `selector`. It unwraps redirect URLs, continues through "You're leaving…" screens and upsell pop-ups. On boards and aggregators it clicks a scripted Apply and waits up to 8 s for the pop-up or redirect (Jobright). `{ ok: false, reason }` means Easy Apply, or nothing happened, so click it yourself |
 | `await jobCopilot.scanForm()` | `{ fields: [{ selector, label, type, required, hasValue, profileKey?, options?, combobox?, frame }] }` |
 | `await jobCopilot.autofill({ overrides, overwrite })` | `{ filledCount, filled[], skipped[], needsInput: [{ selector, label, type, options?, reason, suggested? }] }` |
+| `await jobCopilot.nextStep()` | Multi-page forms: clicks Next, Continue or Save & Continue, even when the site's layout hid it. It never clicks Submit: on the last step it scrolls to the submit button, outlines it, and returns `{ ok: false, submit }` |
 | `await jobCopilot.fillField({ selector \| label, value, check })` | `{ ok }`: sets a value so React, Vue, and Angular see the change. Works inside iframes. |
 | `await jobCopilot.attachFile({ kind: 'resume'\|'coverLetter', url? })` | `{ ok }`: attaches the stored file, or fetches `url` (localhost only) and attaches it |
 

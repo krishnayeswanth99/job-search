@@ -309,6 +309,7 @@
       return { key: JC.applyLinks.jobKey(j) || location.origin + location.pathname, title: j.title || '', company: j.company || '' };
     })();
     const go = (url, why) => {
+      url = JC.cleanApplyUrl ? JC.cleanApplyUrl(url) : url;
       if (opts.navigate === false) return { ok: true, action: 'found', to: url, reason: why };
       if (opts.newTab) {
         chrome.runtime.sendMessage({ type: 'jc:open-tab', url, job, autofill: true, queue: !!opts.queue }).catch(() => {});

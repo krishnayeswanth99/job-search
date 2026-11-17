@@ -7,7 +7,7 @@
  */
 importScripts('shared/config.js', 'shared/profile-schema.js', 'shared/field-rules.js');
 
-const FRAME_CMDS = new Set(['ping', 'detect', 'extractJobs', 'loadMoreJobs', 'resolveApplyLinks', 'stopResolve', 'extractJob', 'scanForm', 'autofill', 'fillField', 'attachFile', 'followApply']);
+const FRAME_CMDS = new Set(['nextStep', 'ping', 'detect', 'extractJobs', 'loadMoreJobs', 'resolveApplyLinks', 'stopResolve', 'extractJob', 'scanForm', 'autofill', 'fillField', 'attachFile', 'followApply']);
 
 // ---------------------------------------------------- tabs opened by Apply buttons
 // Job boards often open the employer's site in a new tab. Remember child tabs per
@@ -453,6 +453,8 @@ function merge(cmd, frames) {
     }
     case 'followApply':
       return frames.find((f) => f.frameId === 0) || frames[0];
+    case 'nextStep':
+      return frames.find((f) => f.ok) || frames.find((f) => f.submit) || frames.find((f) => f.frameId === 0) || frames[0];
     case 'fillField':
     case 'attachFile': {
       const hit = frames.find((f) => f.ok);
@@ -594,6 +596,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (msg.type === 'jc:open-tab' && sender.tab && !fromExt) {
       // followApply({ newTab: true }): open the employer's application next to the job board tab.
       if (!/^https?:\/\//i.test(String(msg.url || ''))) return { ok: false };
+      msg.url = self.JC.cleanApplyUrl(msg.url);
       const t = await chrome.tabs.create({ url: msg.url, openerTabId: sender.tab.id, index: sender.tab.index + 1 });
       linkSettledTabs.add(t.id);
       if (msg.queue) {

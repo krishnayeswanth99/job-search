@@ -168,3 +168,13 @@ test('salary range dropdowns', () => {
   const hourly = [{ text: '$40-$50/hr' }, { text: '$50-$75/hr' }, { text: '$75+/hr' }];
   assert.equal(chooseOption(hourly, '60'), 1);
 });
+
+test('iCIMS profile labels: Source, Time Zone, sign-off', () => {
+  assert.equal(key({ label: 'Source' }), 'howDidYouHear');
+  assert.equal(key({ label: 'Time Zone' }), 'timeZone');
+  assert.equal(key({ label: 'Candidate Sign-off on Information Provided' }), 'consent');
+  const c = [...JC.rules.timeZoneCandidates('America/New_York', 300)];
+  assert.ok(c.includes('Eastern Time') && c.includes('GMT-05:00') && c.includes('New York'), JSON.stringify(c));
+  const opts = [{ text: '(GMT-08:00) Pacific Time' }, { text: '(GMT-05:00) Eastern Time (US & Canada)' }];
+  assert.equal(c.map((d) => JC.rules.chooseOption(opts, d)).find((i) => i >= 0), 1);
+});

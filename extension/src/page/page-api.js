@@ -137,6 +137,7 @@
     fillField: (opts) => call('fillField', opts, T),
     attachFile: (opts) => call('attachFile', opts, 30000),
     followApply: (opts) => call('followApply', opts, 25000),
+    nextStep: () => call('nextStep', {}, T),
     help: () =>
       'jobCopilot: detect() extractJobs() extractJob() followApply() scanForm() autofill({overrides,overwrite}) fillField({selector|ref|label, value, check}) attachFile({kind:"resume"|"coverLetter", url?, ref?}). Results are also in jobCopilot.last.',
   };

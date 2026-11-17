@@ -1,0 +1,18 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Job Application for Software Engineer at Kodiak</title></head><body>
+<h1 class="app-title">Software Engineer, Autonomy</h1>
+<form id="application-form">
+  <div class="field"><label for="first_name">First Name *</label><input id="first_name" name="job_application[first_name]"></div>
+  <div class="field"><label for="last_name">Last Name *</label><input id="last_name" name="job_application[last_name]"></div>
+  <div class="field"><label for="email">Email *</label><input id="email" type="email" name="job_application[email]"></div>
+  <div class="field"><label for="phone">Phone</label><input id="phone" name="job_application[phone]"></div>
+  <div class="field"><label for="resume">Resume/CV *</label><input id="resume" type="file" name="resume"></div>
+  <button type="submit" id="submit">Submit Application</button>
+</form>
+<script>
+  // Like Greenhouse embeds: confirmation replaces the form on the same page after Submit.
+  document.getElementById('application-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    setTimeout(() => { document.body.innerHTML = '<div id="application_confirmation"><h1>Thank you for applying.</h1><p>Your application has been received. We will review it shortly.</p></div>'; }, 300);
+  });
+</script>
+</body></html>

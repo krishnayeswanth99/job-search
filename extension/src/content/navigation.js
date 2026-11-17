@@ -289,12 +289,28 @@
    */
   async function followApply(opts) {
     opts = opts || {};
+    // Which job this is (so a confirmation on the employer's form can mark it applied).
+    const job = (() => {
+      if (!JC.applyLinks || !JC.extract) return null;
+      let j = null;
+      if (opts.scope) j = JC.extract.listings().find((x) => x.selector === opts.scope);
+      if (!j) {
+        try {
+          j = JC.extract.job();
+        } catch (_) {
+          j = null;
+        }
+      }
+      if (!j) j = { url: location.origin + location.pathname };
+      return { key: JC.applyLinks.jobKey(j) || location.origin + location.pathname, title: j.title || '', company: j.company || '' };
+    })();
     const go = (url, why) => {
       if (opts.navigate === false) return { ok: true, action: 'found', to: url, reason: why };
       if (opts.newTab) {
-        chrome.runtime.sendMessage({ type: 'jc:open-tab', url }).catch(() => {});
+        chrome.runtime.sendMessage({ type: 'jc:open-tab', url, job }).catch(() => {});
         return { ok: true, action: 'opened-tab', to: url, reason: why };
       }
+      chrome.runtime.sendMessage({ type: 'jc:applying', url, job }).catch(() => {});
       setTimeout(() => location.assign(url), 50);
       return { ok: true, action: 'navigate', to: url, reason: why };
     };

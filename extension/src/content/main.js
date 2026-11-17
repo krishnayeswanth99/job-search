@@ -71,6 +71,11 @@
         case 'detect': {
           const s = quickStatus();
           s.jobCount = s.pageType === 'listings' || isTop ? JC.extract.listings().length : 0;
+          // Was an application just submitted here? (confirmation page / message)
+          if (JC.applied) {
+            const sub = JC.applied.check();
+            if (sub.confirmed) s.submitted = { text: sub.text, url: sub.url };
+          }
           if (isTop) {
             // How to get from here to the real application form.
             const redirect = JC.nav.redirectInfo();

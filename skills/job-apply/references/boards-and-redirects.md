@@ -43,7 +43,9 @@ this:
 - While it clicks through, it stands in for the window-opening function and catches the employer address.
 - It never chooses "Fix My Resume Now".
 - It then opens the address itself, in the same tab, or next to Jobright with `followApply({ newTab: true })`.
-- Answer "Did you apply?" only after a confirmed submission. Otherwise close it or answer "No".
+- Answer "Did you apply?" only after a confirmed submission. Otherwise close it or answer "No". Job Copilot does this
+  itself: when the employer's site confirms the application (`detect().submitted`), it marks the job applied and answers
+  the board's prompt with **Yes, I applied!** for that job only. The user can turn this off in the options.
 
 On the feed, `resolveApplyLinks({ viaApply: true, limit: 50 })` does the same for every card, one after another,
 scrolling for more as it goes.

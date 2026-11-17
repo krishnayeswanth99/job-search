@@ -87,7 +87,7 @@ try {
     const url = route.request().url();
     if (!/^https?:/.test(url) || url.startsWith('http://127.0.0.1')) return route.continue();
     if (url === 'https://jobright.ai/__fixtures/jobright-flow.js') return route.fulfill({ status: 200, contentType: 'application/javascript', body: fx('jobright-flow.js') });
-    if (/^https:\/\/job-boards\.greenhouse\.io\/embed\/job_app\?for=kodiak&token=\d+/.test(url)) return route.fulfill({ status: 200, contentType: 'text/html', body: fx('greenhouse-job.html') });
+    if (/^https:\/\/job-boards\.greenhouse\.io\/embed\/job_app\?for=kodiak&token=\d+/.test(url)) return route.fulfill({ status: 200, contentType: 'text/html', body: fx('greenhouse-apply-confirm.html') });
     const body = ROUTES[url];
     if (body) return route.fulfill({ status: 200, contentType: 'text/html', body });
     // Jobright-style job pages behind the feed fixture: the employer link is in embedded data,
@@ -627,7 +627,33 @@ try {
     const j = (await bridge(p, () => window.jobCopilot.extractJobs())).jobs.find((x) => x.jobId === '0003a1b2c3d4e5f6a7b8c9d0');
     assert.equal(j.applyUrl, 'https://job-boards.greenhouse.io/embed/job_app?for=kodiak&token=4511215003&jr_id=0003a1b2c3d4e5f6a7b8c9d0');
     assert.equal(j.applyVia, 'your-click');
+    assert.ok(!j.appliedAt, 'not applied yet: only the form was opened');
+    // Jobright's "Did you apply?" is up meanwhile; it must stay unanswered until a confirmation.
+    await p.waitForSelector('text=Did you apply ?');
+    await p.waitForTimeout(500);
+    assert.equal(await p.evaluate(() => window.__answered), null);
+    // Submit on the employer's form: the confirmation marks the job applied and answers Jobright with Yes.
+    await tab.waitForFunction(() => window.jobCopilot && window.jobCopilot.installed);
+    await tab.click('#submit');
+    await tab.waitForSelector('text=Thank you for applying');
+    const td = await bridge(tab, () => window.jobCopilot.detect());
+    assert.match(td.submitted && td.submitted.text, /thank you for applying/i);
+    await p.waitForFunction(() => window.__answered === 'yes', null, { timeout: 8000 });
+    const j2 = (await bridge(p, () => window.jobCopilot.extractJobs())).jobs.find((x) => x.jobId === '0003a1b2c3d4e5f6a7b8c9d0');
+    assert.ok(j2.appliedAt, 'job marked applied');
+    const apps = await ext.evaluate(async () => (await chrome.storage.local.get('applications')).applications);
+    assert.ok(apps.some((a) => a.key === 'https://jobright.ai/jobs/info/0003a1b2c3d4e5f6a7b8c9d0' && /thank you for applying/i.test(a.confirmation)));
     await tab.close();
+  });
+
+  await check('applied: an application page without a submit is never marked; confirmation text alone (no submit, no confirmation URL) is not enough', async () => {
+    const p = await open('https://job-boards.greenhouse.io/embed/job_app?for=kodiak&token=4511215099');
+    await p.evaluate(() => { document.body.insertAdjacentHTML('beforeend', '<p>Thank you for applying in the past! Apply again below.</p>'); });
+    await p.waitForTimeout(2000);
+    const d = await bridge(p, () => window.jobCopilot.detect());
+    assert.ok(!d.submitted, JSON.stringify(d.submitted));
+    const apps = await ext.evaluate(async () => (await chrome.storage.local.get('applications')).applications || []);
+    assert.ok(!apps.some((a) => /token=4511215099/.test(a.applyUrl)));
   });
 
   await check('recorder: logs clicks, window.open, flashed tab and the pop-up with its links', async () => {

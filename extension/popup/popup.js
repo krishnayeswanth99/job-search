@@ -70,7 +70,7 @@ function jobRow(j) {
   return el('div', { class: 'job' },
     el('div', { class: 'meta' },
       j.url ? el('a', { class: 'title', href: j.url, target: '_blank', rel: 'noopener' }, j.title) : el('span', { class: 'title' }, j.title),
-      el('span', { class: 'sub' }, sub, j.easyApply ? el('span', { class: 'pill' }, 'Easy Apply') : null, j.remote ? el('span', { class: 'pill' }, 'Remote') : null),
+      el('span', { class: 'sub' }, sub, j.appliedAt || j.status === 'applied' ? el('span', { class: 'pill applied' }, `✓ Applied${j.appliedAt ? ' ' + new Date(j.appliedAt).toLocaleDateString() : ''}`) : null, j.easyApply ? el('span', { class: 'pill' }, 'Easy Apply') : null, j.remote ? el('span', { class: 'pill' }, 'Remote') : null),
       j.applyUrl ? el('a', { class: 'sub apply-link', href: j.applyUrl, target: '_blank', rel: 'noopener' }, `Apply on ${j.applyHost || 'employer site'} ↗`) : j.applyError ? el('span', { class: 'sub muted' }, 'No employer link found') : null
     ),
     saveBtn

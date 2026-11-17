@@ -7,7 +7,7 @@
 (function (root) {
   const JC = (root.JC = root.JC || {});
 
-  JC.VERSION = '0.10.0';
+  JC.VERSION = '0.11.0';
   JC.BRIDGE_CHANNEL = 'job-copilot';
 
   /**
@@ -57,6 +57,7 @@
     showBadge: true,
     rememberAnswers: true, // learn answers to new questions when you submit, reuse them next time
     realClicks: false, // job boards: click like a real mouse (needs Chrome's debugger permission; shows a bar)
+    answerAppliedPrompt: true, // after a confirmed submission, answer the job board's "Did you apply?" with Yes
   };
 
   JC.hostMatches = function hostMatches(hostname, domain) {

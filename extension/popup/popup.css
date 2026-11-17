@@ -76,3 +76,5 @@ pre { white-space: pre-wrap; word-break: break-word; font-size: 12px; max-height
 .apply-link:hover { text-decoration: underline; }
 .rec { margin-top: 4px; }
 .small-text { font-size: 12px; margin: 4px 0; }
+.pill.applied { background: #dcfce7; color: #166534; }
+@media (prefers-color-scheme: dark) { .pill.applied { background: #14532d; color: #bbf7d0; } }

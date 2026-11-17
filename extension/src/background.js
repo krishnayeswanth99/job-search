@@ -90,7 +90,44 @@ function saveApplyLink(key, data) {
 // The job card the user clicked last, per tab: a tab the site opens shortly after (Jobright's
 // "Apply Without Customizing") is credited to that job.
 const lastJob = new Map(); // tabId -> { key, title, company, at }
-async function creditOpenedTab(openerId, url) {
+
+// Tabs where an application is in progress, so a confirmation there can be credited to the job
+// (and the job board tab that opened it). Kept in session storage: applying can take a while.
+async function setApplying(tabId, info) {
+  try {
+    await chrome.storage.session.set({ ['applying:' + tabId]: Object.assign({ at: Date.now() }, info) });
+  } catch (_) {
+    /* ignore */
+  }
+}
+async function getApplying(tabId) {
+  try {
+    return (await chrome.storage.session.get('applying:' + tabId))['applying:' + tabId] || null;
+  } catch (_) {
+    return null;
+  }
+}
+
+async function markApplied(tabId, msg, senderUrl) {
+  const info = await getApplying(tabId);
+  const at = new Date().toISOString();
+  const record = { at, confirmation: String(msg.text || '').slice(0, 200), pageTitle: String(msg.title || '').slice(0, 200), applyUrl: (info && info.applyUrl) || senderUrl || '', key: (info && info.key) || '', title: (info && info.title) || '', company: (info && info.company) || '' };
+  const { applications, applyLinks, savedJobs } = await chrome.storage.local.get(['applications', 'applyLinks', 'savedJobs']);
+  const apps = (applications || []).filter((a) => !(record.key && a.key === record.key) && a.applyUrl !== record.applyUrl);
+  apps.push(record);
+  const links = applyLinks || {};
+  if (record.key) links[record.key] = Object.assign({}, links[record.key] || {}, { appliedAt: at, applyUrl: (links[record.key] && links[record.key].applyUrl) || record.applyUrl });
+  const saved = (savedJobs || []).map((j) => (j.url && (j.url === record.key || j.applyUrl === record.applyUrl) ? Object.assign({}, j, { status: 'applied', appliedAt: at }) : j));
+  await chrome.storage.local.set({ applications: apps.slice(-1000), applyLinks: links, savedJobs: saved });
+  await chrome.action.setBadgeText({ tabId, text: '✓' }).catch(() => {});
+  await chrome.action.setBadgeBackgroundColor({ tabId, color: '#16a34a' }).catch(() => {});
+  if (info && info.openerTabId) chrome.tabs.sendMessage(info.openerTabId, { type: 'jc:applied', key: record.key, at }).catch(() => {});
+  recAdd(tabId, { type: 'application-confirmed', key: record.key, url: senderUrl, text: record.confirmation });
+  if (info && info.openerTabId) recAdd(info.openerTabId, { type: 'application-confirmed', key: record.key, url: senderUrl });
+  return { ok: true, key: record.key };
+}
+
+async function creditOpenedTab(openerId, url, childTabId) {
   const lj = lastJob.get(openerId);
   if (!lj || Date.now() - lj.at > 90000) return;
   let opener;
@@ -111,6 +148,7 @@ async function creditOpenedTab(openerId, url) {
   const data = { applyUrl: real, applyHost: host(real), via: 'your-click', at: new Date().toISOString(), title: lj.title || '', company: lj.company || '' };
   lastJob.delete(openerId);
   await saveApplyLink(lj.key, data);
+  if (childTabId) await setApplying(childTabId, { key: lj.key, title: lj.title, company: lj.company, openerTabId: openerId, applyUrl: real });
   chrome.tabs.sendMessage(openerId, { type: 'jc:apply-link-seen', key: lj.key, data }).catch(() => {});
   recAdd(openerId, { type: 'apply-link-saved', key: lj.key, url: real });
 }
@@ -138,7 +176,7 @@ if (chrome.debugger) chrome.debugger.onDetach.addListener((src) => debugAttached
 
 chrome.tabs.onUpdated.addListener((tabId, info, tab) => {
   if (info.url && tab.openerTabId !== undefined) recAdd(tab.openerTabId, { type: 'tab-url', tabId, url: info.url });
-  if (info.url && tab.openerTabId !== undefined && /^https?:/i.test(info.url)) creditOpenedTab(tab.openerTabId, info.url);
+  if (info.url && tab.openerTabId !== undefined && /^https?:/i.test(info.url)) creditOpenedTab(tab.openerTabId, info.url, tabId);
   if (!info.url && !info.title) return;
   for (const list of childTabs.values()) for (const c of list) if (c.tabId === tabId) Object.assign(c, { url: tab.url || c.url, title: tab.title || c.title });
 });
@@ -195,7 +233,9 @@ function merge(cmd, frames) {
     case 'detect': {
       const app = frames.find((f) => f.application);
       const login = frames.map((f) => f.login).find((l) => l && l.required) || top.login;
+      const submitted = frames.map((f) => f.submitted).find(Boolean);
       const out = Object.assign({}, top, { login, jobCount: top.jobCount || 0 });
+      if (submitted) out.submitted = submitted;
       delete out.frameId;
       if (app && app !== top) {
         out.pageType = 'application';
@@ -355,6 +395,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       if (sender.frameId === 0) await setBadge(sender.tab.id, msg.status);
       return { ok: true };
     }
+    if (msg.type === 'jc:applying' && sender.tab && !fromExt) {
+      // followApply in the same tab: the job board page is replaced by the employer's form.
+      if (msg.job && msg.job.key) await setApplying(sender.tab.id, Object.assign({}, msg.job, { openerTabId: null, applyUrl: msg.url }));
+      return { ok: true };
+    }
+    if (msg.type === 'jc:applied-confirmed' && sender.tab && !fromExt) {
+      return markApplied(sender.tab.id, msg, sender.url || sender.tab.url);
+    }
     if (msg.type === 'jc:apply-link-save' && sender.tab && !fromExt) {
       if (msg.key && msg.data && /^https?:/i.test(String(msg.data.applyUrl || ''))) await saveApplyLink(String(msg.key).slice(0, 500), msg.data);
       return { ok: true };
@@ -377,6 +425,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       // followApply({ newTab: true }): open the employer's application next to the job board tab.
       if (!/^https?:\/\//i.test(String(msg.url || ''))) return { ok: false };
       const t = await chrome.tabs.create({ url: msg.url, openerTabId: sender.tab.id, index: sender.tab.index + 1 });
+      if (msg.job && msg.job.key) await setApplying(t.id, Object.assign({}, msg.job, { openerTabId: sender.tab.id, applyUrl: msg.url }));
       return { ok: true, tabId: t.id };
     }
     if (msg.type === 'jc:rec-event' && sender.tab && !fromExt) {

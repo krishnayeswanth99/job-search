@@ -116,7 +116,8 @@
   function merge(j) {
     const k = jobKey(j);
     const hit = k && known[k];
-    if (hit && !j.applyUrl) Object.assign(j, { applyUrl: hit.applyUrl, applyHost: hit.applyHost, applyVia: hit.via });
+    if (hit && !j.applyUrl && hit.applyUrl) Object.assign(j, { applyUrl: hit.applyUrl, applyHost: hit.applyHost, applyVia: hit.via });
+    if (hit && hit.appliedAt) j.appliedAt = hit.appliedAt;
     return j;
   }
 
@@ -131,6 +132,10 @@
   // Links caught from the user's own clicks (the service worker sees the tab Jobright opens).
   try {
     chrome.runtime.onMessage.addListener((msg) => {
+      if (msg && msg.type === 'jc:applied' && msg.key) {
+        known[msg.key] = Object.assign({}, known[msg.key] || {}, { appliedAt: msg.at });
+        answerAppliedPrompt(msg.key);
+      }
       if (msg && msg.type === 'jc:apply-link-seen' && msg.key && msg.data) {
         known[msg.key] = msg.data;
         for (const j of JC.extract.listings()) if (jobKey(j) === msg.key) Object.assign(j, { applyUrl: msg.data.applyUrl, applyHost: msg.data.applyHost, applyVia: msg.data.via });
@@ -138,6 +143,33 @@
     });
   } catch (_) {
     /* ignore */
+  }
+
+  /**
+   * The employer site confirmed the application for `key`: answer this board's "Did you apply?"
+   * with Yes (it's usually still open on this tab). Waits up to 10 minutes for the prompt. Only
+   * ever called after a confirmation; turn off with settings.answerAppliedPrompt = false.
+   */
+  async function answerAppliedPrompt(key) {
+    try {
+      const { settings } = await chrome.storage.local.get('settings');
+      if (settings && settings.answerAppliedPrompt === false) return;
+    } catch (_) {
+      return;
+    }
+    const end = Date.now() + 10 * 60 * 1000;
+    const tick = () => {
+      const p = JC.nav && JC.nav.appliedPrompt();
+      if (p && p.yesSelector) {
+        const yes = document.querySelector(p.yesSelector);
+        if (yes) {
+          yes.click();
+          return;
+        }
+      }
+      if (Date.now() < end) setTimeout(tick, 2000);
+    };
+    tick();
   }
 
   // Remember which job card the user clicked last, so a tab Jobright opens a moment later

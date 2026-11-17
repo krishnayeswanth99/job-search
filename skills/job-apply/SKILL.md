@@ -109,8 +109,10 @@ stage) → `detect()` → `autofill()` again on the new page → repeat. If a pa
 1. Take a screenshot of the final review page (`computer` → `screenshot`). Run `scanForm()` and confirm that every
    `required` field has `hasValue: true`.
 2. Ask: "Everything is filled for **<title> at <company>**. Submit now?" Submit only after a clear yes (safety rule 3).
-3. Click the submit button. Wait, then confirm success with a "Thank you" or "Application received" message, a
-   confirmation URL, or an email notice. If you can't see confirmation, say so. Don't assume it worked.
+3. Click the submit button. Wait 3–5 s, then run `detect()`. `submitted: { text }` is Job Copilot's confirmation check: a
+   "Thank you for applying" or "Application received" message after the Submit, or a confirmation page. It also marks
+   the job applied and answers the job board's "Did you apply?". If there's no `submitted`, look for errors on the form.
+   If you can't see a confirmation, say so. Don't assume it worked.
 
 ### Step 8: Record
 - Write `<folder>/application.md` with the date, URL, ATS, resume file, every custom question and the answer given, and

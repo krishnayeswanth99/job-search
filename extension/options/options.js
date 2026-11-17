@@ -196,7 +196,7 @@ $('clear-jobs').addEventListener('click', async () => {
 async function renderSettings() {
   const { settings } = await chrome.storage.local.get('settings');
   const s = Object.assign({}, JC.DEFAULT_SETTINGS, settings || {});
-  for (const k of ['bridgeEnabled', 'bridgeAutofill', 'showBadge', 'rememberAnswers']) {
+  for (const k of ['bridgeEnabled', 'bridgeAutofill', 'showBadge', 'rememberAnswers', 'answerAppliedPrompt']) {
     $(k).checked = !!s[k];
     $(k).onchange = async () => {
       s[k] = $(k).checked;

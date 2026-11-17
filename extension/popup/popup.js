@@ -204,8 +204,21 @@ $('btn-rec').addEventListener('click', async () => {
     const r = await chrome.runtime.sendMessage({ type: 'jc:rec-stop', tabId });
     if (!r || !r.ok) return ($('rec-status').textContent = (r && r.error) || 'Could not stop.');
     const text = JSON.stringify(r.report, null, 1);
-    await navigator.clipboard.writeText(text);
-    $('rec-status').textContent = `Copied the report (${r.report.events.length} events, ${Math.round(text.length / 1024)} KB). Paste it to Claude.`;
+    // Offer a file too: big reports are easier to attach than to paste, and the clipboard can fail.
+    const save = $('rec-save');
+    save.href = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+    save.download = `job-copilot-recording-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.json`;
+    save.hidden = false;
+    let copied = false;
+    try {
+      await navigator.clipboard.writeText(text);
+      copied = true;
+    } catch (_) {
+      /* clipboard blocked: use the file link */
+    }
+    $('rec-status').textContent = copied
+      ? `Copied the report (${r.report.events.length} events, ${Math.round(text.length / 1024)} KB). Paste it to Claude, or save it as a file:`
+      : `Report ready (${r.report.events.length} events). Copying failed, so save it as a file and attach it:`;
     $('btn-rec').textContent = 'Record what I do';
     $('btn-rec').classList.remove('primary');
     return;

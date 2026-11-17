@@ -31,6 +31,7 @@ const ROUTES = {
   'https://jobs.lever.co/parsetest/22222222-3333-4444-5555-666666666666/apply': fx('lever-parse.html'),
   'https://jobs.lever.co/learntest/apply-1': fx('learn-form.html'),
   'https://acme.wd5.myworkdayjobs.com/en-US/careers/job/New-York-NY/ML-Engineer_123': fx('workday-job.html'),
+  'https://acme.wd5.myworkdayjobs.com/en-US/careers/job/New-York-NY/ML-Engineer_123/apply/selfIdentify': fx('workday-selfid.html'),
   'https://jobs.lever.co/learntest/apply-2': fx('learn-form.html'),
   'https://careers-acme.icims.com/jobs/1234/data-scientist/candidate': fx('icims-like.html'),
   'https://www.linkedin.com/jobs/view/4000000009/': fx('linkedin-external.html'),
@@ -259,6 +260,23 @@ try {
     assert.equal(v.dev, 'Mobile');
     assert.equal(v.country, 'United Kingdom');
     assert.ok(!r.needsInput.some((f) => /device type|country/i.test(f.label)), JSON.stringify(r.needsInput));
+  });
+
+  await check('Workday Self Identify: signature date gets today (typed into spin boxes), prompt pill kept, no restore loop', async () => {
+    const p = await open('https://acme.wd5.myworkdayjobs.com/en-US/careers/job/New-York-NY/ML-Engineer_123/apply/selfIdentify');
+    const scan = await bridge(p, () => window.jobCopilot.scanForm());
+    const keys = Object.fromEntries(scan.fields.map((f) => [f.label, f.profileKey || null]));
+    assert.equal(keys.Month, 'todayMonth', JSON.stringify(keys));
+    assert.equal(keys.Year, 'todayYear', JSON.stringify(keys));
+    await bridge(p, () => window.jobCopilot.autofill());
+    const d = new Date();
+    const v = await p.evaluate(() => [...document.querySelectorAll('[role="spinbutton"]')].map((e) => e.value));
+    assert.deepEqual(v, [String(d.getMonth() + 1).padStart(2, '0'), String(d.getDate()).padStart(2, '0'), String(d.getFullYear())]);
+    assert.equal(await p.evaluate(() => cpc.value), '');
+    await p.waitForTimeout(2500);
+    const log = await ext.evaluate(async () => new Promise((r) => chrome.runtime.sendMessage({ type: 'jc:debug-get' }, r)));
+    const restores = ((log && log.log) || []).filter((e) => e.detail && /restored profile value/.test(e.detail.step || '') && /Country Phone Code|Month|Day|Year/.test(e.detail.field || ''));
+    assert.equal(restores.length, 0, JSON.stringify(restores.slice(0, 3)));
   });
 
   await check('bridge: fillField answers a custom question', async () => {

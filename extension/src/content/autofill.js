@@ -30,6 +30,49 @@
     fire(el, 'blur');
   }
 
+  /** The value as this input wants it: <input type=date> takes YYYY-MM-DD. */
+  function textValue(f, value) {
+    if (f.el && f.el.type === 'date' && f.key === 'todayDate') {
+      const d = new Date();
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    }
+    return value;
+  }
+
+  /**
+   * Set a text value. If the site throws it away (Workday's Month / Day / Year spin boxes only take
+   * keystrokes), type it one key at a time instead. Returns whether the field kept it.
+   */
+  function setText(el, value) {
+    setValue(el, value);
+    // Kept (maybe reformatted, like a phone number): done. Only an emptied box gets typed into.
+    if (fieldText(el) || !String(value) || !(el instanceof HTMLInputElement)) return true;
+    const desc = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
+    el.focus({ preventScroll: true });
+    if (desc && desc.set) desc.set.call(el, '');
+    let acc = '';
+    for (const ch of String(value)) {
+      const k = { bubbles: true, cancelable: true, key: ch, code: /\d/.test(ch) ? 'Digit' + ch : undefined };
+      el.dispatchEvent(new KeyboardEvent('keydown', k));
+      el.dispatchEvent(new KeyboardEvent('keypress', k));
+      acc += ch;
+      if (desc && desc.set) desc.set.call(el, acc);
+      el.dispatchEvent(new InputEvent('input', { bubbles: true, data: ch, inputType: 'insertText' }));
+      el.dispatchEvent(new KeyboardEvent('keyup', k));
+    }
+    fire(el, 'change');
+    el.blur();
+    fire(el, 'blur');
+    return !!fieldText(el);
+  }
+
+  /** What a text box shows; spin boxes may keep it in aria-valuenow instead of value. */
+  function fieldText(el) {
+    if (el.value) return el.value;
+    const now = el.getAttribute && el.getAttribute('aria-valuenow');
+    return now && /\d/.test(now) ? now : '';
+  }
+
   function setChecked(el, checked) {
     if (el.checked === checked) return;
     // A real click toggles state and fires the events frameworks listen for.
@@ -213,8 +256,11 @@
           setValue(f.el, n);
           ok = true;
         } else {
-          setValue(f.el, r.value);
-          ok = true;
+          ok = setText(f.el, textValue(f, r.value));
+          if (!ok) {
+            needsInput.push(Object.assign(d, { reason: 'the site did not take the value', suggested: r.value }));
+            continue;
+          }
         }
         if (ok) {
           filled.push(Object.assign(d, { source: r.source, profileKey: f.key }));
@@ -265,7 +311,7 @@
     if (f.type === 'select') return f.el.selectedIndex > 0 || f.el.value ? (f.el.options[f.el.selectedIndex] || {}).text || '' : '';
     if (f.type === 'checkbox') return f.el.checked ? 'yes' : 'no';
     if (f.type === 'listbox') return f.listboxEmpty ? '' : f.listboxText || '';
-    return f.el.value || '';
+    return fieldText(f.el);
   }
 
   /** Does what the field shows already mean our value? */
@@ -280,6 +326,7 @@
       return i < 0 || !!(f.els[i] && f.els[i].checked);
     }
     if (f.type === 'checkbox') return true;
+    if (/^today(Month|Day)$/.test(f.key || '')) return String(site).replace(/^0+/, '') === String(ours).replace(/^0+/, '');
     return R.sameValue(f.key, site, ours);
   }
 
@@ -338,11 +385,19 @@
           it.el = again.el;
           it.f = again;
         }
+        if (it.gaveUp) continue;
         const site = currentValue(it.f);
         if (matches(it.f, site, it.value)) continue;
+        // The site keeps clearing it (it doesn't accept the value, or shows it somewhere else):
+        // stop after two tries instead of fighting it every 0.7 s.
+        if ((it.tries = (it.tries || 0) + 1) > 2) {
+          it.gaveUp = true;
+          if (JC.recorder && JC.recorder.note) JC.recorder.note({ step: 'stopped restoring: the site keeps changing this field, check it by hand', field: it.label, site: String(site).slice(0, 60) });
+          continue;
+        }
         if (it.f.type === 'select') fillSelect(it.el, it.value, it.key);
         else if (it.f.els && it.f.els.length > 1) fillGroup(it.f, it.value);
-        else setValue(it.el, it.value);
+        else setText(it.el, textValue(it.f, it.value));
         if (JC.recorder && JC.recorder.note) JC.recorder.note({ step: 'restored profile value the site had changed', field: it.label, site: String(site).slice(0, 60) });
       }
     }, 700);

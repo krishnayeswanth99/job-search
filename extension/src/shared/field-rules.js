@@ -17,6 +17,9 @@
 
   // Order matters: more specific rules first.
   const RULES = [
+    // The date you sign or submit the form on (Workday Self Identify "Date", "Date signed"): today.
+    // Must come before consent, which also matches "signature".
+    { key: 'todayDate', re: /\b(date (signed|of signature|completed)|signed on|signature date|today'?s date|current date|date signed on)\b/ },
     // Typed sign-offs / e-signatures attest the form is true: the user's call, like consent boxes.
     { key: 'consent', re: /\b(sign[- ]?off|e-?signature|electronic signature|digital signature|signature)\b/, q: true },
     { key: 'consent', re: /\b(i (hereby )?(agree|acknowledge|consent|certify|confirm|attest|understand)|terms (of|and) (use|service|conditions)|privacy (policy|notice)|gdpr|data processing)\b/, q: true },
@@ -169,6 +172,14 @@
       .trim();
   }
 
+  /** 'Month' | 'Day' | 'Year' when the field is one box of a split date, else null. */
+  function datePart(label, attrs) {
+    const m = /^(mm|month|dd|day|yyyy|yy|year)$/.exec(label) || attrs.map((a) => /\bdate ?section ?(month|day|year)\b/.exec(a)).find(Boolean);
+    if (!m) return null;
+    const w = m[1];
+    return /^m/.test(w) ? 'Month' : /^d/.test(w) ? 'Day' : 'Year';
+  }
+
   function classifyField(f) {
     const type = (f.type || '').toLowerCase();
     if (['hidden', 'submit', 'button', 'reset', 'image', 'password', 'search'].includes(type)) return null;
@@ -178,6 +189,18 @@
 
     const label = norm(f.label);
     const attrs = [f.name, f.id, f.automationId, f.placeholder, f.ariaLabel].map(humanize).filter(Boolean);
+
+    // One box of a split date (Workday's Month / Day / Year spin boxes). Only today's date (a
+    // signature date) and a graduation year are filled; anything else (birth date, start date) is
+    // left to the user. The box's id often names the whole section ("selfIdentifiedDisabilityData
+    // --dateSignedOn-dateSectionMonth"), which must not make it look like the section's question.
+    const part = datePart(label, attrs);
+    if (part) {
+      const all = [label, ...attrs].join(' | ');
+      if (RULES[0].re.test(all)) return { key: 'today' + part, confidence: 0.85, via: 'date part' };
+      if (part === 'Year' && /\bgraduat/.test(all)) return { key: 'graduationYear', confidence: 0.7, via: 'date part' };
+      return null;
+    }
     const payText = [label, norm(f.placeholder), ...attrs, norm(f.optionsText)].join(' | ');
     const isLong = label.length > LONG_LABEL;
     const isFile = type === 'file';
@@ -215,10 +238,20 @@
     return v === undefined || v === null ? '' : String(v);
   }
 
-  function valueForKey(profile, key) {
+  function valueForKey(profile, key, now) {
     if (!profile) return '';
     const p = profile.personal || {};
+    const d = now instanceof Date ? now : new Date();
+    const pad = (n) => String(n).padStart(2, '0');
     switch (key) {
+      case 'todayDate': // US order; autofill uses YYYY-MM-DD for <input type=date>
+        return `${pad(d.getMonth() + 1)}/${pad(d.getDate())}/${d.getFullYear()}`;
+      case 'todayMonth':
+        return pad(d.getMonth() + 1);
+      case 'todayDay':
+        return pad(d.getDate());
+      case 'todayYear':
+        return String(d.getFullYear());
       case 'fullName':
         return [p.firstName, p.lastName].filter(Boolean).join(' ');
       case 'location':

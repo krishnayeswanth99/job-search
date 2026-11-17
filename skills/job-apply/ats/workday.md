@@ -27,6 +27,9 @@
   themselves.
 - After sign-in, each step (My Information, My Experience, Application Questions…) is autofilled as it loads, including
   Workday's button dropdowns (Phone Device Type, Country, State, yes/no questions), which it opens and picks from.
+- Self Identify's signature **Date** (Month / Day / Year spin boxes) gets today's date, typed in key by key because
+  Workday ignores pasted values. Other split dates (birth date, start date) are left for the user.
+- Prompt pickers that already show a choice (a pill such as "United Kingdom (+44)") are left as they are.
 - Multi-level "How Did You Hear About Us?" prompts may still need a click by hand.
 - `jobCopilot.nextStep()` clicks **Save and Continue**. It never submits.
 

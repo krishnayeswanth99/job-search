@@ -191,3 +191,19 @@ test('sameValue: formatting differences are not conflicts', () => {
   assert.ok(same('fullName', 'Ada King Lovelace', 'Ada Lovelace'));
   assert.ok(!same('currentTitle', 'Engineer II', 'Senior Engineer'));
 });
+
+test('split date boxes: signature date is today, other dates are left alone', () => {
+  const wd = (part) => ({ label: part, id: `selfIdentifiedDisabilityData--dateSignedOn-dateSection${part}-input`, type: 'text' });
+  assert.equal(key(wd('Month')), 'todayMonth');
+  assert.equal(key(wd('Day')), 'todayDay');
+  assert.equal(key(wd('Year')), 'todayYear');
+  assert.equal(key({ label: 'Signature Date' }), 'todayDate');
+  assert.equal(key({ label: 'Signature' }), 'consent');
+  assert.equal(key({ label: 'Month', id: 'dateOfBirth-dateSectionMonth-input' }), null);
+  assert.equal(key({ label: 'Year', id: 'education-graduationDate-dateSectionYear-input' }), 'graduationYear');
+  const d = new Date(2026, 10, 7);
+  assert.equal(valueForKey({}, 'todayDate', d), '11/07/2026');
+  assert.equal(valueForKey({}, 'todayMonth', d), '11');
+  assert.equal(valueForKey({}, 'todayDay', d), '07');
+  assert.equal(valueForKey({}, 'todayYear', d), '2026');
+});

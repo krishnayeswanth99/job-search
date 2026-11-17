@@ -37,6 +37,8 @@
   }
 
   /** Best-effort human label for a control. */
+  const PROMPT_SEL = '[data-automation-id="multiselectInputContainer"], [data-uxi-widget-type="selectinput"]';
+
   function labelFor(el) {
     const tries = [];
     if (el.getAttribute('aria-labelledby')) tries.push(byIds(el.getAttribute('aria-labelledby')));
@@ -122,7 +124,9 @@
         tag: el.tagName.toLowerCase(),
         type: el.tagName === 'SELECT' ? 'select' : el.tagName === 'TEXTAREA' ? 'textarea' : type,
         name: el.name || '',
-        combobox: el.getAttribute('role') === 'combobox' || !!el.closest('[role="combobox"], [class*="select__control"], [class*="Select-control"]'),
+        combobox: el.getAttribute('role') === 'combobox' || !!el.closest('[role="combobox"], [class*="select__control"], [class*="Select-control"]') || !!el.closest(PROMPT_SEL),
+        // Workday prompt pickers clear their search box after a pick and show the choice as a pill.
+        picked: !!(el.closest(PROMPT_SEL) && el.closest(PROMPT_SEL).parentElement.querySelector('[data-automation-id="selectedItem"], [data-automation-id="selectedItemList"] li')),
       });
     }
 
@@ -156,7 +160,7 @@
         if (f.type === 'checkbox' || f.type === 'radio') f.hasValue = el.checked;
         else if (f.type === 'file') f.hasValue = !!(el.files && el.files.length);
         else if (f.type === 'listbox') f.hasValue = !f.listboxEmpty;
-        else f.hasValue = !!String(el.value || '').trim() && !(f.type === 'select' && el.selectedIndex <= 0 && !el.value);
+        else f.hasValue = !!f.picked || !!String(el.value || '').trim() && !(f.type === 'select' && el.selectedIndex <= 0 && !el.value);
       }
       f.ref = ref(el);
       if (f.els) f.els.forEach(ref);

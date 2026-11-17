@@ -3,6 +3,8 @@ const $ = (id) => document.getElementById(id);
 let tabId = null;
 let lastPayload = null;
 let lastJobs = [];
+let detected = null; // last detect() result for this tab
+const isAggregator = () => !!(detected && detected.portal && ((globalThis.JC.PORTALS.find((p) => p.id === detected.portal) || {}).aggregator));
 
 function send(cmd, payload) {
   return chrome.runtime.sendMessage({ type: 'jc:popup', tabId, cmd, payload: payload || {} });
@@ -95,6 +97,7 @@ async function init() {
   }
 
   const d = await send('detect');
+  detected = d;
   if (!d || d.ok === false) {
     $('portal').textContent = new URL(tab.url).hostname;
     $('page-type').textContent = (d && d.error) || 'Reload the tab to activate Job Copilot';
@@ -122,7 +125,8 @@ async function init() {
 $('btn-follow').addEventListener('click', async () => {
   $('btn-follow').disabled = true;
   $('btn-follow').textContent = 'Opening the application… (waiting for the site)';
-  const r = await send('followApply');
+  // On job boards/aggregators open the employer's site in a new tab and keep the feed.
+  const r = await send('followApply', isAggregator() ? { newTab: true } : {});
   $('btn-follow').disabled = false;
   $('btn-follow').textContent = 'Go to application';
   if (r && r.ok) return window.close();
@@ -177,7 +181,8 @@ $('btn-more').addEventListener('click', async () => {
 $('btn-links').addEventListener('click', async () => {
   $('btn-links').disabled = true;
   $('btn-links').textContent = 'Opening jobs… (about 2 s each)';
-  const r = await send('resolveApplyLinks', { limit: 15 });
+  // Jobright and similar only reveal the employer link after clicking Apply, so click through there.
+  const r = await send('resolveApplyLinks', isAggregator() ? { limit: 10, viaApply: true } : { limit: 15 });
   $('btn-links').disabled = false;
   $('btn-links').textContent = 'Find apply links';
   if (!r || r.ok === false) return showResult('Could not find apply links', el('p', {}, (r && r.error) || ''), r);

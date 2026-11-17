@@ -88,7 +88,7 @@
         }
         case 'followApply':
           if (!isTop) return null;
-          return Object.assign({ frame: location.href }, await JC.nav.followApply());
+          return Object.assign({ frame: location.href }, await JC.nav.followApply(payload));
         case 'resolveApplyLinks': {
           if (!isTop) return null;
           const r = await JC.applyLinks.resolve(payload);

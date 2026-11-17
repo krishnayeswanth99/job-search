@@ -100,7 +100,7 @@
   }
 
   async function resolve(opts) {
-    const limit = Math.min((opts && opts.limit) || 15, 40);
+    const limit = Math.min((opts && opts.limit) || (opts && opts.viaApply ? 10 : 15), 40);
     const delayMs = Math.max((opts && opts.delayMs) || 1500, 0);
     const jobs = JC.extract.listings();
     const self = location.hostname.replace(/^www\./, '');
@@ -119,6 +119,17 @@
         else if (j.url && ATS.test(j.url)) r = { url: j.url, via: 'listing' };
         // Clicking is the last resort, only for cards with no job link at all (a click may load another page).
         if (!r && j.selector) r = await fromCardClick(j.selector);
+        // opts.viaApply: click the card's own Apply button and catch where it sends you (Jobright:
+        // the employer link only exists once you click Apply then "Apply Without Customizing").
+        // The site's pop-ups are closed without answering them.
+        if ((!r || r.none) && opts && opts.viaApply && j.selector && JC.nav) {
+          const f = await JC.nav.followApply({ scope: j.selector, navigate: false });
+          await sleep(500);
+          JC.nav.closeDialogs();
+          await sleep(400);
+          JC.nav.closeDialogs();
+          r = f && f.ok && f.to ? { url: f.to, via: 'apply-button' } : { error: (f && f.reason) || 'Apply did not reveal an employer link' };
+        }
       } catch (e) {
         r = { error: String(e.message || e) };
       }

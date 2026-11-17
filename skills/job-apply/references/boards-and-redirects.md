@@ -29,15 +29,24 @@ a redirect URL, or an "are you sure?" screen. Job Copilot reports all of it in `
    `tracker.py update --id N --apply-url "<ATS URL>"`. Then the same job found later on the employer's own board is
    recognized as a duplicate.
 
-## Jobright: tab flashes, then a pop-up
+## Jobright (recorded on the real site)
 
-On Jobright, **Apply** and **Apply with Autofill** briefly open a new tab, close it again, and then show a pop-up with
-the link to the employer's application.
-- Use `followApply()`. It clicks Apply, waits up to 8 s for the pop-up, and follows the employer link inside it (any
-  link to Greenhouse, Lever, Workday and other ATS hosts, or the "Apply without customizing" option).
-- Ignore the tab that flashes open and closed. Its address is kept in `detect().flashedTabs` (redirects unwrapped),
-  which is a fallback if the pop-up never shows.
-- If you click by hand instead, wait about 3 s after the click before calling `detect()`.
+1. **Apply** or **Apply with Autofill** opens an empty window as a pop-up check and closes it.
+2. A **"Customize Your Resume in 10 seconds"** pop-up offers **Fix My Resume Now** or **Apply Without Customizing**.
+   Both are buttons, not links.
+3. **Apply Without Customizing** opens another empty window and then sends it to the employer's application, for
+   example `job-boards.greenhouse.io/embed/job_app?for=<company>&token=…`.
+4. The Jobright tab asks **"Did you apply?"**.
+
+Script clicks don't count as the user's, so Chrome's pop-up blocker would stop those windows. `followApply()` handles
+this:
+- While it clicks through, it stands in for the window-opening function and catches the employer address.
+- It never chooses "Fix My Resume Now".
+- It then opens the address itself, in the same tab, or next to Jobright with `followApply({ newTab: true })`.
+- Answer "Did you apply?" only after a confirmed submission. Otherwise close it or answer "No".
+
+On the feed, `resolveApplyLinks({ viaApply: true })` does the same per card without leaving the page. It closes
+Jobright's pop-ups without answering them, about one job every 2 s, 10 per run.
 
 ## Pre-apply pop-ups (upsells)
 

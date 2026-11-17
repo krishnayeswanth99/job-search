@@ -290,6 +290,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       if (sender.frameId === 0) await setBadge(sender.tab.id, msg.status);
       return { ok: true };
     }
+    if (msg.type === 'jc:open-tab' && sender.tab && !fromExt) {
+      // followApply({ newTab: true }): open the employer's application next to the job board tab.
+      if (!/^https?:\/\//i.test(String(msg.url || ''))) return { ok: false };
+      const t = await chrome.tabs.create({ url: msg.url, openerTabId: sender.tab.id, index: sender.tab.index + 1 });
+      return { ok: true, tabId: t.id };
+    }
     if (msg.type === 'jc:rec-event' && sender.tab && !fromExt) {
       await recAdd(sender.tab.id, Object.assign({}, msg.event, { frameId: sender.frameId }));
       return { ok: true };

@@ -429,6 +429,24 @@
       return 'unknown';
     },
     listings() {
+      // Feed cards: the card's outer element id is the Jobright job id (div#6afcbc072ac165125e4cbf9e).
+      const byId = qsa('div[id]').filter((d) => /^[0-9a-f]{24}$/i.test(d.id) && clean(d.innerText).length >= 10);
+      if (byId.length) {
+        return cardsToJobs(byId, (c) => {
+          const lines = (c.innerText || '').split('\n').map(clean).filter(Boolean);
+          const title = pick(c, ['[class*="job-title" i]', '[class*="jobTitle" i]', 'h2', 'h3']) || lines[0];
+          return {
+            title,
+            company: pick(c, ['[class*="company-name" i]', '[class*="companyName" i]', '[class*="company" i]']),
+            location: pick(c, ['[class*="location" i]']),
+            salary: pick(c, ['[class*="salary" i]']) || lines.find((l) => /[$€£₹]\s?\d/.test(l)) || '',
+            postedAt: pick(c, ['[class*="publish" i]', '[class*="time" i]']),
+            jobId: c.id,
+            url: `https://jobright.ai/jobs/info/${c.id}`,
+            selector: cardRef(c),
+          };
+        });
+      }
       const links = qsa('a[href*="/jobs/info/"]');
       const fromLinks = cardsToJobs(links, (a) => {
         const card = a.closest(CARD_SEL) || a;

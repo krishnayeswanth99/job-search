@@ -70,8 +70,9 @@
     }
   }
 
-  function candidates() {
-    const els = [...document.querySelectorAll('a[href], button, [role="button"], input[type="submit"], input[type="button"]')];
+  function candidates(scope) {
+    const rootEl = (scope && document.querySelector(scope)) || document;
+    const els = [...rootEl.querySelectorAll('a[href], button, [role="button"], input[type="submit"], input[type="button"]')];
     return els.filter((el) => {
       const t = label(el);
       const aria = clean(el.getAttribute('aria-label') || '');
@@ -79,8 +80,8 @@
     });
   }
 
-  function applyInfo() {
-    const list = candidates();
+  function applyInfo(scope) {
+    const list = candidates(scope);
     if (!list.length) {
       if (document.querySelector('#indeedApplyButton, .indeed-apply-button')) return { text: 'Apply now', kind: 'easy-apply', href: '', target: '', newTab: false, selector: ref(document.querySelector('#indeedApplyButton, .indeed-apply-button')) };
       return null;
@@ -106,7 +107,7 @@
     if (kind === 'onsite' && portal && portal.aggregator) kind = 'external';
     // Scripted Apply button: the employer URL is often in the page's embedded data.
     let found = null;
-    if (!target && portal && portal.aggregator && JC.applyLinks) found = JC.applyLinks.findIn(document.documentElement.innerHTML);
+    if (!target && !scope && portal && portal.aggregator && JC.applyLinks) found = JC.applyLinks.findIn(document.documentElement.innerHTML);
     if (found) return { text, kind, href, target: found.url, targetVia: found.via, newTab: true, selector: ref(el), aria: aria || undefined };
     const newTab = el.getAttribute('target') === '_blank' || (kind === 'external' && !target);
     return { text, kind, href, target, newTab, selector: ref(el), aria: aria || undefined };
@@ -179,60 +180,104 @@
 
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+  // ------------------------------------------------ catching window.open (Jobright)
+  // Jobright's buttons open an empty window and then send it to the employer's site. When the
+  // extension clicks, Chrome's pop-up blocker stops that window (it isn't a real user click), so
+  // while we click through, page-api.js stands in for window.open and reports the address.
+  let captured = null;
+  window.addEventListener('message', (ev) => {
+    const m = ev.data;
+    if (ev.source !== window || !m || m.channel !== JC.BRIDGE_CHANNEL || m.dir !== 'captured-open') return;
+    const u = JC.unwrapUrl ? JC.unwrapUrl(String(m.url || '')) : String(m.url || '');
+    if (/^https?:/i.test(u) && !captured) captured = u;
+  });
+  const captureOpen = (on) => window.postMessage({ channel: JC.BRIDGE_CHANNEL, dir: 'capture-open', on }, '*');
+
   /**
-   * Scripted Apply buttons (Jobright and similar): click, then wait for what the site does next.
-   * Jobright briefly opens and closes a tab, then shows a pop-up holding the employer's link.
+   * Click a scripted button and wait for what the site does next: a page change, a pop-up (whose
+   * skip option is clicked too), or a window.open() carrying the employer's address.
+   * Returns { url } | { navigated } | { ok: false }.
    */
   async function clickAndWait(selector, timeoutMs) {
     const el = document.querySelector(selector);
     if (!el) return { ok: false, reason: 'Apply button disappeared.' };
     const before = location.href;
-    el.click();
-    const end = Date.now() + (timeoutMs || 8000);
-    while (Date.now() < end) {
-      await sleep(400);
-      if (location.href !== before) return { ok: true, action: 'navigated', to: location.href };
-      const gate = interstitial();
-      if (gate) {
-        if (gate.href) {
-          setTimeout(() => location.assign(gate.href), 50);
-          return { ok: true, action: 'navigate', to: gate.href, reason: `pop-up "${gate.button}"` };
+    captured = null;
+    captureOpen(true);
+    await sleep(60);
+    const clickedGates = new Set();
+    try {
+      el.click();
+      const end = Date.now() + (timeoutMs || 10000);
+      while (Date.now() < end) {
+        await sleep(300);
+        if (captured) return { ok: true, url: captured, via: 'window-open' };
+        if (location.href !== before) return { ok: true, navigated: location.href };
+        const gate = interstitial();
+        if (gate && !clickedGates.has(gate.selector)) {
+          if (gate.href) return { ok: true, url: gate.href, via: `pop-up link "${gate.button}"` };
+          clickedGates.add(gate.selector);
+          const b = document.querySelector(gate.selector);
+          if (b) b.click(); // e.g. "Apply Without Customizing": opens the employer site via window.open
         }
-        document.querySelector(gate.selector).click();
-        return { ok: true, action: 'clicked', button: gate.button, note: 'May open a new tab: check detect().openedTabs or the tab list.' };
       }
+      return { ok: false, reason: 'Clicked Apply, but no pop-up, new address or page change followed. Click it yourself, then call followApply() again.' };
+    } finally {
+      await sleep(200);
+      captureOpen(false);
     }
-    return { ok: false, action: 'clicked', reason: 'Clicked Apply, but no pop-up or page change followed within the wait. If a new tab opened, check detect().openedTabs; a tab that opened and closed again is listed in detect().flashedTabs.' };
   }
 
-  /** Move THIS tab towards the application. Never submits anything. */
-  async function followApply() {
-    const hop = redirectInfo();
-    if (hop && hop.target) {
-      setTimeout(() => location.assign(hop.target), 50);
-      return { ok: true, action: 'navigate', to: hop.target, reason: 'skipped redirect hop' };
+  /** Close the site's pop-ups without answering them (never "Yes, I applied"). */
+  function closeDialogs() {
+    for (const d of dialogs()) {
+      const x = d.querySelector('.ant-modal-close, [aria-label="Close" i], [aria-label="close" i], button[class*="close" i], [class*="closeBtn" i], [class*="close-btn" i]');
+      if (x) x.click();
     }
-    const gate = interstitial();
-    if (gate) {
-      if (gate.href) {
-        setTimeout(() => location.assign(gate.href), 50);
-        return { ok: true, action: 'navigate', to: gate.href, reason: `interstitial "${gate.button}"` };
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, bubbles: true }));
+  }
+
+  /**
+   * Move towards the employer's application. Never submits anything.
+   *   opts.scope     CSS selector of a job card: use the Apply button inside it (feeds)
+   *   opts.navigate  false: only find the address, don't go there
+   *   opts.newTab    open the address in a new tab instead of this one
+   */
+  async function followApply(opts) {
+    opts = opts || {};
+    const go = (url, why) => {
+      if (opts.navigate === false) return { ok: true, action: 'found', to: url, reason: why };
+      if (opts.newTab) {
+        chrome.runtime.sendMessage({ type: 'jc:open-tab', url }).catch(() => {});
+        return { ok: true, action: 'opened-tab', to: url, reason: why };
       }
-      document.querySelector(gate.selector).click();
-      return { ok: true, action: 'clicked', button: gate.button, note: 'May open a new tab: check detect().openedTabs or the tab list.' };
+      setTimeout(() => location.assign(url), 50);
+      return { ok: true, action: 'navigate', to: url, reason: why };
+    };
+    const fromClick = (r, kind) => {
+      if (r.url) return Object.assign(go(r.url, r.via), kind ? { kind } : {});
+      if (r.navigated) return { ok: true, action: 'navigated', to: r.navigated, kind };
+      return Object.assign({ kind }, r);
+    };
+
+    if (!opts.scope) {
+      const hop = redirectInfo();
+      if (hop && hop.target) return go(hop.target, 'skipped redirect hop');
+      const gate = interstitial();
+      if (gate) {
+        if (gate.href) return go(gate.href, `pop-up "${gate.button}"`);
+        return fromClick(await clickAndWait(gate.selector, 8000));
+      }
     }
-    const a = applyInfo();
-    if (!a) return { ok: false, reason: 'No Apply button found on this page.' };
+    const a = applyInfo(opts.scope);
+    if (!a) return { ok: false, reason: 'No Apply button found' + (opts.scope ? ' in that job card.' : ' on this page.') };
     if (a.kind === 'easy-apply') return { ok: false, kind: a.kind, selector: a.selector, reason: 'On-site Easy Apply: click the button and follow the site\'s own multi-step form.' };
-    if (a.target) {
-      setTimeout(() => location.assign(a.target), 50);
-      return { ok: true, action: 'navigate', to: a.target, kind: a.kind };
-    }
-    // Scripted button: click it and wait for the pop-up / redirect (only on job boards and aggregators,
+    if (a.target) return Object.assign(go(a.target, a.targetVia || 'apply link'), { kind: a.kind });
+    // Scripted button: click it and follow through (only on job boards and aggregators,
     // where Apply leads elsewhere; on an employer's own page Claude should click it itself).
-    if (a.kind === 'external') return Object.assign({ kind: a.kind }, await clickAndWait(a.selector, 8000));
+    if (a.kind === 'external') return fromClick(await clickAndWait(a.selector, 10000), a.kind);
     return { ok: false, kind: a.kind, selector: a.selector, reason: 'The Apply button has no link (it is scripted). Click it; it usually opens a new tab, then look at detect().openedTabs.' };
   }
 
-  JC.nav = { applyInfo, redirectInfo, interstitial, appliedPrompt, followApply, resolveTarget };
+  JC.nav = { applyInfo, redirectInfo, interstitial, appliedPrompt, followApply, closeDialogs, resolveTarget };
 })(typeof globalThis !== 'undefined' ? globalThis : self);

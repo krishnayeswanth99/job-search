@@ -49,6 +49,10 @@
     if (ev.source !== window) return;
     const m = ev.data;
     if (!m || m.channel !== CHANNEL) return;
+    if (m.dir === 'capture-open') {
+      setCapture(!!m.on);
+      return;
+    }
     if (m.dir === 'rec') {
       // Recording (started by the user from the popup): report window.open() calls, which a
       // page may make and immediately undo (Jobright opens and closes a tab before its pop-up).
@@ -75,6 +79,39 @@
     }
   });
 
+  // While Job Copilot clicks through an aggregator's Apply (followApply), stand in for window.open:
+  // the site gets a stand-in window, and any address it tries to open or send that window to is
+  // reported to the extension, which opens it itself (its own tabs aren't stopped by the pop-up
+  // blocker). Turned off right after, and automatically after 20 s.
+  let realOpen = null;
+  let captureTimer = null;
+  function fakeWindow(report) {
+    const loc = { get href() { return 'about:blank'; }, set href(u) { report(u); }, assign: report, replace: report, reload() {}, toString() { return 'about:blank'; } };
+    const w = { closed: false, opener: null, name: '', close() { w.closed = true; }, focus() {}, blur() {}, postMessage() {}, addEventListener() {}, removeEventListener() {},
+      document: { write() {}, writeln() {}, open() {}, close() {}, title: '', body: null } };
+    Object.defineProperty(w, 'location', { get() { return loc; }, set(u) { report(u); } });
+    return w;
+  }
+  function setCapture(on) {
+    if (on && !realOpen) {
+      realOpen = window.open;
+      window.open = function (url) {
+        const report = (u) => {
+          let abs = String(u || '');
+          try { abs = new URL(abs, location.href).href; } catch (_) { /* keep as is */ }
+          if (/^https?:/i.test(abs)) window.postMessage({ channel: CHANNEL, dir: 'captured-open', url: abs }, '*');
+        };
+        report(url);
+        return fakeWindow(report);
+      };
+      captureTimer = setTimeout(() => setCapture(false), 20000);
+    } else if (!on && realOpen) {
+      window.open = realOpen;
+      realOpen = null;
+      clearTimeout(captureTimer);
+    }
+  }
+
   const T = 15000;
   const api = {
     __jc: true,
@@ -98,7 +135,7 @@
     autofill: (opts) => call('autofill', opts, 30000),
     fillField: (opts) => call('fillField', opts, T),
     attachFile: (opts) => call('attachFile', opts, 30000),
-    followApply: () => call('followApply', {}, 20000),
+    followApply: (opts) => call('followApply', opts, 25000),
     help: () =>
       'jobCopilot: detect() extractJobs() extractJob() followApply() scanForm() autofill({overrides,overwrite}) fillField({selector|ref|label, value, check}) attachFile({kind:"resume"|"coverLetter", url?, ref?}). Results are also in jobCopilot.last.',
   };

@@ -33,6 +33,9 @@ const ROUTES = {
   'https://jobright.ai/jobs/info/abc123': fx('jobright-job.html'),
   'https://jobright.ai/jobs/info/def456': fx('jobright-modal.html'),
   'https://jobright.ai/jobs/recommend': fx('jobright-feed.html'),
+  'https://jobright.ai/jobs/recommend?v=2': fx('jobright-feed.html'),
+  'https://jobright.ai/jobs/info/real01': fx('jobright-real-job.html'),
+  'https://jobright.ai/jobs/info/real01?nt=1': fx('jobright-real-job.html'),
   'https://jobright.ai/jobs/info/fab001': fx('jobright-flash.html'),
   'https://jobright.ai/jobs/info/fab001?rec=1': fx('jobright-flash.html'),
   'https://jobs.lever.co/acme/11111111-1111-1111-1111-111111111111/apply': '<html><body><form id="application-form"><label>Full name<input name="name"></label><label>Email<input name="email" type="email"></label><label>Phone<input name="phone"></label><label>Resume/CV<input type="file" name="resume"></label></form></body></html>',
@@ -81,6 +84,8 @@ try {
   await context.route('**/*', (route) => {
     const url = route.request().url();
     if (!/^https?:/.test(url) || url.startsWith('http://127.0.0.1')) return route.continue();
+    if (url === 'https://jobright.ai/__fixtures/jobright-flow.js') return route.fulfill({ status: 200, contentType: 'application/javascript', body: fx('jobright-flow.js') });
+    if (/^https:\/\/job-boards\.greenhouse\.io\/embed\/job_app\?for=kodiak&token=\d+/.test(url)) return route.fulfill({ status: 200, contentType: 'text/html', body: fx('greenhouse-job.html') });
     const body = ROUTES[url];
     if (body) return route.fulfill({ status: 200, contentType: 'text/html', body });
     // Jobright-style job pages behind the feed fixture: the employer link is in embedded data,
@@ -441,13 +446,17 @@ try {
     const d = await bridge(p, () => window.jobCopilot.detect());
     assert.equal(d.apply.kind, 'external');
     assert.equal(d.apply.newTab, true);
-    const f = await bridge(p, () => window.jobCopilot.followApply());
-    assert.equal(f.ok, false, 'scripted button: cannot navigate same tab');
+    // By hand: the click opens a new tab, which detect() reports.
     const [child] = await Promise.all([context.waitForEvent('page'), p.click(d.apply.selector)]);
     await child.waitForLoadState('domcontentloaded');
     await p.waitForTimeout(300);
     const d2 = await bridge(p, () => window.jobCopilot.detect());
     assert.ok(d2.openedTabs && d2.openedTabs.some((t) => /greenhouse\.io\/acme\/jobs\/123/.test(t.url)), JSON.stringify(d2.openedTabs));
+    // followApply: the scripted button's window.open is caught, so it reaches the ATS in the same tab.
+    const f = await bridge(p, () => window.jobCopilot.followApply());
+    assert.equal(f.ok, true, JSON.stringify(f));
+    assert.equal(f.to, 'https://job-boards.greenhouse.io/acme/jobs/123?gh_src=linkedin');
+    await p.waitForURL('https://job-boards.greenhouse.io/acme/jobs/123?gh_src=linkedin');
   });
 
   await check('Indeed redirect + "leaving Indeed" screen: followApply lands on the ATS form', async () => {
@@ -555,6 +564,42 @@ try {
     await q.waitForURL('https://job-boards.greenhouse.io/acme/jobs/123');
     await q.waitForFunction(() => window.jobCopilot && window.jobCopilot.installed);
     assert.equal((await bridge(q, () => window.jobCopilot.detect())).pageType, 'application');
+  });
+
+  await check('Jobright real flow (from recording): followApply clicks through the pop-ups and catches the employer address', async () => {
+    const p = await open('https://jobright.ai/jobs/info/real01');
+    const f = await bridge(p, () => window.jobCopilot.followApply());
+    assert.equal(f.ok, true, JSON.stringify(f));
+    assert.equal(f.to, 'https://job-boards.greenhouse.io/embed/job_app?for=kodiak&token=4511215009&jr_id=6afcbc072ac165125e4cbf9e');
+    await p.waitForURL(/job-boards\.greenhouse\.io\/embed\/job_app\?for=kodiak&token=4511215009/);
+    await p.waitForFunction(() => window.jobCopilot && window.jobCopilot.installed);
+    assert.equal((await bridge(p, () => window.jobCopilot.detect())).pageType, 'application');
+  });
+
+  await check('Jobright real flow: newTab keeps Jobright open and opens the employer form next to it; upsell never chosen', async () => {
+    const p = await open('https://jobright.ai/jobs/info/real01?nt=1');
+    const [tab, f] = await Promise.all([context.waitForEvent('page'), bridge(p, () => window.jobCopilot.followApply({ newTab: true }))]);
+    assert.equal(f.action, 'opened-tab');
+    await tab.waitForLoadState('domcontentloaded');
+    assert.match(tab.url(), /token=4511215009/);
+    assert.match(p.url(), /jobright\.ai\/jobs\/info\/real01/);
+    assert.equal(await p.evaluate(() => !!window.__fixResume), false, '"Fix My Resume Now" never clicked');
+    assert.equal(await p.evaluate(() => typeof window.open === 'function' && !String(window.open).includes('fakeWindow')), true, 'window.open restored');
+  });
+
+  await check('Jobright feed: resolveApplyLinks({ viaApply }) clicks Apply per card, closes pop-ups unanswered', async () => {
+    const p = await open('https://jobright.ai/jobs/recommend?v=2');
+    const jobs = await bridge(p, () => window.jobCopilot.extractJobs());
+    assert.equal(jobs.jobs[0].jobId, '0000a1b2c3d4e5f6a7b8c9d0');
+    const r = await bridge(p, () => window.jobCopilot.resolveApplyLinks({ limit: 3, delayMs: 0, viaApply: true }));
+    assert.equal(r.resolved, 3, JSON.stringify(r.jobs.slice(0, 3).map((j) => [j.applyUrl, j.applyError])));
+    assert.equal(r.jobs[0].applyVia, 'page-data');
+    assert.equal(r.jobs[2].applyVia, 'apply-button');
+    assert.equal(r.jobs[2].applyUrl, 'https://job-boards.greenhouse.io/embed/job_app?for=kodiak&token=4511215002&jr_id=0002a1b2c3d4e5f6a7b8c9d0');
+    await p.waitForTimeout(800);
+    assert.equal(await p.evaluate(() => document.querySelectorAll('.ant-modal-root').length), 0, 'pop-ups closed');
+    assert.equal(await p.evaluate(() => window.__answered), null, '"Did you apply?" left unanswered');
+    assert.equal(await p.evaluate(() => !!window.__fixResume), false);
   });
 
   await check('recorder: logs clicks, window.open, flashed tab and the pop-up with its links', async () => {

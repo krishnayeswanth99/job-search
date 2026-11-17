@@ -190,4 +190,29 @@ $('btn-save-all').addEventListener('click', async () => {
   $('btn-save-all').textContent = `Saved ${n}`;
 });
 
+// ---------------------------------------------------------------- recorder
+async function refreshRec() {
+  if (!tabId) return;
+  const r = await chrome.runtime.sendMessage({ type: 'jc:rec-query', tabId });
+  $('btn-rec').textContent = r && r.on ? 'Stop & copy report' : 'Record what I do';
+  $('btn-rec').classList.toggle('primary', !!(r && r.on));
+  $('rec-status').textContent = r && r.on ? `Recording this tab (${r.events} events). Do the steps on the page, then reopen this popup and stop.` : '';
+}
+$('btn-rec').addEventListener('click', async () => {
+  const q = await chrome.runtime.sendMessage({ type: 'jc:rec-query', tabId });
+  if (q && q.on) {
+    const r = await chrome.runtime.sendMessage({ type: 'jc:rec-stop', tabId });
+    if (!r || !r.ok) return ($('rec-status').textContent = (r && r.error) || 'Could not stop.');
+    const text = JSON.stringify(r.report, null, 1);
+    await navigator.clipboard.writeText(text);
+    $('rec-status').textContent = `Copied the report (${r.report.events.length} events, ${Math.round(text.length / 1024)} KB). Paste it to Claude.`;
+    $('btn-rec').textContent = 'Record what I do';
+    $('btn-rec').classList.remove('primary');
+    return;
+  }
+  await chrome.runtime.sendMessage({ type: 'jc:rec-start', tabId });
+  await refreshRec();
+});
+
 init();
+refreshRec();

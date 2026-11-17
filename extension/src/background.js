@@ -13,13 +13,67 @@ const FRAME_CMDS = new Set(['ping', 'detect', 'extractJobs', 'loadMoreJobs', 're
 // Job boards often open the employer's site in a new tab. Remember child tabs per
 // opener so detect() can tell Claude where the application went.
 const childTabs = new Map(); // openerTabId -> [{ tabId, url, title, openedAt }]
+// ------------------------------------------------ "Record what I do" (debugging)
+const recordings = new Map(); // tabId -> { startedAt, url, events: [] }
+const REC_MAX_EVENTS = 400;
+const REC_MAX_MS = 15 * 60 * 1000;
+async function recSave(tabId) {
+  const r = recordings.get(tabId);
+  try {
+    if (r) await chrome.storage.session.set({ ['rec:' + tabId]: r });
+    else await chrome.storage.session.remove('rec:' + tabId);
+  } catch (_) {
+    /* session storage unavailable */
+  }
+}
+async function recGet(tabId) {
+  if (recordings.has(tabId)) return recordings.get(tabId);
+  try {
+    const v = (await chrome.storage.session.get('rec:' + tabId))['rec:' + tabId];
+    if (v) recordings.set(tabId, v);
+    return v || null;
+  } catch (_) {
+    return null;
+  }
+}
+async function recAdd(tabId, ev) {
+  const r = await recGet(tabId);
+  if (!r) return;
+  if (Date.now() - r.startedAt > REC_MAX_MS) return recStop(tabId);
+  ev.t = ev.t || Date.now();
+  ev.sinceStartMs = ev.t - r.startedAt;
+  r.events.push(ev);
+  if (r.events.length > REC_MAX_EVENTS) r.events.splice(0, r.events.length - REC_MAX_EVENTS);
+  await recSave(tabId);
+}
+async function recStart(tabId) {
+  const tab = await chrome.tabs.get(tabId);
+  recordings.set(tabId, { startedAt: Date.now(), url: tab.url, version: self.JC.VERSION, userAgent: navigator.userAgent, events: [] });
+  await recSave(tabId);
+  await chrome.action.setBadgeText({ tabId, text: 'REC' });
+  await chrome.action.setBadgeBackgroundColor({ tabId, color: '#dc2626' });
+  await chrome.scripting.executeScript({ target: { tabId, allFrames: true }, func: () => globalThis.JC && globalThis.JC.recorder && globalThis.JC.recorder.start() }).catch(() => {});
+  return { ok: true };
+}
+async function recStop(tabId) {
+  const r = await recGet(tabId);
+  recordings.delete(tabId);
+  await recSave(tabId);
+  await chrome.action.setBadgeText({ tabId, text: '' }).catch(() => {});
+  await chrome.scripting.executeScript({ target: { tabId, allFrames: true }, func: () => globalThis.JC && globalThis.JC.recorder && globalThis.JC.recorder.stop() }).catch(() => {});
+  if (!r) return { ok: false, error: 'This tab was not being recorded.' };
+  return { ok: true, report: Object.assign({ kind: 'job-copilot-recording', stoppedAt: Date.now(), durationMs: Date.now() - r.startedAt }, r) };
+}
+
 chrome.tabs.onCreated.addListener((tab) => {
+  if (tab.openerTabId !== undefined) recAdd(tab.openerTabId, { type: 'tab-opened', tabId: tab.id, url: tab.pendingUrl || tab.url || '' });
   if (tab.openerTabId === undefined) return;
   const list = childTabs.get(tab.openerTabId) || [];
   list.push({ tabId: tab.id, url: tab.pendingUrl || tab.url || '', title: tab.title || '', openedAt: new Date().toISOString() });
   childTabs.set(tab.openerTabId, list.slice(-5));
 });
 chrome.tabs.onUpdated.addListener((tabId, info, tab) => {
+  if (info.url && tab.openerTabId !== undefined) recAdd(tab.openerTabId, { type: 'tab-url', tabId, url: info.url });
   if (!info.url && !info.title) return;
   for (const list of childTabs.values()) for (const c of list) if (c.tabId === tabId) Object.assign(c, { url: tab.url || c.url, title: tab.title || c.title });
 });
@@ -27,6 +81,14 @@ chrome.tabs.onUpdated.addListener((tabId, info, tab) => {
 // address is often the real application link, so keep it, reported as detect().flashedTabs.
 const flashedTabs = new Map(); // openerTabId -> [{ url, openedAt, closedAt }]
 chrome.tabs.onRemoved.addListener((tabId) => {
+  for (const [opener, list] of childTabs) {
+    const c = list.find((x) => x.tabId === tabId);
+    if (c) recAdd(opener, { type: 'tab-closed', tabId, url: c.url, openForMs: Date.now() - Date.parse(c.openedAt) });
+  }
+  if (recordings.has(tabId)) {
+    recordings.delete(tabId);
+    recSave(tabId);
+  }
   childTabs.delete(tabId);
   flashedTabs.delete(tabId);
   for (const [k, list] of childTabs) {
@@ -227,6 +289,19 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (msg.type === 'jc:status' && sender.tab && !fromExt) {
       if (sender.frameId === 0) await setBadge(sender.tab.id, msg.status);
       return { ok: true };
+    }
+    if (msg.type === 'jc:rec-event' && sender.tab && !fromExt) {
+      await recAdd(sender.tab.id, Object.assign({}, msg.event, { frameId: sender.frameId }));
+      return { ok: true };
+    }
+    if (msg.type === 'jc:rec-status' && sender.tab && !fromExt) {
+      return { on: !!(await recGet(sender.tab.id)) };
+    }
+    if (msg.type === 'jc:rec-start' && fromExt) return recStart(msg.tabId);
+    if (msg.type === 'jc:rec-stop' && fromExt) return recStop(msg.tabId);
+    if (msg.type === 'jc:rec-query' && fromExt) {
+      const r = await recGet(msg.tabId);
+      return { on: !!r, events: r ? r.events.length : 0 };
     }
     if (msg.type === 'jc:remember' && sender.tab && !fromExt) {
       // Answers to new questions captured on Submit/Next. Merged one at a time here so

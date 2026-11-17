@@ -49,6 +49,20 @@
     if (ev.source !== window) return;
     const m = ev.data;
     if (!m || m.channel !== CHANNEL) return;
+    if (m.dir === 'rec') {
+      // Recording (started by the user from the popup): report window.open() calls, which a
+      // page may make and immediately undo (Jobright opens and closes a tab before its pop-up).
+      if (m.on && !window.__jcOpenHooked) {
+        window.__jcOpenHooked = true;
+        const orig = window.open;
+        window.open = function (url, name, features) {
+          if (window.__jcRec) window.postMessage({ channel: CHANNEL, dir: 'rec-open', url: String(url || ''), name: name ? String(name) : '' }, '*');
+          return orig.apply(this, arguments);
+        };
+      }
+      window.__jcRec = !!m.on;
+      return;
+    }
     if (m.dir === 'hello') {
       enabled = !!m.enabled;
       version = m.version;

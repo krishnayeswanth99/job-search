@@ -32,6 +32,11 @@ npm run test:e2e     # needs Playwright + Chromium
 ```
 
 ## Asking for changes
+The fastest way to report a site that misbehaves: in the Job Copilot popup click **Record what I do**, do the steps on
+the page (click Apply, let the pop-up appear…), reopen the popup, click **Stop & copy report** and paste the JSON. It
+lists clicks (element text, link, trimmed HTML), `window.open` calls, tabs opened and closed, pop-ups with their links
+and buttons, and URL changes. It never includes typed values, and emails and phone numbers are blanked.
+
 Good requests name the portal or ATS and paste a snippet of the page's HTML (or the output of
 `jobCopilot.scanForm()`). For example: "Indeed changed its job cards. Here's the outer HTML of one card; update the
 extractor and the fixture."

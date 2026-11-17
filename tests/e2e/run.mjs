@@ -34,6 +34,7 @@ const ROUTES = {
   'https://jobright.ai/jobs/info/def456': fx('jobright-modal.html'),
   'https://jobright.ai/jobs/recommend': fx('jobright-feed.html'),
   'https://jobright.ai/jobs/info/fab001': fx('jobright-flash.html'),
+  'https://jobright.ai/jobs/info/fab001?rec=1': fx('jobright-flash.html'),
   'https://jobs.lever.co/acme/11111111-1111-1111-1111-111111111111/apply': '<html><body><form id="application-form"><label>Full name<input name="name"></label><label>Email<input name="email" type="email"></label><label>Phone<input name="phone"></label><label>Resume/CV<input type="file" name="resume"></label></form></body></html>',
 };
 
@@ -554,6 +555,30 @@ try {
     await q.waitForURL('https://job-boards.greenhouse.io/acme/jobs/123');
     await q.waitForFunction(() => window.jobCopilot && window.jobCopilot.installed);
     assert.equal((await bridge(q, () => window.jobCopilot.detect())).pageType, 'application');
+  });
+
+  await check('recorder: logs clicks, window.open, flashed tab and the pop-up with its links', async () => {
+    const p = await open('https://jobright.ai/jobs/info/fab001?rec=1');
+    const tabId = await ext.evaluate(async (url) => (await chrome.tabs.query({ url })).at(0)?.id, p.url());
+    assert.equal((await ext.evaluate((id) => chrome.runtime.sendMessage({ type: 'jc:rec-start', tabId: id }), tabId)).ok, true);
+    await p.waitForTimeout(300);
+    await p.click('#plain');
+    await p.waitForTimeout(2000);
+    const r = await ext.evaluate((id) => chrome.runtime.sendMessage({ type: 'jc:rec-stop', tabId: id }), tabId);
+    assert.equal(r.ok, true, r.error);
+    const ev = r.report.events;
+    const types = ev.map((e) => e.type);
+    const click = ev.find((e) => e.type === 'click');
+    assert.equal(click.target.text, 'Apply');
+    assert.equal(click.trusted, true);
+    assert.ok(ev.some((e) => e.type === 'window-open' && e.url === 'https://job-boards.greenhouse.io/acme/jobs/123'), JSON.stringify(types));
+    assert.ok(types.includes('tab-opened') && types.includes('tab-closed'), JSON.stringify(types));
+    const overlay = ev.find((e) => e.type === 'overlay' && (e.overlay.links || []).some((l) => l.href === 'https://job-boards.greenhouse.io/acme/jobs/123'));
+    assert.ok(overlay, 'pop-up with the employer link recorded');
+    // Stopped: further clicks are not recorded.
+    await p.click('#auto');
+    const q = await ext.evaluate((id) => chrome.runtime.sendMessage({ type: 'jc:rec-query', tabId: id }), tabId);
+    assert.equal(q.on, false);
   });
 
   await check('bridge disabled: commands refused', async () => {

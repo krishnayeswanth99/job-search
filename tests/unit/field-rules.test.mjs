@@ -207,3 +207,13 @@ test('split date boxes: signature date is today, other dates are left alone', ()
   assert.equal(valueForKey({}, 'todayDay', d), '07');
   assert.equal(valueForKey({}, 'todayYear', d), '2026');
 });
+
+test('resume source choices pick uploading a file', () => {
+  const opts = (...t) => t.map((x) => ({ text: x, value: x }));
+  assert.equal(key({ label: 'Resume Upload Selection', type: 'radio' }), 'resumeSource');
+  assert.equal(key({ label: 'Select the resume file to upload', type: 'radio' }), 'resumeSource');
+  assert.equal(key({ label: 'Apply with', type: 'radio', optionsText: 'LinkedIn | Upload resume | Manually' }), 'resumeSource');
+  assert.equal(JC.rules.chooseResumeSource(opts('Use my LinkedIn profile', 'Upload a resume', 'No thanks, I will fill out the online submission manually')), 1);
+  assert.equal(JC.rules.chooseResumeSource(opts('Dropbox', 'Google Drive', 'My computer')), 2);
+  assert.equal(JC.rules.chooseResumeSource(opts('LinkedIn', 'Manually')), -1);
+});

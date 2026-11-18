@@ -30,6 +30,9 @@ forms.
 - **Taleo / SuccessFactors:** long multi-page forms that time out quickly. Save often ("Save as Draft").
   After a Google or LinkedIn sign-in, Taleo returns to `application.jss?...&scope=...googleapis.com/auth/...`: that is
   the application, not a login page (Job Copilot only reads the address's path for login words).
+  Its **Resume Upload Selection** step ("Use my LinkedIn profile / Upload a resume / No thanks, I will fill out the
+  online submission manually", then "Select the resume file to upload") is answered by `autofill()`: Upload a resume,
+  My computer, then the stored resume is attached. Taleo may then need its own **Upload** button clicked.
 - **Single-page ATSs (Taleo, SuccessFactors, Oracle, Workday steps):** questions change without a new page load. In a
   tab opened from a job board, Job Copilot notices a new set of questions and autofills them; elsewhere run
   `autofill()` again after each step.

@@ -35,6 +35,7 @@ const ROUTES = {
   'https://acme.wd5.myworkdayjobs.com/en-US/careers/job/New-York-NY/ML-Engineer_123/apply/myInformation': fx('workday-info.html'),
   'https://uab.taleo.net/careersection/application.jss?lang=en&reqNo=330171&signedin=1&isOnLogoutPage=true&iss=https://accounts.google.com&scope=email+https://www.googleapis.com/auth/userinfo.email+openid': fx('taleo-application.html'),
   'https://uab.taleo.net/careersection/application.jss?lang=en&reqNo=330172': fx('taleo-application.html'),
+  'https://uab.taleo.net/careersection/application.jss?lang=en&reqNo=330173': fx('taleo-resume.html'),
   'https://job-boards.greenhouse.io/acme/jobs/ai-check': '<html><head><meta charset="utf-8"></head><body><form><label for="seg">Segundo nombre</label><input id="seg" name="legalName.fullName"><label for="em">Email</label><input id="em" name="email"></form></body></html>',
   'https://jobs.lever.co/learntest/apply-2': fx('learn-form.html'),
   'https://careers-acme.icims.com/jobs/1234/data-scientist/candidate': fx('icims-like.html'),
@@ -332,6 +333,14 @@ try {
     await p.click('#google');
     await p.waitForFunction(() => document.getElementById('fn') && document.getElementById('fn').value === 'Ada', null, { timeout: 20000 });
     assert.equal(await p.evaluate(() => em.value), 'ada@example.com');
+  });
+
+  await check('Taleo resume selection: picks "Upload a resume", then "My computer", then attaches the resume', async () => {
+    const p = await open('https://uab.taleo.net/careersection/application.jss?lang=en&reqNo=330173');
+    const r = await bridge(p, () => window.jobCopilot.autofill());
+    const v = await p.evaluate(() => ({ up: document.getElementById('r-up').checked, pc: !!document.getElementById('s-pc') && document.getElementById('s-pc').checked, file: document.getElementById('file') ? document.getElementById('file').files.length : -1 }));
+    assert.deepEqual(v, { up: true, pc: true, file: 1 }, JSON.stringify(r));
+    assert.ok(!r.needsInput.some((f) => /resume/i.test(f.label)), JSON.stringify(r.needsInput));
   });
 
   await check('bridge: fillField answers a custom question', async () => {

@@ -103,7 +103,7 @@
 
   function fillSelect(el, desired, key) {
     const opts = [...el.options].map((o) => ({ value: o.value, text: o.text }));
-    const i = chooseFrom(opts, choices(key, desired));
+    const i = key === 'resumeSource' ? R.chooseResumeSource(opts) : chooseFrom(opts, choices(key, desired));
     if (i < 0) return false;
     if (el.selectedIndex === i) return true;
     setValue(el, el.options[i].value);
@@ -111,7 +111,7 @@
   }
 
   function fillGroup(f, desired) {
-    const i = R.chooseOption(f.options, desired);
+    const i = f.key === 'resumeSource' ? R.chooseResumeSource(f.options) : R.chooseOption(f.options, desired);
     if (i < 0) return false;
     const target = f.els[i];
     if (f.type === 'radio') setChecked(target, true);
@@ -219,7 +219,13 @@
           continue;
         }
         let r = null;
-        if (f.hasValue && !opts.overwrite) {
+        // A preselected "No thanks, I'll fill it in manually" / "Use LinkedIn" doesn't count as answered.
+        const sourceNotUpload =
+          f.key === 'resumeSource' && f.hasValue && files.resume && (() => {
+            const i = R.chooseResumeSource(f.options || (f.el && f.el.options ? [...f.el.options].map((o) => ({ text: o.text, value: o.value })) : []));
+            return i >= 0 && (f.els ? !(f.els[i] && f.els[i].checked) : f.el.selectedIndex !== i);
+          })();
+        if (f.hasValue && !opts.overwrite && !sourceNotUpload) {
           // Profile fields: if the site (usually its resume parser) put in something that means
           // something different, the profile value replaces it. Answers to other questions are kept.
           r = profileWins && f.key && !f.combobox ? resolve(f, profile, opts.overrides) : null;
@@ -232,6 +238,10 @@
           corrected.push({ label: f.label, site: String(site).slice(0, 80) });
         }
         r = r || resolve(f, profile, opts.overrides);
+        if (f.key === 'resumeSource' && !files.resume) {
+          needsInput.push(Object.assign(d, { reason: 'how to give your resume: no resume stored in Job Copilot, choose by hand' }));
+          continue;
+        }
         if (!r) {
           const reason = f.key ? R.emptyReason(f.key, f.period, profile) : 'custom question';
           // Pay questions always go to Claude/the user, even when optional.
@@ -289,6 +299,26 @@
           })
         );
     }
+    // Choosing "upload a resume" (Taleo, SuccessFactors…) reveals a follow-up choice and then the
+    // file box: answer those as they appear, up to three rounds.
+    for (let round = 0; round < 3 && filled.some((x) => x.profileKey === 'resumeSource' && !x._followed); round++) {
+      filled.forEach((x) => x.profileKey === 'resumeSource' && (x._followed = true));
+      await sleep(1200);
+      for (const f of JC.fields.scan()) {
+        const d = JC.fields.describe(f);
+        const was = needsInput.findIndex((x) => x.ref === d.ref);
+        if (f.key === 'resumeSource' && !filled.some((x) => x.ref === d.ref)) {
+          if (f.els && f.els.length > 1 ? fillGroup(f, 'Upload') : f.type === 'select' ? fillSelect(f.el, 'Upload', f.key) : false) {
+            filled.push(Object.assign(d, { source: 'profile', profileKey: 'resumeSource' }));
+            if (was >= 0) needsInput.splice(was, 1);
+          }
+        } else if (f.type === 'file' && f.key === 'resume' && !f.hasValue && !fileDone.has(f.ref) && files.resume && attachFile(f.el, files.resume)) {
+          fileDone.add(f.ref);
+          filled.push(Object.assign(d, { source: 'resume', value: files.resume.name }));
+          if (was >= 0) needsInput.splice(was, 1);
+        }
+      }
+    }
     highlight(needsInput);
     if (profileWins && guardList.length) guard(guardList, opts.guardMs || 90000);
     return {
@@ -306,7 +336,7 @@
   }
 
   // Keys whose value doesn't come from the applicant's data (nothing for a model to check).
-  const CONSTANT_KEYS = new Set(['phoneType', 'timeZone', 'todayDate', 'todayMonth', 'todayDay', 'todayYear', 'howDidYouHear', 'howDidYouHearDetail']);
+  const CONSTANT_KEYS = new Set(['resumeSource', 'phoneType', 'timeZone', 'todayDate', 'todayMonth', 'todayDay', 'todayYear', 'howDidYouHear', 'howDidYouHearDetail']);
   function reviewItem(f, d) {
     return { ref: d.ref, selector: d.selector, label: d.label, type: d.type, options: d.options, maxLength: d.maxLength, profileKey: f.key, weak: !!(f.learned || f.via === 'attribute') };
   }

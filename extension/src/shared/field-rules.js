@@ -24,6 +24,9 @@
     { key: 'consent', re: /\b(sign[- ]?off|e-?signature|electronic signature|digital signature|signature)\b/, q: true },
     { key: 'consent', re: /\b(i (hereby )?(agree|acknowledge|consent|certify|confirm|attest|understand)|terms (of|and) (use|service|conditions)|privacy (policy|notice)|gdpr|data processing)\b/, q: true },
     { key: 'resume', re: /\b(resume|résumé|cv|curriculum vitae)\b/, fileOnly: true, q: true },
+    // "How do you want to give us your resume?" choices (Taleo "Resume Upload Selection", "Select the
+    // resume file to upload", "Apply with: LinkedIn / Upload / Manually"): pick uploading a file.
+    { key: 'resumeSource', re: /\b((resume|cv) (upload )?(selection|source|options?|method)|resume upload|select the (resume |cv )?file to upload|how (would|do) you (like|want) to (apply|submit|provide|share|add) (your )?(resume|cv|application|profile)|upload (method|source|from)|import (your )?(resume|profile) from)\b/, choiceOnly: true, q: true },
     { key: 'coverLetter', re: /\bcover ?letter\b/, fileOnly: true, q: true },
     { key: 'email', re: /\be-?mail\b/ },
     // "How do you pronounce your name?" is a free-text question, not the name itself.
@@ -184,9 +187,25 @@
     return /^m/.test(w) ? 'Month' : /^d/.test(w) ? 'Day' : 'Year';
   }
 
+  const CHOICE_TYPES = ['radio', 'select', 'select-one', 'listbox', 'checkbox'];
+  const UPLOAD_OPT = /\b(upload|attach|browse|(my |from (my )?)(computer|device|desktop|files?)|local (file|drive))\b/;
+  const OTHER_SOURCE = /\b(linked ?in|indeed|dropbox|google drive|one ?drive|box\.com|icloud|seek|manual(ly)?|no thanks|skip|later|don'?t|do not|without|paste|type|copy)\b/;
+
+  /** Index of the "upload a file from my computer" option, or -1. */
+  function chooseResumeSource(options) {
+    const opts = (options || []).map((o, i) => ({ i, t: norm(o.text || o.value || '') }));
+    const ok = opts.filter((o) => o.t && !OTHER_SOURCE.test(o.t));
+    const m = ok.find((o) => UPLOAD_OPT.test(o.t)) || ok.find((o) => /\b(resume|cv)\b/.test(o.t));
+    return m ? m.i : -1;
+  }
+
   function classifyField(f) {
     const type = (f.type || '').toLowerCase();
     if (['hidden', 'submit', 'button', 'reset', 'image', 'password', 'search'].includes(type)) return null;
+    // A choice whose options include uploading a resume and another way (LinkedIn, manually…).
+    const ot = norm(f.optionsText);
+    if (CHOICE_TYPES.includes(type) && ot && /\b(upload|attach)\b/.test(ot) && /\b(resume|cv|computer|device|file)\b/.test(ot) && OTHER_SOURCE.test(ot))
+      return { key: 'resumeSource', confidence: 0.8, via: 'options' };
 
     const ac = String(f.autocomplete || '').toLowerCase().split(/\s+/).pop();
     if (ac && AUTOCOMPLETE[ac] && type !== 'file') return { key: AUTOCOMPLETE[ac], confidence: 0.95, via: 'autocomplete' };
@@ -218,6 +237,7 @@
       for (const r of RULES) {
         if (c.long && !r.q) continue;
         if (r.fileOnly && !isFile) continue;
+        if (r.choiceOnly && !CHOICE_TYPES.includes(type)) continue;
         if (isFile && !r.fileOnly) continue;
         if (r.re.test(c.text)) {
           if (r.key === 'skip') return null;
@@ -271,6 +291,8 @@
         return '';
       case 'phoneType':
         return 'Mobile';
+      case 'resumeSource': // which option: chooseResumeSource()
+        return 'Upload';
       case 'timeZone':
         return timeZoneGuess();
       case 'howDidYouHearDetail':
@@ -541,7 +563,7 @@
     }
   }
 
-  JC.rules = { sameValue, timeZoneCandidates, classifyField, valueForKey, chooseOption, matchSavedAnswer, mergeAnswers, isCompanySpecific, looksSensitive, NEVER_REMEMBER, humanize, norm, payPeriod, amounts, parseAmount, toNumberValue, emptyReason, LONG_LABEL };
+  JC.rules = { chooseResumeSource, sameValue, timeZoneCandidates, classifyField, valueForKey, chooseOption, matchSavedAnswer, mergeAnswers, isCompanySpecific, looksSensitive, NEVER_REMEMBER, humanize, norm, payPeriod, amounts, parseAmount, toNumberValue, emptyReason, LONG_LABEL };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = JC;
 })(typeof globalThis !== 'undefined' ? globalThis : self);

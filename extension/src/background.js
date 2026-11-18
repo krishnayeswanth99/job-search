@@ -7,7 +7,7 @@
  */
 importScripts('shared/config.js', 'shared/profile-schema.js', 'shared/field-rules.js');
 
-const FRAME_CMDS = new Set(['startApplication', 'nextStep', 'ping', 'detect', 'extractJobs', 'loadMoreJobs', 'resolveApplyLinks', 'stopResolve', 'extractJob', 'scanForm', 'autofill', 'fillField', 'attachFile', 'followApply', 'reviewFix']);
+const FRAME_CMDS = new Set(['startApplication', 'nextStep', 'ping', 'detect', 'extractJobs', 'loadMoreJobs', 'resolveApplyLinks', 'stopResolve', 'extractJob', 'scanForm', 'autofill', 'fillField', 'attachFile', 'followApply', 'reviewFix', 'showField']);
 
 // ---------------------------------------------------- tabs opened by Apply buttons
 // Job boards often open the employer's site in a new tab. Remember child tabs per
@@ -410,6 +410,7 @@ chrome.tabs.onUpdated.addListener((tabId, info, tab) => {
 // address is often the real application link, so keep it, reported as detect().flashedTabs.
 const flashedTabs = new Map(); // openerTabId -> [{ url, openedAt, closedAt }]
 chrome.tabs.onRemoved.addListener((tabId) => {
+  chrome.storage.session.remove('fill:' + tabId).catch(() => {});
   // Apply one by one: closing the employer tab without submitting skips that job.
   queuesReady.then(() => {
     for (const [feedTabId, q] of queues) {
@@ -542,6 +543,7 @@ function merge(cmd, frames) {
       return frames.find((f) => f.frameId === 0) || frames[0];
     case 'nextStep':
       return frames.find((f) => f.ok) || frames.find((f) => f.submit) || frames.find((f) => f.frameId === 0) || frames[0];
+    case 'showField':
     case 'fillField':
     case 'attachFile': {
       const hit = frames.find((f) => f.ok);
@@ -644,6 +646,20 @@ async function runCommand(tabId, cmd, payload, origin) {
     debugAdd(tabId, { type: 'autofill', url: tab.url, from: origin, ok: out.ok, error: out.error, filled: out.filledCount, needsInput: (out.needsInput || []).map((f) => `${(f.label || '').slice(0, 80)} (${f.reason})`).slice(0, 30), corrected: (out.corrected || []).map((c) => c.label), parseWaitMs: out.parseWaitMs });
     if (out.review && out.review.length) aiCheck(tabId, out.review); // runs on its own, after the reply
     delete out.review;
+    // The side panel shows what was filled with what (values stay inside the extension).
+    await chrome.storage.session
+      .set({
+        ['fill:' + tabId]: {
+          at: Date.now(),
+          url: tab.url,
+          filled: (out.filled || []).slice(0, 120),
+          needsInput: (out.needsInput || []).slice(0, 60).map((f) => ({ label: f.label, reason: f.reason, selector: f.selector, required: f.required, suggested: f.suggested && String(f.suggested).slice(0, 120) })),
+          corrected: out.corrected || [],
+        },
+      })
+      .catch(() => {});
+    // Never return profile values to the page bridge.
+    if (origin === 'bridge') out.filled = (out.filled || []).map((f) => Object.assign({}, f, { value: undefined }));
   } else if (out && out.ok === false && out.error) {
     debugAdd(tabId, { type: 'error', cmd, from: origin, error: String(out.error).slice(0, 300) });
   }
@@ -850,4 +866,19 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
   const { settings } = await chrome.storage.local.get('settings');
   if (!settings) await chrome.storage.local.set({ settings: self.JC.DEFAULT_SETTINGS });
   if (reason === 'install') chrome.runtime.openOptionsPage();
+});
+
+// ---------------------------------------------------------------- side panel
+// The toolbar icon opens Job Copilot in Chrome's side panel (setting openSidePanel), so it stays
+// open next to the page and shows each question with its answer as forms are filled.
+async function applyPanelSetting() {
+  if (!chrome.sidePanel) return;
+  const { settings } = await chrome.storage.local.get('settings');
+  const panel = !settings || settings.openSidePanel !== false;
+  await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: panel }).catch(() => {});
+  await chrome.action.setPopup({ popup: panel ? '' : 'popup/popup.html' }).catch(() => {});
+}
+applyPanelSetting();
+chrome.storage.onChanged.addListener((ch, area) => {
+  if (area === 'local' && ch.settings) applyPanelSetting();
 });

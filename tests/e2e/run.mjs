@@ -42,6 +42,7 @@ const ROUTES = {
   'https://www.ziprecruiter.com/jobs/v2/test-1click': fx('ziprecruiter-1click.html'),
   'https://acme.wd5.myworkdayjobs.com/en-US/careers/job/New-York-NY/ML-Engineer_123/apply/myExperience': fx('workday-experience.html'),
   'https://careers.acme-robotics.example/jobs/data-scientist?v=2': fx('employer-apply-modal.html'),
+  'https://job-boards.greenhouse.io/panelco/jobs/1': fx('greenhouse-job.html'),
   'https://job-boards.greenhouse.io/acme/jobs/ai-check': '<html><head><meta charset="utf-8"></head><body><form><label for="seg">Segundo nombre</label><input id="seg" name="legalName.fullName"><label for="em">Email</label><input id="em" name="email"></form></body></html>',
   'https://jobs.lever.co/learntest/apply-2': fx('learn-form.html'),
   'https://careers-acme.icims.com/jobs/1234/data-scientist/candidate': fx('icims-like.html'),
@@ -317,7 +318,8 @@ try {
       await p.waitForFunction(() => document.getElementById('seg').value === '' && document.getElementById('seg').hasAttribute('data-jc-needs-input'), null, { timeout: 8000 });
       assert.equal(await p.evaluate(() => em.value), 'ada@example.com');
       const log = await ext.evaluate(async () => new Promise((r) => chrome.runtime.sendMessage({ type: 'jc:debug-get' }, r)));
-      const step = ((log && log.log) || []).find((e) => e.detail && e.detail.step === 'on-device check applied');
+      const tid = await ext.evaluate(async (url) => (await chrome.tabs.query({ url })).at(0)?.id, p.url());
+      const step = ((log && log.log) || []).find((e) => e.tabId === tid && e.detail && e.detail.step === 'on-device check applied');
       assert.ok(step && step.detail.changed.length === 1, JSON.stringify(step));
     } finally {
       await ext.evaluate(() => chrome.storage.local.remove('__testNanoReply'));
@@ -1027,6 +1029,25 @@ try {
     assert.equal(await g.evaluate(() => q6.style.outline), '', 'outline cleared once answered');
     await pop.close();
   });
+
+  await check('side panel: lists each question with its answer and source, what is left, recent steps; bridge gets no values', async () => {
+    const g = await open('https://job-boards.greenhouse.io/panelco/jobs/1');
+    const r = await bridge(g, () => window.jobCopilot.autofill());
+    assert.ok(r.filled.length && r.filled.every((f) => f.value === undefined), 'no profile values through the bridge');
+    const tabId = await ext.evaluate(async (url) => (await chrome.tabs.query({ url })).at(0)?.id, g.url());
+    const pan = await context.newPage();
+    await pan.goto(`chrome-extension://${extId}/popup/popup.html?panel=1&tab=${tabId}`);
+    await pan.waitForSelector('#live:not([hidden]) .live-row', { timeout: 10000 });
+    const rows = await pan.$$eval('#live-filled .live-row', (rs) => rs.map((r) => ({ q: r.querySelector('.live-q').textContent, a: r.querySelector('.live-a').textContent, tag: r.querySelector('.tag').textContent })));
+    const first = rows.find((x) => /first name/i.test(x.q));
+    const name = await ext.evaluate(async () => (await chrome.storage.local.get('profile')).profile.personal.firstName);
+    assert.deepEqual(first, { q: 'First Name', a: name, tag: 'profile' }, JSON.stringify(rows));
+    assert.match(await pan.textContent('#live-needs'), /favorite robot/i);
+    await pan.locator('#live-needs button', { hasText: 'Show' }).first().click();
+    assert.equal(await pan.evaluate(() => document.body.classList.contains('panel')), true);
+    await pan.close();
+  });
+
 
   await check('iCIMS-style form: custom dropdown chosen by clicking, phone "Type" -> Mobile, former-employee ID left alone', async () => {
     const p = await open('https://careers-acme.icims.com/jobs/1234/data-scientist/candidate');

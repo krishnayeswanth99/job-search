@@ -1,29 +1,61 @@
 {
   "manifest_version": 3,
   "name": "Job Copilot",
-  "version": "0.28.0",
+  "version": "0.29.0",
   "description": "Finds jobs on the current tab, autofills applications, and gives Claude in Chrome a bridge to do the same.",
-  "minimum_chrome_version": "111",
-  "permissions": ["storage", "unlimitedStorage", "scripting", "activeTab", "debugger", "offscreen"],
-  "host_permissions": ["<all_urls>"],
-  "background": { "service_worker": "src/background.js" },
+  "minimum_chrome_version": "116",
+  "permissions": [
+    "storage",
+    "unlimitedStorage",
+    "scripting",
+    "activeTab",
+    "debugger",
+    "offscreen",
+    "sidePanel"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "src/background.js"
+  },
   "action": {
     "default_title": "Job Copilot",
     "default_popup": "popup/popup.html",
-    "default_icon": { "16": "icons/icon16.png", "32": "icons/icon32.png", "48": "icons/icon48.png" }
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png"
+    }
   },
-  "options_ui": { "page": "options/options.html", "open_in_tab": true },
-  "icons": { "16": "icons/icon16.png", "32": "icons/icon32.png", "48": "icons/icon48.png", "128": "icons/icon128.png" },
+  "options_ui": {
+    "page": "options/options.html",
+    "open_in_tab": true
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
   "content_scripts": [
     {
-      "matches": ["http://*/*", "https://*/*"],
-      "js": ["src/page/page-api.js"],
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ],
+      "js": [
+        "src/page/page-api.js"
+      ],
       "world": "MAIN",
       "run_at": "document_start",
       "all_frames": false
     },
     {
-      "matches": ["http://*/*", "https://*/*"],
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ],
       "js": [
         "src/shared/config.js",
         "src/shared/profile-schema.js",
@@ -46,5 +78,8 @@
       "run_at": "document_idle",
       "all_frames": true
     }
-  ]
+  ],
+  "side_panel": {
+    "default_path": "popup/popup.html?panel=1"
+  }
 }

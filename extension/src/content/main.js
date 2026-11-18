@@ -172,6 +172,19 @@
           }
           return { ok: false, frame: location.href, reason: 'No Next or Submit button found in this frame.' };
         }
+        case 'showField': {
+          // The side panel's "Show" button: scroll to a field and flash it.
+          const target = payload.selector && document.querySelector(payload.selector);
+          if (!target) return null;
+          target.scrollIntoView({ block: 'center', behavior: 'smooth' });
+          const old = target.style.boxShadow;
+          target.style.boxShadow = '0 0 0 4px rgba(124,58,237,.6)';
+          setTimeout(() => (target.style.boxShadow = old), 2500);
+          try {
+            target.focus({ preventScroll: true });
+          } catch (_) {}
+          return { ok: true, frame: location.href };
+        }
         case 'fillField':
           return Object.assign({ frame: location.href }, JC.learn ? await JC.learn.ours(() => JC.autofill.fillOne(payload)) : JC.autofill.fillOne(payload));
         case 'attachFile': {

@@ -77,9 +77,92 @@ function jobRow(j) {
   );
 }
 
+// Opened in Chrome's side panel (popup.html?panel=1): stays open, follows the active tab.
+const isPanel = new URLSearchParams(location.search).has('panel');
+if (isPanel) document.body.classList.add('panel');
+const closePopup = () => {
+  if (!isPanel) window.close();
+};
+
+// ------------------------------------------------------- live: what was filled
+const SOURCE_TAG = {
+  profile: ['profile', 'profile'],
+  resume: ['resume', 'resume'],
+  'saved-answer': ['saved answer', 'profile'],
+  override: ['AI / pasted', 'ai'],
+  coverLetter: ['file', 'resume'],
+};
+async function renderLive() {
+  if (!tabId) return;
+  const key = 'fill:' + tabId;
+  const data = (await chrome.storage.session.get(key).catch(() => ({})))[key];
+  const { debugLog } = await chrome.storage.session.get('debugLog').catch(() => ({}));
+  const steps = (debugLog || []).filter((e) => e.tabId === tabId && e.type === 'extension-step' && e.detail && e.detail.step).slice(-12).reverse();
+  if (!data && !steps.length) return;
+  $('live').hidden = false;
+  if (data) {
+    $('live-when').textContent = new Date(data.at).toLocaleTimeString();
+    const need = data.needsInput || [];
+    $('live-summary').textContent = `${data.filled.length} filled · ${need.length} left for you${data.corrected && data.corrected.length ? ` · corrected ${data.corrected.length} the site got wrong` : ''}`;
+    $('live-filled-count').textContent = `(${data.filled.length})`;
+    const showBtn = (selector) => (selector ? el('button', { class: 'small', onclick: () => send('showField', { selector }) }, 'Show') : el('span'));
+    $('live-needs').replaceChildren(
+      ...(need.length ? [el('div', { class: 'live-needs-head small-text' }, 'Left for you')] : []),
+      ...need.map((f) =>
+        el('div', { class: 'live-row' },
+          el('div', { class: 'live-q' }, f.label || '(unlabelled)', f.required ? ' *' : ''),
+          showBtn(f.selector),
+          el('div', { class: 'live-a empty' }, f.reason + (f.suggested ? ` · suggested: ${f.suggested}` : ''))
+        )
+      )
+    );
+    $('live-filled').replaceChildren(
+      ...data.filled.map((f) => {
+        const [tag, cls] = SOURCE_TAG[f.source] || [f.source || 'filled', ''];
+        return el('div', { class: 'live-row' },
+          el('div', { class: 'live-q' }, f.label || '(unlabelled)'),
+          el('span', { class: `tag ${cls}` }, tag),
+          el('div', { class: 'live-a' + (f.value ? '' : ' empty') }, f.value || '(filled)'),
+          f.selector ? el('div', {}, showBtn(f.selector)) : null
+        );
+      })
+    );
+  }
+  $('live-steps').replaceChildren(
+    ...steps.map((e) => {
+      const d = e.detail;
+      const extra = d.field ? ` (${d.field})` : d.changed && d.changed.length ? `: ${d.changed.join('; ')}` : d.required ? `: ${[].concat(d.required).join(', ')}` : d.siteErrors ? `: ${d.siteErrors.join('; ')}` : '';
+      return el('li', {}, `${new Date(e.at).toLocaleTimeString()} ${d.step}${extra}`);
+    })
+  );
+}
+chrome.storage.onChanged.addListener((ch, area) => {
+  if (area === 'session' && tabId && (ch['fill:' + tabId] || ch.debugLog)) {
+    clearTimeout(renderLive.t);
+    renderLive.t = setTimeout(renderLive, 200);
+  }
+});
+if (isPanel) {
+  // The side panel stays open: follow the tab you switch to, and reload with the page.
+  chrome.tabs.onActivated.addListener(() => location.reload());
+  chrome.tabs.onUpdated.addListener((id, info) => {
+    if (id === tabId && info.status === 'complete') setTimeout(() => location.reload(), 600);
+  });
+} else if (chrome.sidePanel) {
+  $('open-panel').hidden = false;
+  $('open-panel').addEventListener('click', async (e) => {
+    e.preventDefault();
+    const w = await chrome.windows.getCurrent();
+    await chrome.sidePanel.open({ windowId: w.id }).catch(() => {});
+    window.close();
+  });
+}
+
 async function init() {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  const forTab = Number(new URLSearchParams(location.search).get('tab')); // tests open the panel for a given tab
+  const [tab] = forTab ? [await chrome.tabs.get(forTab).catch(() => null)] : await chrome.tabs.query({ active: true, currentWindow: true });
   tabId = tab && tab.id;
+  renderLive();
   document.querySelectorAll('#open-options, [data-open-options]').forEach((a) => a.addEventListener('click', (e) => {
     e.preventDefault();
     chrome.runtime.openOptionsPage();
@@ -137,7 +220,7 @@ $('btn-follow').addEventListener('click', async () => {
   const r = await send('followApply', isAggregator() ? { newTab: true } : {});
   $('btn-follow').disabled = false;
   $('btn-follow').textContent = 'Go to application';
-  if (r && r.ok) return window.close();
+  if (r && r.ok) return closePopup();
   showResult('Open the application', el('p', {}, (r && r.reason) || 'Click the Apply button on the page.'), r);
 });
 

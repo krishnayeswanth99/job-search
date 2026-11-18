@@ -80,3 +80,17 @@ pre { white-space: pre-wrap; word-break: break-word; font-size: 12px; max-height
 @media (prefers-color-scheme: dark) { .pill.applied { background: #14532d; color: #bbf7d0; } }
 .buttons-row { display: flex; gap: 6px; margin-top: 6px; }
 #ask textarea { width: 100%; margin: 6px 0; font: inherit; font-size: 12px; background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 6px; }
+
+/* Side panel: full width; the live list of answers */
+body.panel { width: auto; min-width: 300px; }
+.live-row { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; padding: 5px 0; border-top: 1px solid var(--line); }
+.live-row:first-child { border-top: 0; }
+.live-q { font-weight: 600; font-size: 12px; overflow-wrap: anywhere; }
+.live-a { grid-column: 1 / -1; font-size: 12px; overflow-wrap: anywhere; white-space: pre-wrap; }
+.live-a.empty { color: var(--muted); font-style: italic; }
+.tag { font-size: 10px; border-radius: 4px; padding: 1px 5px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; align-self: start; }
+.tag.profile { color: var(--accent); border-color: var(--accent); }
+.tag.resume { color: var(--ok); border-color: var(--ok); }
+.tag.ai { color: #7c3aed; border-color: #7c3aed; }
+.tag.you { color: var(--warn-fg); background: var(--warn-bg); border-color: transparent; }
+.live-needs-head { margin-top: 6px; font-weight: 600; }

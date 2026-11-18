@@ -9,6 +9,7 @@
     <header>
       <img src="../icons/icon32.png" alt="" width="20" height="20" />
       <h1>Job Copilot</h1>
+      <a id="open-panel" href="#" title="Keep Job Copilot open next to the page" hidden>Side panel</a>
       <a id="open-options" href="#" title="Profile & settings">Settings</a>
     </header>
 
@@ -32,6 +33,14 @@
       <button id="btn-next" hidden>Next step (Next / Continue; never Submit)</button>
       <button id="btn-jobs">Find jobs on this tab</button>
       <button id="btn-job">Read this job posting</button>
+    </section>
+
+    <section id="live" class="card" hidden>
+      <div class="row"><strong>This page</strong><span id="live-when" class="muted small-text"></span></div>
+      <div id="live-summary" class="small-text"></div>
+      <div id="live-needs"></div>
+      <details id="live-filled-box" open><summary class="small-text">Filled <span id="live-filled-count"></span></summary><div id="live-filled"></div></details>
+      <details id="live-steps-box"><summary class="small-text">Recent steps</summary><ol id="live-steps" class="plain small-text"></ol></details>
     </section>
 
     <section id="ask" class="card" hidden>

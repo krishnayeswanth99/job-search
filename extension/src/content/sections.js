@@ -260,7 +260,7 @@
             ok = false;
           }
           const d = JC.fields.describe(x.f);
-          if (ok) filled.push({ label: d.label, selector: d.selector, section: kind === 'exp' ? 'work experience' : 'education', entry: i + 1, part: x.part });
+          if (ok) filled.push({ label: d.label, selector: d.selector, section: kind === 'exp' ? 'work experience' : 'education', entry: i + 1, part: x.part, value: x.part === 'current' ? (v === 'yes' ? 'Yes' : 'No') : v });
           else if (!x.f.hasValue) needsInput.push(Object.assign(d, { reason: `${kind === 'exp' ? 'work experience' : 'education'} ${i + 1}: could not fill ${x.part}`, suggested: v }));
         }
       }

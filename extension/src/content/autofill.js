@@ -290,7 +290,7 @@
           }
         }
         if (ok) {
-          filled.push(Object.assign(d, { source: r.source, profileKey: f.key }));
+          filled.push(Object.assign(d, { source: r.source, profileKey: f.key, value: r.value }));
           if (r.source === 'profile' && !CONSTANT_KEYS.has(f.key)) review.push(reviewItem(f, d));
           if (r.source === 'profile' && !f.combobox) guardList.push({ f, value: r.value });
         } else needsInput.push(Object.assign(d, { reason: 'no option matched', suggested: r.value }));
@@ -320,7 +320,7 @@
       try {
         const sec = await JC.sections.fill(profile);
         const done = new Set(sec.filled.map((x) => x.selector));
-        for (const x of sec.filled) filled.push({ label: `${x.section}${x.entry ? ' ' + x.entry : ''}: ${x.label}${x.added ? ' (' + x.added.join(', ') + ')' : ''}`, selector: x.selector, source: 'profile', profileKey: x.section });
+        for (const x of sec.filled) filled.push({ label: `${x.section}${x.entry ? ' ' + x.entry : ''}: ${x.label}`, selector: x.selector, source: 'profile', profileKey: x.section, value: x.added ? x.added.join(', ') : x.value });
         for (let k = needsInput.length - 1; k >= 0; k--) if (done.has(needsInput[k].selector)) needsInput.splice(k, 1);
         needsInput.push(...sec.needsInput);
       } catch (e) {
@@ -354,7 +354,9 @@
       parseWaitMs: parseWaitMs || undefined,
       corrected,
       filledCount: filled.length,
-      filled: filled.map((f) => ({ label: f.label, selector: f.selector, profileKey: f.profileKey, source: f.source })),
+      // `value` (what was put in) is for Job Copilot's own panel; the service worker removes it
+      // before anything goes back to the page bridge.
+      filled: filled.map((f) => ({ label: f.label, selector: f.selector, profileKey: f.profileKey, source: f.source, value: f.chosen || (f.value === undefined ? undefined : String(f.value).slice(0, 200)) })),
       skipped: skipped.map((f) => ({ label: f.label, selector: f.selector, reason: f.reason })),
       needsInput,
       // Fields to double-check (labels, types and option texts only, never values). Matches made

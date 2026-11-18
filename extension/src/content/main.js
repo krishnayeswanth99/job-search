@@ -129,6 +129,14 @@
           const r = await (JC.learn ? JC.learn.ours(run) : run());
           return Object.assign({ ok: true }, r);
         }
+        case 'reviewFix': {
+          // Only the service worker's own on-device check sends this (never the page bridge).
+          if (payload._origin !== 'ai-check') return { ok: false, frame: location.href, error: 'not allowed' };
+          const { profile } = await storage(['profile']);
+          if (!profile) return null;
+          const run = () => JC.autofill.applyReview(payload.fixes, profile);
+          return Object.assign({ ok: true, frame: location.href }, JC.learn ? await JC.learn.ours(run) : run());
+        }
         case 'startApplication':
           if (!isTop) return null;
           return Object.assign({ frame: location.href }, await JC.nav.startApplication());

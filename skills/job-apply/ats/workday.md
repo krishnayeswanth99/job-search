@@ -30,7 +30,11 @@
 - Self Identify's signature **Date** (Month / Day / Year spin boxes) gets today's date, typed in key by key because
   Workday ignores pasted values. Other split dates (birth date, start date) are left for the user.
 - Prompt pickers that already show a choice (a pill such as "United Kingdom (+44)") are left as they are.
-- Multi-level "How Did You Hear About Us?" prompts may still need a click by hand.
+- Multi-level "How Did You Hear About Us?" pickers: it types the profile's source (e.g. LinkedIn) to search all levels,
+  otherwise opens each category looking for it, and only then takes "Other" or a close category. If no level matches,
+  it's left outlined for the user.
+- Name parts: Middle Name is filled only from the profile's middle name; Prefix, Suffix and local-script names are
+  left alone.
 - `jobCopilot.nextStep()` clicks **Save and Continue**. It never submits.
 
 ## Technique

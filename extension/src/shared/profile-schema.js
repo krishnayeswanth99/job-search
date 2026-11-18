@@ -15,6 +15,7 @@
       title: 'Personal',
       fields: [
         ['firstName', 'First name'],
+        ['middleName', 'Middle name (leave empty if none)'],
         ['lastName', 'Last name'],
         ['preferredName', 'Preferred name'],
         ['pronouns', 'Pronouns'],

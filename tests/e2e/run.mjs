@@ -32,6 +32,8 @@ const ROUTES = {
   'https://jobs.lever.co/learntest/apply-1': fx('learn-form.html'),
   'https://acme.wd5.myworkdayjobs.com/en-US/careers/job/New-York-NY/ML-Engineer_123': fx('workday-job.html'),
   'https://acme.wd5.myworkdayjobs.com/en-US/careers/job/New-York-NY/ML-Engineer_123/apply/selfIdentify': fx('workday-selfid.html'),
+  'https://acme.wd5.myworkdayjobs.com/en-US/careers/job/New-York-NY/ML-Engineer_123/apply/myInformation': fx('workday-info.html'),
+  'https://job-boards.greenhouse.io/acme/jobs/ai-check': '<html><head><meta charset="utf-8"></head><body><form><label for="seg">Segundo nombre</label><input id="seg" name="legalName.fullName"><label for="em">Email</label><input id="em" name="email"></form></body></html>',
   'https://jobs.lever.co/learntest/apply-2': fx('learn-form.html'),
   'https://careers-acme.icims.com/jobs/1234/data-scientist/candidate': fx('icims-like.html'),
   'https://www.linkedin.com/jobs/view/4000000009/': fx('linkedin-external.html'),
@@ -277,6 +279,37 @@ try {
     const log = await ext.evaluate(async () => new Promise((r) => chrome.runtime.sendMessage({ type: 'jc:debug-get' }, r)));
     const restores = ((log && log.log) || []).filter((e) => e.detail && /restored profile value/.test(e.detail.step || '') && /Country Phone Code|Month|Day|Year/.test(e.detail.field || ''));
     assert.equal(restores.length, 0, JSON.stringify(restores.slice(0, 3)));
+  });
+
+  await check('Workday My Information: two-level "How did you hear" picker, middle name not given the full name', async () => {
+    const saved = await ext.evaluate(async () => (await chrome.storage.local.get('profile')).profile);
+    await ext.evaluate(async (p) => chrome.storage.local.set({ profile: Object.assign({}, p, { howDidYouHear: 'LinkedIn' }) }), saved);
+    try {
+      const p = await open('https://acme.wd5.myworkdayjobs.com/en-US/careers/job/New-York-NY/ML-Engineer_123/apply/myInformation');
+      const r = await bridge(p, () => window.jobCopilot.autofill());
+      const v = await p.evaluate(() => ({ src: src.textContent, first: document.getElementById('name--legalName--firstName').value, middle: document.getElementById('name--legalName--middleName').value, suffix: document.getElementById('name--legalName--suffix').value }));
+      assert.equal(v.src, 'LinkedIn', JSON.stringify(r.needsInput));
+      assert.equal(v.first, 'Ada');
+      assert.equal(v.middle, '');
+      assert.equal(v.suffix, '');
+    } finally {
+      await ext.evaluate(async (p) => chrome.storage.local.set({ profile: p }), saved);
+    }
+  });
+
+  await check('on-device check: a field it says no profile field fits is cleared and outlined', async () => {
+    await ext.evaluate(() => chrome.storage.local.set({ __testNanoReply: '{"checks": {"f1": "none"}}' }));
+    try {
+      const p = await open('https://job-boards.greenhouse.io/acme/jobs/ai-check');
+      await bridge(p, () => window.jobCopilot.autofill());
+      await p.waitForFunction(() => document.getElementById('seg').value === '' && document.getElementById('seg').hasAttribute('data-jc-needs-input'), null, { timeout: 8000 });
+      assert.equal(await p.evaluate(() => em.value), 'ada@example.com');
+      const log = await ext.evaluate(async () => new Promise((r) => chrome.runtime.sendMessage({ type: 'jc:debug-get' }, r)));
+      const step = ((log && log.log) || []).find((e) => e.detail && e.detail.step === 'on-device check applied');
+      assert.ok(step && step.detail.changed.length === 1, JSON.stringify(step));
+    } finally {
+      await ext.evaluate(() => chrome.storage.local.remove('__testNanoReply'));
+    }
   });
 
   await check('bridge: fillField answers a custom question', async () => {

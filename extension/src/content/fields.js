@@ -187,6 +187,7 @@
       }
       if (c) {
         f.key = c.key;
+        f.via = c.via;
         if (c.period) f.period = c.period;
         profileHints.push(c.key);
       }

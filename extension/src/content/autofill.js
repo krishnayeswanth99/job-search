@@ -173,6 +173,7 @@
     const needsInput = [];
     const corrected = [];
     const guardList = [];
+    const review = []; // filled from the profile: the on-device check looks these over
     let parseWaitMs = 0;
 
     // 1) Upload files first: many sites (iCIMS, Lever, Workday, Ashby) parse the resume and fill the
@@ -264,6 +265,7 @@
         }
         if (ok) {
           filled.push(Object.assign(d, { source: r.source, profileKey: f.key }));
+          if (r.source === 'profile' && !CONSTANT_KEYS.has(f.key)) review.push(reviewItem(f, d));
           if (r.source === 'profile' && !f.combobox) guardList.push({ f, value: r.value });
         } else needsInput.push(Object.assign(d, { reason: 'no option matched', suggested: r.value }));
       } catch (e) {
@@ -282,7 +284,7 @@
       else
         needsInput.push(
           Object.assign(d, {
-            reason: `custom dropdown: no matching option found, choose by hand${res.seen.length ? ` (options seen: ${res.seen.slice(0, 12).join(' | ')})` : ' (no options appeared after clicking it)'}`,
+            reason: `custom dropdown: ${res.partial ? `picked "${res.partial}" but no matching option in its sub-list, finish by hand` : 'no matching option found, choose by hand'}${res.seen.length ? ` (options seen: ${res.seen.slice(0, 12).join(' | ')})` : ' (no options appeared after clicking it)'}`,
             suggested: r.value,
           })
         );
@@ -297,7 +299,51 @@
       filled: filled.map((f) => ({ label: f.label, selector: f.selector, profileKey: f.profileKey, source: f.source })),
       skipped: skipped.map((f) => ({ label: f.label, selector: f.selector, reason: f.reason })),
       needsInput,
+      // Fields to double-check (labels, types and option texts only, never values). Matches made
+      // from attributes or learned labels come first: they are the likeliest to be wrong.
+      review: review.sort((a, b) => b.weak - a.weak).slice(0, 15),
     };
+  }
+
+  // Keys whose value doesn't come from the applicant's data (nothing for a model to check).
+  const CONSTANT_KEYS = new Set(['phoneType', 'timeZone', 'todayDate', 'todayMonth', 'todayDay', 'todayYear', 'howDidYouHear', 'howDidYouHearDetail']);
+  function reviewItem(f, d) {
+    return { ref: d.ref, selector: d.selector, label: d.label, type: d.type, options: d.options, maxLength: d.maxLength, profileKey: f.key, weak: !!(f.learned || f.via === 'attribute') };
+  }
+
+  /**
+   * Apply what the on-device check found: refill a field from the profile field it named, or for
+   * "none" clear it (only matches made from attributes or learned labels) and outline it for you.
+   * Fields you've touched are left alone.
+   */
+  function applyReview(fixes, profile) {
+    profile = JC.normalizeProfile(profile);
+    const changed = [];
+    const flagged = [];
+    for (const fx of fixes || []) {
+      const el = document.querySelector(`[data-jc-ref="${fx.ref}"]`);
+      if (!el || touched.has(el)) continue;
+      const sel = `[data-jc-ref="${fx.ref}"]`;
+      if (fx.to === 'none') {
+        if (fx.weak && el.tagName !== 'SELECT') {
+          unguard.add(el);
+          setValue(el, '');
+          changed.push({ label: fx.label, from: fx.from, to: 'empty' });
+        } else flagged.push({ label: fx.label, from: fx.from });
+        highlight([{ selector: sel, type: el.type, reason: 'on-device AI: this may not be the right answer, please check' }]);
+        continue;
+      }
+      const value = R.valueForKey(profile, fx.to);
+      if (!value) continue;
+      const ok = el.tagName === 'SELECT' ? fillSelect(el, value, fx.to) : setText(el, value);
+      if (ok) {
+        regard.set(el, value);
+        changed.push({ label: fx.label, from: fx.from, to: fx.to });
+      }
+    }
+    for (const c of changed) if (JC.recorder && JC.recorder.note) JC.recorder.note({ step: 'on-device AI corrected a field', field: c.label, from: c.from, to: c.to });
+    for (const c of flagged) if (JC.recorder && JC.recorder.note) JC.recorder.note({ step: 'on-device AI flagged a field for you to check', field: c.label, from: c.from });
+    return { changed, flagged };
   }
 
   const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
@@ -368,6 +414,8 @@
    * edits it. Corrections are logged in the debug log.
    */
   let guardTimer = null;
+  const unguard = new WeakSet(); // cleared on the on-device check's advice: don't put it back
+  const regard = new WeakMap(); // refilled on its advice: keep this value instead
   function guard(list, ms) {
     clearInterval(guardTimer);
     const end = Date.now() + ms;
@@ -376,7 +424,8 @@
       if (Date.now() > end) return clearInterval(guardTimer);
       let fresh = null;
       for (const it of items) {
-        if (touched.has(it.el)) continue;
+        if (touched.has(it.el) || unguard.has(it.el)) continue;
+        if (regard.has(it.el)) it.value = regard.get(it.el);
         if (!it.el.isConnected) {
           // The site re-rendered the section: find the same question again.
           fresh = fresh || JC.fields.scan();
@@ -462,9 +511,24 @@
     let opts = collect();
     const search = (el.tagName === 'INPUT' && !el.readOnly && el.type !== 'hidden' ? el : null) || document.querySelector('.select2-search__field, input[role="searchbox"], input[aria-autocomplete="list"]:focus, [class*="dropdown" i] input[type="text"]:not([readonly])');
     const texts = () => opts.map((o) => ({ text: JC.dom.clean(o.innerText), value: o.getAttribute('data-value') || o.getAttribute('id') || '' }));
-    let i = chooseFrom(texts(), desiredList);
-    if (i < 0 && search && JC.dom.isVisible(search)) {
-      for (const d of desiredList.slice(0, 3)) {
+    const canSearch = () => search && JC.dom.isVisible(search);
+    // 1) The exact value (e.g. "LinkedIn"), on screen or found by typing it. Typing searches every
+    //    level of Workday's nested pickers. 2) Only then the fallbacks ("Job Board", "Other"…).
+    let i = chooseFrom(texts(), desiredList.slice(0, 1));
+    if (i < 0 && canSearch()) {
+      typeInto(search, String(desiredList[0]).slice(0, 40));
+      await sleep(700);
+      opts = collect();
+      i = chooseFrom(texts(), desiredList.slice(0, 1));
+      if (i < 0) {
+        typeInto(search, '');
+        await sleep(400);
+        opts = collect();
+      }
+    }
+    if (i < 0) i = chooseFrom(texts(), desiredList);
+    if (i < 0 && canSearch()) {
+      for (const d of desiredList.slice(1, 3)) {
         typeInto(search, String(d).slice(0, 40));
         await sleep(600);
         opts = collect();
@@ -479,15 +543,66 @@
       }
     }
     const seen = texts().map((t) => t.text).filter(Boolean);
-    if (i < 0) {
+    const escape = () => {
       document.activeElement && document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, bubbles: true }));
       fireMouse(document.body);
+    };
+    if (i < 0) {
+      escape();
       return { ok: false, seen };
     }
-    const chosen = JC.dom.clean(opts[i].innerText);
-    fireMouse(opts[i]);
-    await sleep(250);
-    return { ok: true, chosen, seen };
+    // Multi-level menus (Workday "How did you hear": category -> source). Picking a category shows
+    // a new list instead of closing. Look for the exact value in each category first; only if no
+    // category has it, settle for a fallback ("Other"…) in the first one tried.
+    const tried = [];
+    const descend = async (idx, strict) => {
+      const path = [];
+      for (let level = 0; level < 3; level++) {
+        const prev = new Set(texts().map((t) => t.text));
+        path.push(JC.dom.clean(opts[idx].innerText));
+        fireMouse(opts[idx]);
+        await sleep(level ? 350 : 450);
+        opts = collect();
+        const now = texts();
+        const added = now.filter((t) => t.text && !prev.has(t.text));
+        if (!now.length || added.length < Math.max(1, now.length / 2)) return { done: true, path }; // closed, or a leaf
+        idx = chooseFrom(now, strict ? desiredList.slice(0, 1) : desiredList.concat(['Other']));
+        if (idx < 0) return { done: false, path, seen: now.map((t) => t.text).filter(Boolean) };
+      }
+      return { done: true, path };
+    };
+    const reopen = async () => {
+      escape();
+      await sleep(200);
+      fireMouse(control);
+      if (control !== el) fireMouse(el);
+      await sleep(400);
+      opts = collect();
+    };
+    let res = await descend(i, desiredList.length > 1);
+    if (res.done) return { ok: true, chosen: res.path.join(' > '), seen };
+    const first = res.path[0];
+    tried.push(first);
+    for (let n = 0; n < 5 && desiredList.length > 1; n++) {
+      await reopen();
+      const left = texts().map((t, k) => (tried.includes(t.text) ? null : Object.assign({ k }, t)));
+      const j = chooseFrom(left.map((t) => t || { text: '', value: '' }), desiredList.slice(1));
+      if (j < 0) break;
+      tried.push(texts()[j].text);
+      res = await descend(j, true);
+      if (res.done) return { ok: true, chosen: res.path.join(' > '), seen };
+    }
+    if (desiredList.length > 1) {
+      // No category has the exact value: back to the first one, take its "Other" or closest fallback.
+      await reopen();
+      const k = texts().findIndex((t) => t.text === first);
+      if (k >= 0) {
+        res = await descend(k, false);
+        if (res.done) return { ok: true, chosen: res.path.join(' > '), seen };
+      }
+    }
+    escape();
+    return { ok: false, partial: res.path.join(' > '), seen: res.seen || seen };
   }
 
   /**
@@ -535,5 +650,5 @@
     return { ok: true };
   }
 
-  JC.autofill = { autofill, fillOne, attachFile, setValue };
+  JC.autofill = { autofill, fillOne, attachFile, setValue, applyReview };
 })(typeof globalThis !== 'undefined' ? globalThis : self);

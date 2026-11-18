@@ -7,7 +7,7 @@
  */
 importScripts('shared/config.js', 'shared/profile-schema.js', 'shared/field-rules.js');
 
-const FRAME_CMDS = new Set(['startApplication', 'nextStep', 'ping', 'detect', 'extractJobs', 'loadMoreJobs', 'resolveApplyLinks', 'stopResolve', 'extractJob', 'scanForm', 'autofill', 'fillField', 'attachFile', 'followApply']);
+const FRAME_CMDS = new Set(['startApplication', 'nextStep', 'ping', 'detect', 'extractJobs', 'loadMoreJobs', 'resolveApplyLinks', 'stopResolve', 'extractJob', 'scanForm', 'autofill', 'fillField', 'attachFile', 'followApply', 'reviewFix']);
 
 // ---------------------------------------------------- tabs opened by Apply buttons
 // Job boards often open the employer's site in a new tab. Remember child tabs per
@@ -458,7 +458,7 @@ function merge(cmd, frames) {
       return { ok: true, application: frames.some((f) => f.application), count: fields.length, fields };
     }
     case 'autofill': {
-      const out = { ok: errors.length < frames.length, filledCount: 0, filled: [], skipped: [], needsInput: [], corrected: [], errors };
+      const out = { ok: errors.length < frames.length, filledCount: 0, filled: [], skipped: [], needsInput: [], corrected: [], review: [], errors };
       for (const f of frames) {
         if (!f.ok) continue;
         out.filledCount += f.filledCount || 0;
@@ -468,9 +468,18 @@ function merge(cmd, frames) {
         out.filled.push(...(f.filled || []).map(tag));
         out.skipped.push(...(f.skipped || []).map(tag));
         out.needsInput.push(...(f.needsInput || []).map(tag));
+        out.review.push(...(f.review || []).map(tag));
       }
       if (!out.ok) out.error = errors[0] && errors[0].error;
       out.reminder = 'Nothing was submitted. Review the form, answer needsInput items, then ask the user before clicking Submit.';
+      return out;
+    }
+    case 'reviewFix': {
+      const out = { ok: true, changed: [], flagged: [] };
+      for (const f of frames) {
+        out.changed.push(...(f.changed || []));
+        out.flagged.push(...(f.flagged || []));
+      }
       return out;
     }
     case 'followApply':
@@ -510,8 +519,52 @@ async function fetchAsFile(url) {
   return { name, type: type.split(';')[0], dataBase64: btoa(bin) };
 }
 
+// ------------------------------------------------------------ on-device check (Gemini Nano)
+// The Prompt API isn't available in a service worker, so an offscreen page runs the model.
+let offscreenReady = null;
+async function ensureOffscreen() {
+  if (!chrome.offscreen) throw new Error('offscreen pages need Chrome 109+');
+  const has = chrome.runtime.getContexts ? (await chrome.runtime.getContexts({ contextTypes: ['OFFSCREEN_DOCUMENT'] })).length > 0 : false;
+  if (has) return;
+  offscreenReady =
+    offscreenReady ||
+    chrome.offscreen
+      .createDocument({ url: 'offscreen/nano.html', reasons: ['DOM_PARSER'], justification: "Run Chrome's on-device model to double-check autofilled answers" })
+      .catch((e) => {
+        if (!/single offscreen|already/i.test(String(e))) throw e;
+      })
+      .finally(() => (offscreenReady = null));
+  await offscreenReady;
+}
+
+let aiQueue = Promise.resolve();
+function aiCheck(tabId, review) {
+  aiQueue = aiQueue.then(async () => {
+    const { settings, profile, __testNanoReply } = await chrome.storage.local.get(['settings', 'profile', '__testNanoReply']);
+    if ((settings && settings.aiCheck === false) || !profile) return;
+    const t0 = Date.now();
+    let res;
+    try {
+      await ensureOffscreen();
+      res = await chrome.runtime.sendMessage({ target: 'offscreen', type: 'jc:nano-check', review, profile, testReply: __testNanoReply });
+    } catch (e) {
+      res = { ok: false, error: String(e.message || e) };
+    }
+    if (!res || !res.ok) {
+      debugAdd(tabId, { type: 'extension-step', detail: { step: 'on-device check skipped', reason: ((res && res.error) || 'no reply').slice(0, 200) } });
+      return;
+    }
+    debugAdd(tabId, { type: 'extension-step', detail: { step: 'on-device check', checked: res.checked, ms: Date.now() - t0, disagreed: res.fixes.map((f) => `${f.label.slice(0, 60)}: ${f.from} -> ${f.to}`) } });
+    if (!res.fixes.length) return;
+    const byFrame = await runInFrames(tabId, 'reviewFix', { fixes: res.fixes, _origin: 'ai-check' }).catch(() => []);
+    const out = merge('reviewFix', byFrame);
+    debugAdd(tabId, { type: 'extension-step', detail: { step: 'on-device check applied', changed: (out.changed || []).map((c) => `${c.label.slice(0, 60)}: ${c.from} -> ${c.to}`), flagged: (out.flagged || []).map((c) => c.label.slice(0, 60)) } });
+  });
+  return aiQueue;
+}
+
 async function runCommand(tabId, cmd, payload, origin) {
-  if (!FRAME_CMDS.has(cmd)) return { ok: false, error: `unknown command: ${cmd}` };
+  if (!FRAME_CMDS.has(cmd) || cmd === 'reviewFix') return { ok: false, error: `unknown command: ${cmd}` };
   // Never trust an origin claimed by the page; it is set here from the sender.
   payload = Object.assign({}, payload, { _origin: origin });
   delete payload.files;
@@ -535,6 +588,8 @@ async function runCommand(tabId, cmd, payload, origin) {
   if (cmd === 'autofill') {
     const tab = await chrome.tabs.get(tabId).catch(() => ({}));
     debugAdd(tabId, { type: 'autofill', url: tab.url, from: origin, ok: out.ok, error: out.error, filled: out.filledCount, needsInput: (out.needsInput || []).map((f) => `${(f.label || '').slice(0, 80)} (${f.reason})`).slice(0, 30), corrected: (out.corrected || []).map((c) => c.label), parseWaitMs: out.parseWaitMs });
+    if (out.review && out.review.length) aiCheck(tabId, out.review); // runs on its own, after the reply
+    delete out.review;
   } else if (out && out.ok === false && out.error) {
     debugAdd(tabId, { type: 'error', cmd, from: origin, error: String(out.error).slice(0, 300) });
   }

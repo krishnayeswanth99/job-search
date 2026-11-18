@@ -1,0 +1,55 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>My Information</title>
+<style>ul{list-style:none;margin:0;padding:0;border:1px solid #ccc;width:240px}li{padding:4px}</style></head>
+<body>
+<form>
+  <div data-automation-id="formField-source">
+    <label id="src-label">How Did You Hear About Us?</label>
+    <button type="button" id="src" aria-haspopup="listbox" aria-labelledby="src-label">Select One</button>
+    <div id="menu"></div>
+  </div>
+  <div data-automation-id="formField-legalName--firstName">
+    <label for="name--legalName--firstName">Given Name(s)</label>
+    <input id="name--legalName--firstName" type="text">
+  </div>
+  <div data-automation-id="formField-legalName--middleName">
+    <label for="name--legalName--middleName">Middle Name</label>
+    <input id="name--legalName--middleName" type="text">
+  </div>
+  <div data-automation-id="formField-legalName--lastName">
+    <label for="name--legalName--lastName">Family Name</label>
+    <input id="name--legalName--lastName" type="text">
+  </div>
+  <div data-automation-id="formField-legalName--suffix">
+    <label for="name--legalName--suffix">Suffix</label>
+    <input id="name--legalName--suffix" type="text">
+  </div>
+</form>
+<script>
+  // A two-level picker like Workday's: categories first, then the sources in the chosen one.
+  const TREE = { 'Job Board': ['Indeed', 'Glassdoor', 'Other Job Board'], 'Social Media': ['LinkedIn', 'Facebook', 'X'], 'Employee Referral': ['Referral'] };
+  const menu = document.getElementById('menu');
+  const btn = document.getElementById('src');
+  function show(items, onPick) {
+    menu.innerHTML = '';
+    const ul = document.createElement('ul');
+    ul.setAttribute('role', 'listbox');
+    for (const t of items) {
+      const li = document.createElement('li');
+      li.setAttribute('role', 'option');
+      li.textContent = t;
+      li.addEventListener('click', () => onPick(t));
+      ul.appendChild(li);
+    }
+    menu.appendChild(ul);
+  }
+  btn.addEventListener('click', () =>
+    show(Object.keys(TREE), (cat) =>
+      show(TREE[cat], (leaf) => {
+        btn.textContent = leaf;
+        menu.innerHTML = '';
+      })
+    )
+  );
+</script>
+</body></html>

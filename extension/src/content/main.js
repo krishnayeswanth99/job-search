@@ -243,4 +243,37 @@
       if (hasJobs && muts.some((m) => m.addedNodes.length)) onGrow();
     }).observe(document.documentElement, { childList: true, subtree: true });
   }
+
+  // Forms that change without loading a new page (single-page ATSs: Taleo, SuccessFactors, Oracle,
+  // Workday steps, a form that appears after sign-in): tell the service worker when a different
+  // set of questions shows up, so an application tab gets autofilled whatever the site.
+  if (typeof document !== 'undefined' && typeof MutationObserver !== 'undefined') {
+    let lastSig = '';
+    let timer = null;
+    let lastScan = 0;
+    const check = () => {
+      timer = null;
+      lastScan = Date.now();
+      let fields;
+      try {
+        fields = JC.fields.scan();
+      } catch (_) {
+        return;
+      }
+      const keyed = fields.filter((f) => f.key && f.type !== 'file');
+      const sig = fields.map((f) => f.label).slice(0, 15).join('|');
+      if (sig === lastSig) return;
+      lastSig = sig;
+      if (keyed.length < 2 && !JC.fields.looksLikeApplication(fields)) return;
+      try {
+        chrome.runtime.sendMessage({ type: 'jc:form-changed', fields: fields.length, keyed: keyed.length }).catch(() => {});
+      } catch (_) {
+        /* extension reloaded */
+      }
+    };
+    new MutationObserver((muts) => {
+      if (timer || !muts.some((m) => m.addedNodes.length)) return;
+      timer = setTimeout(check, Math.max(1500, 3000 - (Date.now() - lastScan)));
+    }).observe(document.documentElement, { childList: true, subtree: true });
+  }
 })(typeof globalThis !== 'undefined' ? globalThis : self);

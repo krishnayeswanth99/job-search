@@ -244,6 +244,8 @@ function scheduleAutofill(tabId, openerTabId, pageKey) {
         loginNoted.add(tabId + '|' + tab.url);
         debugAdd(tabId, { type: 'extension-step', detail: { step: 'sign-in or create-account page: waiting for you', url: tab.url } });
       }
+      // Some sites show the form in place after sign-in (no new page load): keep checking.
+      if (n < 200) autofillPending.set(tabId, setTimeout(() => attempt(n + 1), 4000));
       return;
     }
     if (d && !d.application && d.pageType === 'job' && !startedApply.has(tabId)) {
@@ -256,11 +258,14 @@ function scheduleAutofill(tabId, openerTabId, pageKey) {
         return setTimeout(() => attempt(1), 2500);
       }
     }
-    if (!d || !d.application) {
-      if (n < 6) setTimeout(() => attempt(n + 1), 1500); // forms rendered by JavaScript
+    const scan = await runCommand(tabId, 'scanForm', {}, 'popup').catch(() => null);
+    // Any page in an application tab with at least two questions we know how to answer counts,
+    // not only pages that look like a classic application (later steps have no name or email).
+    const keyed = ((scan && scan.fields) || []).filter((f) => f.profileKey && f.type !== 'file').length;
+    if (!d || (!d.application && keyed < 2)) {
+      if (n < 6) autofillPending.set(tabId, setTimeout(() => attempt(n + 1), 1500)); // forms rendered by JavaScript
       return;
     }
-    const scan = await runCommand(tabId, 'scanForm', {}, 'popup').catch(() => null);
     const sig = tabId + '|' + ((scan && scan.fields) || []).map((f) => f.label).slice(0, 12).join('|');
     if (autofillDone.has(sig)) return;
     autofillDone.add(sig);
@@ -689,6 +694,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       if (msg.job && msg.job.key) await setApplying(t.id, Object.assign({}, msg.job, { openerTabId: sender.tab.id, applyUrl: msg.url }));
       if (msg.autofill) scheduleAutofill(t.id, sender.tab.id);
       return { ok: true, tabId: t.id };
+    }
+    if (msg.type === 'jc:form-changed' && sender.tab && !fromExt) {
+      // New questions appeared in place (single-page ATS steps): autofill if this is an application tab.
+      const applying = await getApplying(sender.tab.id);
+      if (applying) scheduleAutofill(sender.tab.id, applying.openerTabId || null, 'form changed');
+      return { ok: true, applying: !!applying };
     }
     if (msg.type === 'jc:learn-label' && sender.tab && !fromExt) {
       // Label learned from another autofill: label text and profile key only, never the value.

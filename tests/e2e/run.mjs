@@ -33,6 +33,8 @@ const ROUTES = {
   'https://acme.wd5.myworkdayjobs.com/en-US/careers/job/New-York-NY/ML-Engineer_123': fx('workday-job.html'),
   'https://acme.wd5.myworkdayjobs.com/en-US/careers/job/New-York-NY/ML-Engineer_123/apply/selfIdentify': fx('workday-selfid.html'),
   'https://acme.wd5.myworkdayjobs.com/en-US/careers/job/New-York-NY/ML-Engineer_123/apply/myInformation': fx('workday-info.html'),
+  'https://uab.taleo.net/careersection/application.jss?lang=en&reqNo=330171&signedin=1&isOnLogoutPage=true&iss=https://accounts.google.com&scope=email+https://www.googleapis.com/auth/userinfo.email+openid': fx('taleo-application.html'),
+  'https://uab.taleo.net/careersection/application.jss?lang=en&reqNo=330172': fx('taleo-application.html'),
   'https://job-boards.greenhouse.io/acme/jobs/ai-check': '<html><head><meta charset="utf-8"></head><body><form><label for="seg">Segundo nombre</label><input id="seg" name="legalName.fullName"><label for="em">Email</label><input id="em" name="email"></form></body></html>',
   'https://jobs.lever.co/learntest/apply-2': fx('learn-form.html'),
   'https://careers-acme.icims.com/jobs/1234/data-scientist/candidate': fx('icims-like.html'),
@@ -310,6 +312,26 @@ try {
     } finally {
       await ext.evaluate(() => chrome.storage.local.remove('__testNanoReply'));
     }
+  });
+
+  await check('Taleo after Google sign-in: auth words in the query string are not a login page', async () => {
+    const p = await open('https://uab.taleo.net/careersection/application.jss?lang=en&reqNo=330171&signedin=1&isOnLogoutPage=true&iss=https://accounts.google.com&scope=email+https://www.googleapis.com/auth/userinfo.email+openid');
+    const d = await bridge(p, () => window.jobCopilot.detect());
+    assert.equal(d.login.required, false, JSON.stringify(d.login));
+    assert.equal(d.pageType, 'application');
+  });
+
+  await check('application tab: a form that appears in place after sign-in is autofilled', async () => {
+    const url = 'https://uab.taleo.net/careersection/application.jss?lang=en&reqNo=330172';
+    const p = await open(url);
+    assert.equal((await bridge(p, () => window.jobCopilot.detect())).login.required, true);
+    await ext.evaluate(async (url) => {
+      const [t] = await chrome.tabs.query({ url });
+      await chrome.storage.session.set({ ['applying:' + t.id]: { at: Date.now(), key: 'test-taleo', title: 'Data Scientist' } });
+    }, url);
+    await p.click('#google');
+    await p.waitForFunction(() => document.getElementById('fn') && document.getElementById('fn').value === 'Ada', null, { timeout: 20000 });
+    assert.equal(await p.evaluate(() => em.value), 'ada@example.com');
   });
 
   await check('bridge: fillField answers a custom question', async () => {

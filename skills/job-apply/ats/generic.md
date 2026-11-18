@@ -28,5 +28,10 @@ forms.
 - **SmartRecruiters:** a single page with a "Confirm your email" step. Its "Autofill with LinkedIn" button needs the user.
 - **Workable:** a single page. The resume parses into the fields. Questions are under "Details".
 - **Taleo / SuccessFactors:** long multi-page forms that time out quickly. Save often ("Save as Draft").
+  After a Google or LinkedIn sign-in, Taleo returns to `application.jss?...&scope=...googleapis.com/auth/...`: that is
+  the application, not a login page (Job Copilot only reads the address's path for login words).
+- **Single-page ATSs (Taleo, SuccessFactors, Oracle, Workday steps):** questions change without a new page load. In a
+  tab opened from a job board, Job Copilot notices a new set of questions and autofills them; elsewhere run
+  `autofill()` again after each step.
 - **Trusted sites:** if `autofill()` is refused because the domain isn't trusted (a custom company domain), ask the user
   to click **Autofill** in the Job Copilot popup, or to add the domain under Trusted sites in the options.

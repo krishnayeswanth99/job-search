@@ -52,8 +52,17 @@
       hints.push('Indeed secure login');
     }
 
-    if (!kind && URL_SIGNUP.test(url)) kind = 'signup';
-    if (!kind && URL_SIGNIN.test(url)) kind = 'signin';
+    // Only the address's path counts: query strings after a sign-in carry words like
+    // "googleapis.com/auth/userinfo" or "isOnLogoutPage" (Taleo after Google sign-in).
+    const path = location.pathname + (/^#\//.test(location.hash) ? location.hash.slice(1).split('?')[0] : '');
+    let byUrl = false;
+    if (!kind && URL_SIGNUP.test(path)) (kind = 'signup'), (byUrl = true);
+    if (!kind && URL_SIGNIN.test(path)) (kind = 'signin'), (byUrl = true);
+    // A login-looking address that shows an application form (no password box) is the form.
+    if (byUrl && JC.fields && JC.fields.looksLikeApplication()) {
+      kind = null;
+      hints.push('application form on a login-looking address');
+    }
 
     // A visible modal/dialog whose headline is "Sign in" etc.
     if (!kind) {

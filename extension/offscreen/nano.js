@@ -93,8 +93,8 @@ async function answer({ questions, job, profile, resumeText, testReply }) {
   return { ok: true, overrides, askMe, problems };
 }
 
-async function verify({ items, profile, resumeText, testReply }) {
-  const { prompt, fields } = JC.nanoCheck.buildVerifyPrompt({ items, profile, resumeText });
+async function verify({ items, profile, resumeText, job, testReply }) {
+  const { prompt, fields } = JC.nanoCheck.buildVerifyPrompt({ items, profile, resumeText, job });
   if (!fields.length) return { ok: true, flags: [], checked: 0 };
   // End-to-end tests: "VERDICTS:{\"part of a label\": \"wrong\"}".
   if (typeof testReply === 'string' && testReply.startsWith('VERDICTS:')) {

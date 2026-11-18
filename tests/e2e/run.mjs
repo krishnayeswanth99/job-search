@@ -45,6 +45,7 @@ const ROUTES = {
   'https://careers.acme-robotics.example/apply/ai-questions': fx('ai-questions.html'),
   'https://www.ziprecruiter.com/jobs/v2/test-1click': fx('ziprecruiter-1click.html'),
   'https://acme.wd5.myworkdayjobs.com/en-US/careers/job/New-York-NY/ML-Engineer_123/apply/myExperience': fx('workday-experience.html'),
+  'https://acme.wd5.myworkdayjobs.com/en-US/careers/job/New-York-NY/ML-Engineer_123/apply/myExperience?v=skills': fx('workday-experience.html'),
   'https://careers.acme-robotics.example/jobs/data-scientist?v=2': fx('employer-apply-modal.html'),
   'https://job-boards.greenhouse.io/panelco/jobs/1': fx('greenhouse-job.html'),
   'https://job-boards.greenhouse.io/acme/jobs/ai-check': '<html><head><meta charset="utf-8"></head><body><form><label for="seg">Segundo nombre</label><input id="seg" name="legalName.fullName"><label for="em">Email</label><input id="em" name="email"></form></body></html>',
@@ -556,6 +557,28 @@ try {
       assert.ok(!r.needsInput.some((f) => /location|degree|upload/i.test(f.label)), JSON.stringify(r.needsInput));
     } finally {
       await ext.evaluate(async (p) => chrome.storage.local.set({ profile: p }), saved);
+    }
+  });
+
+  await check('skills picker: job-description skills first, resume-backed skills added, picker names remembered', async () => {
+    const saved = await ext.evaluate(async () => chrome.storage.local.get(['profile', 'resumeText', 'skillMemory']));
+    await ext.evaluate(async (s) => chrome.storage.local.set({ profile: Object.assign({}, s.profile, { work: Object.assign({}, s.profile.work, { skills: 'Rust, SQL, Python' }), experience: [], educationHistory: [] }), resumeText: 'Built recommendation models with PyTorch and Python.' + ' Shipped things.'.repeat(30), skillMemory: {} }), saved);
+    try {
+      const url = 'https://acme.wd5.myworkdayjobs.com/en-US/careers/job/New-York-NY/ML-Engineer_123/apply/myExperience?v=skills';
+      const p = await open(url);
+      await ext.evaluate(async (url) => {
+        const [t] = await chrome.tabs.query({ url });
+        await chrome.storage.session.set({ ['applying:' + t.id]: { at: Date.now(), key: 'test-skills', title: 'ML Engineer', description: 'Requirements: strong Python and PyTorch. Kubernetes is a plus.' } });
+      }, url);
+      await bridge(p, () => window.jobCopilot.autofill());
+      const pills = await p.evaluate(() => [...document.querySelectorAll('#skill-pills li')].map((e) => e.textContent));
+      assert.deepEqual(pills.slice(0, 2), ['Python (Programming Language)', 'PyTorch'], JSON.stringify(pills)); // JD first, PyTorch from the resume
+      assert.ok(!pills.includes('Kubernetes')); // the JD wants it, the resume doesn't show it
+      assert.ok(pills.includes('SQL'));
+      const mem = await ext.evaluate(async () => (await chrome.storage.local.get('skillMemory')).skillMemory);
+      assert.equal(mem.names.python, 'Python (Programming Language)');
+    } finally {
+      await ext.evaluate(async (s) => chrome.storage.local.set({ profile: s.profile, resumeText: s.resumeText || '', skillMemory: s.skillMemory || {} }), saved);
     }
   });
 

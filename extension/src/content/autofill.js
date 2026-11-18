@@ -324,7 +324,7 @@
     // Repeatable sections: Add entries and fill them from the profile's work history and schools.
     if (JC.sections && opts.sections !== false) {
       try {
-        const sec = await JC.sections.fill(profile);
+        const sec = await JC.sections.fill(profile, { jobDesc: opts.jobDesc, resumeText: opts.resumeText });
         const done = new Set(sec.filled.map((x) => x.selector));
         for (const x of sec.filled) filled.push({ label: `${x.section}${x.entry ? ' ' + x.entry : ''}: ${x.label}`, selector: x.selector, source: 'profile', profileKey: x.section, value: x.added ? x.added.join(', ') : x.value });
         for (let k = needsInput.length - 1; k >= 0; k--) if (done.has(needsInput[k].selector)) needsInput.splice(k, 1);

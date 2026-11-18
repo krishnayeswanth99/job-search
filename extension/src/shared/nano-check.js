@@ -93,7 +93,7 @@
   // contradicts the applicant's data) or "unsure" (the data doesn't say). It never writes answers:
   // doubtful ones are only outlined for the user.
 
-  function buildVerifyPrompt({ items, profile, resumeText }) {
+  function buildVerifyPrompt({ items, profile, resumeText, job }) {
     const fields = (items || []).slice(0, 25).map((it, i) => ({
       id: 'a' + (i + 1),
       selector: it.selector,
@@ -117,6 +117,8 @@
       ...(exp.length ? ['Work history: ' + exp.join('; ')] : []),
       ...(edu.length ? ['Education: ' + edu.join('; ')] : []),
       ...(resume ? ['Resume (relevant lines):', resume] : []),
+      ...savedAnswers(profile, fields),
+      ...(job && job.description && JC.ask && JC.ask.compactJob ? ['', `THE JOB (${[job.title, job.company].filter(Boolean).join(' at ')})`, JC.ask.compactJob(job.description, 1000)] : []),
       '',
       'FILLED ANSWERS',
       ...fields.map((f) => `${f.id}: "${f.label}"${f.options.length ? ` (options: ${f.options.join(' | ')})` : ''} -> "${f.value}"`),
@@ -124,6 +126,19 @@
       'Reply with JSON: {"verdicts": {"a1": "ok" | "wrong" | "unsure", ...}}',
     ];
     return { prompt: lines.join('\n'), fields };
+  }
+
+  /** Earlier answers to questions like these (the user's own words), most similar first. */
+  function savedAnswers(profile, fields) {
+    const words = (s) => new Set(String(s || '').toLowerCase().match(/[a-z]{4,}/g) || []);
+    const qw = words(fields.map((f) => f.label).join(' '));
+    const scored = ((profile && profile.answers) || [])
+      .filter((a) => a && a.question && a.answer)
+      .map((a) => ({ a, s: [...words(a.question)].filter((w) => qw.has(w)).length }))
+      .filter((x) => x.s > 0)
+      .sort((x, y) => y.s - x.s)
+      .slice(0, 6);
+    return scored.length ? ['Answers the applicant gave before:', ...scored.map(({ a }) => `- ${String(a.question).slice(0, 140)} -> ${String(a.answer).slice(0, 200)}`)] : [];
   }
 
   function verifySchema(fields) {

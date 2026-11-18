@@ -70,3 +70,13 @@ test('automatic on-device answers never cover sensitive questions', () => {
   ]);
   assert.deepEqual(qs.map((q) => q.id), ['a', 'g']);
 });
+
+test('compact job description keeps requirements; unmatched dropdowns pass the options they showed', () => {
+  const jd = 'We are Acme, building robots.\n' + 'Our office has great snacks and a dog. '.repeat(40) + '\nRequirements: 3+ years of Python and PyTorch experience.\nThis role is hybrid in San Mateo.';
+  const c = JC.ask.compactJob(jd, 600);
+  assert.ok(c.length <= 700, String(c.length));
+  assert.match(c, /PyTorch/);
+  assert.match(c, /hybrid in San Mateo/);
+  const qs = JC.ask.questionsFrom([{ ref: 'x', label: 'Are you open to working 4 days onsite?', type: 'listbox', required: true, hasValue: false, reason: 'custom dropdown: no matching option found, choose by hand (options seen: Select One | Yes | No | N/A - Within Commuting Distance)' }]);
+  assert.deepEqual([...qs[0].options], ['Yes', 'No', 'N/A - Within Commuting Distance']);
+});

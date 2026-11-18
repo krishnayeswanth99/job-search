@@ -14,8 +14,15 @@
   const SKIP_TYPES = new Set(['file', 'password', 'hidden']);
   const NEVER_ASK = new Set(['consent', 'transgender', 'gender', 'race', 'hispanicLatino', 'veteran', 'disability', 'sexualOrientation']);
 
+  // Custom dropdowns that could not be matched report the options they showed ("options seen: a | b").
+  const seenOptions = (f) => {
+    const m = String(f.reason || '').match(/options seen: ([^)]*)\)/);
+    return m ? m[1].split(' | ').map((s) => s.trim()).filter((s) => s && !/^(select( one)?|choose|--)$/i.test(s)).slice(0, 40) : [];
+  };
+
   function questionsFrom(fields) {
     return (fields || [])
+      .map((f) => (f && (!f.options || !f.options.length) && seenOptions(f).length ? Object.assign({}, f, { options: seenOptions(f) }) : f))
       .filter((f) => f && f.ref && !f.hasValue && !SKIP_TYPES.has(f.type) && !NEVER_ASK.has(f.profileKey) && (f.label || '').trim().length >= 3)
       .filter((f) => f.required || !f.profileKey || f.profileKey === 'desiredPay' || f.profileKey === 'currentPay')
       .map((f) => ({ id: f.ref, label: f.label.trim().slice(0, 400), type: f.type, required: !!f.required, options: (f.options || []).filter(Boolean).slice(0, 40), maxLength: f.maxLength || undefined }));
@@ -30,6 +37,41 @@
       const f = (fields || []).find((x) => x.ref === q.id) || {};
       return !NOT_AUTOMATIC.test(q.label) && !['desiredPay', 'currentPay', 'desiredSalary', 'desiredHourlyRate'].includes(f.profileKey) && !/^consent/.test(f.reason || '');
     });
+  }
+
+  /**
+   * A job description cut down to what answers need: the opening (role summary), then the lines
+   * about requirements, skills, responsibilities, location and work arrangement, up to `max`.
+   */
+  function compactJob(text, max) {
+    max = max || 1500;
+    const t = String(text || '').replace(/\r/g, '');
+    if (t.length <= max) return t.trim();
+    const lines = t.split(/\n+|(?<=[.;•])\s+(?=[A-Z•])/).map((l) => l.trim()).filter((l) => l.length > 2);
+    // Requirements first, then where / how the job is done; repeated lines once.
+    const STRONG = /\b(require|must|experience|years?|skills?|proficien|familiar|knowledge|qualif|degree|bachelor|master|phd|responsib|you will|you'll|nice to have|preferred|bonus|stack|tools?|technolog|python|java|sql|cloud|aws|gcp|azure)\b/i;
+    const WEAK = /\b(onsite|on-site|hybrid|remote|relocat|visa|sponsor|clearance|travel|shift|location|office)\b/i;
+    const head = [];
+    let used = 0;
+    for (const l of lines.slice(0, 2)) {
+      if (used + l.length > max * 0.25) break;
+      head.push(l);
+      used += l.length + 1;
+    }
+    const seen = new Set(head);
+    const picked = [];
+    for (const re of [STRONG, WEAK]) {
+      lines.forEach((l, i) => {
+        if (i < head.length || seen.has(l) || !re.test(l)) return;
+        const c = l.slice(0, 240);
+        if (used + c.length > max) return;
+        seen.add(l);
+        picked.push({ i, c });
+        used += c.length + 1;
+      });
+    }
+    const out = head.concat(picked.sort((x, y) => x.i - y.i).map((x) => x.c));
+    return out.join('\n');
   }
 
   function clip(s, n) {
@@ -65,6 +107,11 @@
     add('GitHub', l.github);
     add('Portfolio', l.portfolio || l.website);
     add('Summary', p.summary);
+    const exp = (p.experience || []).slice(0, 6).map((e) => `${e.title || '?'} at ${e.company || '?'}${e.location ? ', ' + e.location : ''} (${e.start || '?'} to ${e.current ? 'present' : e.end || '?'})`);
+    if (exp.length) lines.push('- Work history (newest first): ' + exp.join('; '));
+    const edu = (p.educationHistory || []).slice(0, 4).map((e) => [e.degree, e.fieldOfStudy, e.school, e.end && e.end.slice(0, 4)].filter(Boolean).join(', '));
+    if (edu.length) lines.push('- Schools: ' + edu.join('; '));
+    add('Languages', w.languages);
     const saved = (p.answers || []).filter((x) => x && x.question && x.answer && x.scope !== 'company').slice(0, 30);
     if (saved.length) lines.push('- Answers I have given before:\n' + saved.map((x) => `  - Q: ${clip(x.question, 200)}\n    A: ${clip(x.answer, 600)}`).join('\n'));
     return lines.join('\n');
@@ -196,7 +243,7 @@
       'Experience questions ("Have you built software using Python or Java?", "Do you have experience with AWS?"): answer Yes when my resume or skills show that experience (for "X or Y", one is enough). If they do not show it, answer "ASK_ME", never No.',
       'Answer "ASK_ME" when a fact is missing or it is a personal choice (salary, relocation, start date).',
       `Job: ${(job && job.title) || ''} at ${(job && job.company) || ''}`,
-      job && job.description ? 'Job summary: ' + clip(job.description, 1200) : '',
+      job && job.description ? 'Job (key lines): ' + compactJob(job.description, 1400) : '',
       'About me:\n' + profileText(profile),
       resumeText ? 'Resume (the parts that matter for these questions):\n' + relevantResume(resumeText, questions, 3000) : '',
       'Questions:\n' + JSON.stringify(qs),
@@ -224,7 +271,7 @@
     return out;
   }
 
-  JC.ask = { autoQuestionsFrom, relevantResume, questionsFrom, buildPrompt, parseReply, profileText, buildCompactPrompt, schemaFor, batches };
+  JC.ask = { compactJob, autoQuestionsFrom, relevantResume, questionsFrom, buildPrompt, parseReply, profileText, buildCompactPrompt, schemaFor, batches };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = JC;
 })(typeof globalThis !== 'undefined' ? globalThis : self);

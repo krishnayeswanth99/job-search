@@ -50,3 +50,12 @@ test('answer check: the model only says ok / wrong / unsure; doubtful ones come 
   assert.equal(flags[0].selector, '#b');
   assert.equal(flags[0].verdict, 'unsure');
 });
+
+test('answer check sees the job and earlier answers to similar questions', () => {
+  const J2 = loadJC(['shared/config.js', 'shared/profile-schema.js', 'shared/field-rules.js', 'shared/ask-prompt.js', 'shared/nano-check.js']);
+  const p = J2.normalizeProfile({ answers: [{ question: 'Are you willing to relocate to New York?', answer: 'Yes' }, { question: 'Favourite colour?', answer: 'Blue' }] });
+  const { prompt } = J2.nanoCheck.buildVerifyPrompt({ items: [{ selector: '#r', label: 'Are you willing to relocate?', type: 'select', options: ['Yes', 'No'], value: 'Yes', source: 'saved-answer' }], profile: p, job: { title: 'ML Engineer', company: 'Acme', description: 'Requirements: Python. Relocation to New York required.' } });
+  assert.match(prompt, /willing to relocate to New York\? -> Yes/);
+  assert.ok(!/Favourite colour/.test(prompt));
+  assert.match(prompt, /THE JOB \(ML Engineer at Acme\)/);
+});

@@ -298,6 +298,21 @@
    *   opts.navigate  false: only find the address, don't go there
    *   opts.newTab    open the address in a new tab instead of this one
    */
+  /**
+   * The job description to keep with an application (answers and checks use it on the employer's
+   * form, which often doesn't show it): the card's own text, else the job shown on this page.
+   */
+  function jobText(j) {
+    let d = (j && j.description) || '';
+    if (d.length < 300) {
+      try {
+        const cur = JC.extract && JC.extract.job();
+        if (cur && cur.description && (!j || !j.title || !cur.title || cur.title === j.title)) d = cur.description;
+      } catch (_) {}
+    }
+    return String(d || '').slice(0, 6000);
+  }
+
   async function followApply(opts) {
     opts = opts || {};
     // Which job this is (so a confirmation on the employer's form can mark it applied).
@@ -313,7 +328,7 @@
         }
       }
       if (!j) j = { url: location.origin + location.pathname };
-      return { key: JC.applyLinks.jobKey(j) || location.origin + location.pathname, title: j.title || '', company: j.company || '' };
+      return { key: JC.applyLinks.jobKey(j) || location.origin + location.pathname, title: j.title || '', company: j.company || '', description: jobText(j) };
     })();
     const go = (url, why) => {
       url = JC.cleanApplyUrl ? JC.cleanApplyUrl(url) : url;
@@ -516,7 +531,7 @@
       }
       note('opening the employer application', { url });
       if (JC.applyLinks && job) JC.applyLinks.save(job, url, 'your-click');
-      const info = job ? { key: JC.applyLinks.jobKey(job), title: job.title || '', company: job.company || '' } : null;
+      const info = job ? { key: JC.applyLinks.jobKey(job), title: job.title || '', company: job.company || '', description: jobText(job) } : null;
       chrome.runtime.sendMessage({ type: 'jc:open-tab', url, job: info, autofill: true }).catch(() => {});
     } finally {
       await sleep(200);

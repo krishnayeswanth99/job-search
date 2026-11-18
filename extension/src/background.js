@@ -644,6 +644,15 @@ function aiCheck(tabId, review) {
 // unsure against your data. Doubtful ones are outlined on the page and marked in the side panel;
 // nothing is changed. Each answer is checked once per tab.
 const verified = new Map(); // tabId -> Set("selector|value")
+
+/** The job behind an application tab: what this page shows, else what was kept when it was opened. */
+async function jobFor(tabId) {
+  const here = await runCommand(tabId, 'extractJob', {}, 'popup').catch(() => null);
+  const h = (here && here.job) || {};
+  const kept = (await getApplying(tabId)) || {};
+  const description = (h.description || '').length >= 300 ? h.description : kept.description || h.description || '';
+  return { title: kept.title || h.title || '', company: kept.company || h.company || '', description };
+}
 function aiVerify(tabId, items) {
   aiQueue = aiQueue.then(async () => {
     const { settings, profile, resumeText, __testNanoReply } = await chrome.storage.local.get(['settings', 'profile', 'resumeText', '__testNanoReply']);
@@ -657,7 +666,8 @@ function aiVerify(tabId, items) {
     let res;
     try {
       await ensureOffscreen();
-      res = await chrome.runtime.sendMessage({ target: 'offscreen', type: 'jc:nano-verify', items: fresh, profile: self.JC.normalizeProfile(profile), resumeText, testReply: __testNanoReply });
+      const job = await jobFor(tabId).catch(() => null);
+      res = await chrome.runtime.sendMessage({ target: 'offscreen', type: 'jc:nano-verify', items: fresh, job, profile: self.JC.normalizeProfile(profile), resumeText, testReply: __testNanoReply });
     } catch (e) {
       res = { ok: false, error: String(e.message || e) };
     }
@@ -690,9 +700,9 @@ async function aiAnswer(tabId, needsInput) {
   const t0 = Date.now();
   let res;
   try {
-    const job = await runCommand(tabId, 'extractJob', {}, 'popup').catch(() => null);
+    const job = await jobFor(tabId);
     await ensureOffscreen();
-    res = await chrome.runtime.sendMessage({ target: 'offscreen', type: 'jc:nano-answer', questions, job: job && job.job ? { title: job.job.title, company: job.job.company, description: job.job.description } : null, profile: self.JC.normalizeProfile(profile), resumeText, testReply: __testNanoReply });
+    res = await chrome.runtime.sendMessage({ target: 'offscreen', type: 'jc:nano-answer', questions, job, profile: self.JC.normalizeProfile(profile), resumeText, testReply: __testNanoReply });
   } catch (e) {
     res = { ok: false, error: String(e.message || e) };
   }
@@ -727,6 +737,11 @@ async function runCommand(tabId, cmd, payload, origin) {
       if (!stored) return { ok: false, error: `No ${kind} stored in Job Copilot options and no url given.` };
       payload.file = stored;
     }
+  }
+  if (cmd === 'autofill' && !payload.jobDesc) {
+    // Skills pickers rank skills by the job description: give it the one kept with the application.
+    const kept = await getApplying(tabId);
+    if (kept && kept.description) payload.jobDesc = kept.description;
   }
   const out = merge(cmd, await runInFrames(tabId, cmd, payload));
   if (cmd === 'autofill') {

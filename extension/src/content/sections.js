@@ -241,7 +241,8 @@
    * Fill the work experience and education sections from the profile.
    * Returns { filled: [{ label, section, entry }], needsInput: [...], added }.
    */
-  async function fill(profile) {
+  async function fill(profile, ctx) {
+    ctx = ctx || {};
     const filled = [];
     const needsInput = [];
     let added = 0;
@@ -284,31 +285,72 @@
         }
       }
     }
-    const skills = await fillSkills(profile);
+    const skills = await fillSkills(profile, ctx);
     return { filled: filled.concat(skills), needsInput, added };
   }
 
-  /** Workday-style skills picker: add up to 10 of the profile's skills, one search at a time. */
-  async function fillSkills(profile) {
-    const list = String((profile.work || {}).skills || '')
-      .split(/[,;\n|•]+/)
-      .map((s) => s.trim())
-      .filter((s) => s && s.length <= 40)
-      .slice(0, 10);
-    if (!list.length) return [];
+  /**
+   * Which skills to add to a skills picker, best first (up to 10):
+   *   1. profile skills the job description mentions,
+   *   2. skills the job description asks for that the resume shows (even if not in the profile list),
+   *   3. skills you added yourself on earlier forms that this job mentions,
+   *   4. the rest of the profile skills.
+   */
+  function skillPlan(profile, ctx, memory) {
+    const split = (t) => String(t || '').split(/[,;\n|•]+/).map((s) => s.trim()).filter((s) => s && s.length <= 40);
+    const mine = split((profile.work || {}).skills);
+    const jd = String((ctx && ctx.jobDesc) || '');
+    const resume = String((ctx && ctx.resumeText) || '');
+    const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const has = (text, s) => new RegExp('(^|[^A-Za-z0-9+#])' + esc(s) + '($|[^A-Za-z0-9+#])', 'i').test(text);
+    const fromJd = jd && JC.rules.experienceTerms ? JC.rules.experienceTerms(jd, (profile.work || {}).skills).filter((t) => t.length >= 2 && t.length <= 30 && has(resume, t) && !/^(we|our|you|the|and|for|with|team|teams|data|role|job|work|company|inc|llc)$/i.test(t)) : [];
+    const users = (memory.userSkills || []).filter((s) => jd && has(jd, s));
+    const order = [...mine.filter((s) => jd && has(jd, s)), ...fromJd, ...users, ...mine];
+    const out = [];
+    for (const s of order) if (!out.some((x) => x.toLowerCase() === s.toLowerCase())) out.push(s);
+    return out.slice(0, 10);
+  }
+
+  /** Workday-style skills picker: add skills one search at a time, remembering the picker's names. */
+  async function fillSkills(profile, ctx) {
     const box = JC.fields.scan().find((f) => f.combobox && f.type !== 'listbox' && (/\bskills?\b/i.test(f.label || '') || /(^|[-_])skills?([-_]|$)/i.test(f.el.id || '')) && !/\b(language|years)\b/i.test(f.label || ''));
     if (!box) return [];
+    let memory = {};
+    try {
+      memory = (await chrome.storage.local.get('skillMemory')).skillMemory || {};
+    } catch (_) {}
+    memory.names = memory.names || {}; // "python" -> "Python (Programming Language)"
+    memory.userSkills = memory.userSkills || [];
+    const list = skillPlan(profile, ctx, memory);
+    if (!list.length) return [];
     const container = box.el.closest('[data-automation-id^="formField"]') || box.el.parentElement;
-    const have = () => [...(container ? container.querySelectorAll('[data-automation-id="selectedItem"], [data-automation-id="selectedItemList"] li') : [])].map((e) => clean(e.innerText).toLowerCase());
+    const pills = () => [...(container ? container.querySelectorAll('[data-automation-id="selectedItem"], [data-automation-id="selectedItemList"] li') : [])].map((e) => clean(e.innerText));
+    const before = pills();
     const added = [];
     for (const s of list) {
-      if (have().some((h) => h === s.toLowerCase() || h.startsWith(s.toLowerCase() + ' '))) continue;
-      const r = await JC.autofill.fillCombobox(box.el, [s], null).catch(() => ({ ok: false }));
-      if (r.ok) added.push(s);
+      const have = pills().map((h) => h.toLowerCase());
+      const known = memory.names[s.toLowerCase()];
+      if (have.some((h) => h === s.toLowerCase() || h.startsWith(s.toLowerCase() + ' ') || (known && h === known.toLowerCase()))) continue;
+      const r = await JC.autofill.fillCombobox(box.el, known ? [known, s] : [s], null).catch(() => ({ ok: false }));
+      if (r.ok) {
+        added.push(s);
+        if (r.chosen) memory.names[s.toLowerCase()] = r.chosen.split(' > ').pop();
+      }
       await sleep(250);
     }
+    // Skills already there that Job Copilot didn't add (yours, or "use my last application"):
+    // remembered, and offered on later forms whose job description mentions them.
+    const ours = new Set(Object.values(memory.names).map((v) => v.toLowerCase()));
+    for (const p of before) {
+      const base = p.replace(/\s*\(.*\)\s*$/, '').trim();
+      if (base && !ours.has(p.toLowerCase()) && !memory.userSkills.some((u) => u.toLowerCase() === base.toLowerCase())) memory.userSkills.push(base);
+    }
+    memory.userSkills = memory.userSkills.slice(-60);
+    try {
+      await chrome.storage.local.set({ skillMemory: memory });
+    } catch (_) {}
     return added.length ? [{ label: box.label || 'Skills', selector: JC.fields.describe(box).selector, section: 'skills', added }] : [];
   }
 
-  JC.sections = { kindOf, headings, groups, partOf, addButton, fill, fillSkills, dateValue };
+  JC.sections = { skillPlan, kindOf, headings, groups, partOf, addButton, fill, fillSkills, dateValue };
 })(typeof globalThis !== 'undefined' ? globalThis : self);

@@ -302,6 +302,77 @@
     return hit ? hit.i : -1;
   }
 
+  // ---------------------------------------------- "Do you have 3+ years of X experience?" from history
+  const WORD_NUM = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10 };
+  const ymIdx = (ym, now) => {
+    const m = /^(\d{4})-(\d{2})/.exec(ym || '');
+    return m ? Number(m[1]) * 12 + Number(m[2]) - 1 : null;
+  };
+
+  /** Months covered by intervals [start, end) with overlaps counted once. */
+  function mergedMonths(iv) {
+    const s = iv.filter((x) => x[0] !== null && x[1] !== null && x[1] > x[0]).sort((a, b) => a[0] - b[0]);
+    let total = 0;
+    let cur = null;
+    for (const [a, b] of s) {
+      if (!cur) cur = [a, b];
+      else if (a <= cur[1]) cur[1] = Math.max(cur[1], b);
+      else {
+        total += cur[1] - cur[0];
+        cur = [a, b];
+      }
+    }
+    if (cur) total += cur[1] - cur[0];
+    return total;
+  }
+
+  /** Each job's [start, end) in months, plus its text (title, bullets, details). */
+  function jobSpans(profile, now) {
+    const d = now && typeof now.getFullYear === 'function' ? now : new Date();
+    const nowIdx = d.getFullYear() * 12 + d.getMonth() + 1;
+    return ((profile && profile.experience) || []).map((e) => ({
+      span: [ymIdx(e.start), e.current || !e.end ? nowIdx : ymIdx(e.end) === null ? null : ymIdx(e.end) + 1],
+      text: [e.title, e.description, e.details].join(' ').toLowerCase(),
+      title: String(e.title || '').toLowerCase(),
+    }));
+  }
+
+  /**
+   * "Do you have 2+ years of data scientist experience?" -> 'Yes' when the jobs whose title,
+   * bullets or details mention it add up to N years; 'No' when all your work history together is
+   * under N years; otherwise null (left for the AI or you). Internships count like other jobs.
+   */
+  function yearsAnswer(label, profile, now) {
+    const q = String(label || '').toLowerCase();
+    const m = q.match(/(\d+(?:\.\d+)?|one|two|three|four|five|six|seven|eight|nine|ten)\s*\+?\s*(?:or more |plus |\(\d+\)\s*)?years?/) || q.match(/(?:at least|minimum of|more than|over)\s+(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+years?/);
+    if (!m || !/\b(do|have|are|did|would)\b/.test(q)) return null;
+    const n = WORD_NUM[m[1]] || Number(m[1]);
+    if (!n || n > 40) return null;
+    const jobs = jobSpans(profile, now);
+    const totalYears = jobs.length ? mergedMonths(jobs.map((j) => j.span)) / 12 : Number((profile && profile.work && profile.work.yearsExperience) || NaN);
+    if (!(totalYears >= 0)) return null;
+    // What the years are of: "years of <topic> experience" / "years of experience (in|with) <topic>".
+    const after = q.slice(q.indexOf(m[0]) + m[0].length);
+    let topic = (after.match(/^\s*(?:of\s+)?(?:professional\s+|relevant\s+|hands-on\s+|industry\s+)?(.*?)\s*(?:work\s+)?experience\b/) || [])[1] || '';
+    if (!topic || /^(work|professional|relevant|total|industry)?$/.test(topic.trim())) topic = (after.match(/experience\s+(?:in|with|as|using|doing)\s+(?:an?\s+|the\s+)?([^?.,;]+)/) || [])[1] || '';
+    const terms = topic
+      .split(/\/|,|\bor\b|\band\b|\(|\)/)
+      .map((t) => t.replace(/[^a-z0-9+#. -]/g, ' ').replace(/\s+/g, ' ').trim().split(' ').slice(0, 3).join(' '))
+      .filter((t) => t.length >= 2 && !/^(the|a|an|in|of|with|tools?|techniques?|role|roles|position)$/.test(t));
+    if (!terms.length) return totalYears >= n ? 'Yes' : jobs.length ? 'No' : null;
+    const stem = (w) => w.replace(/(ists?|ists|ing|ics|ic|al|s)$/, '');
+    const mentions = (text, t) => {
+      if (text.includes(t)) return true;
+      const words = t.split(' ').map(stem).filter((w) => w.length >= 3);
+      return words.length > 0 && words.every((w) => text.includes(w));
+    };
+    const relevant = jobs.filter((j) => terms.some((t) => mentions(j.text, t)));
+    const years = mergedMonths(relevant.map((j) => j.span)) / 12;
+    if (years >= n) return 'Yes';
+    if (totalYears < n) return 'No';
+    return null;
+  }
+
   /**
    * Ways a degree is offered in dropdowns: "M.S." -> ["M.S.", "Master of Science", "Master's Degree",
    * "Masters", "Master"…]. The degree as written comes first.
@@ -742,7 +813,7 @@
     }
   }
 
-  JC.rules = { parseLanguages, levelCandidates, degreeCandidates, formerEmployerOf, formerEmployerAnswer, choosePhoneCode, dialCode, evidenceAnswer, experienceTerms, chooseResumeSource, sameValue, timeZoneCandidates, classifyField, valueForKey, chooseOption, matchSavedAnswer, mergeAnswers, isCompanySpecific, looksSensitive, NEVER_REMEMBER, humanize, norm, payPeriod, amounts, parseAmount, toNumberValue, emptyReason, LONG_LABEL };
+  JC.rules = { yearsAnswer, mergedMonths, parseLanguages, levelCandidates, degreeCandidates, formerEmployerOf, formerEmployerAnswer, choosePhoneCode, dialCode, evidenceAnswer, experienceTerms, chooseResumeSource, sameValue, timeZoneCandidates, classifyField, valueForKey, chooseOption, matchSavedAnswer, mergeAnswers, isCompanySpecific, looksSensitive, NEVER_REMEMBER, humanize, norm, payPeriod, amounts, parseAmount, toNumberValue, emptyReason, LONG_LABEL };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = JC;
 })(typeof globalThis !== 'undefined' ? globalThis : self);

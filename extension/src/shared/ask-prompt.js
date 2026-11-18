@@ -107,8 +107,23 @@
     add('GitHub', l.github);
     add('Portfolio', l.portfolio || l.website);
     add('Summary', p.summary);
-    const exp = (p.experience || []).slice(0, 6).map((e) => `${e.title || '?'} at ${e.company || '?'}${e.location ? ', ' + e.location : ''} (${e.start || '?'} to ${e.current ? 'present' : e.end || '?'})`);
+    // Each job with how long it lasted, so "Do you have 3+ years of X?" can be answered.
+    const now = new Date();
+    const nowIdx = now.getFullYear() * 12 + now.getMonth() + 1;
+    const idx = (ym) => {
+      const m = /^(\d{4})-(\d{2})/.exec(ym || '');
+      return m ? Number(m[1]) * 12 + Number(m[2]) - 1 : null;
+    };
+    const spans = [];
+    const exp = (p.experience || []).slice(0, 8).map((e) => {
+      const a = idx(e.start);
+      const b = e.current || !e.end ? nowIdx : idx(e.end) === null ? null : idx(e.end) + 1;
+      const yrs = a !== null && b !== null && b > a ? (b - a) / 12 : null;
+      if (yrs !== null) spans.push([a, b]);
+      return `${e.title || '?'} at ${e.company || '?'}${e.location ? ', ' + e.location : ''} (${e.start || '?'} to ${e.current ? 'present' : e.end || '?'}${yrs !== null ? `, ${yrs.toFixed(1)} years` : ''})`;
+    });
     if (exp.length) lines.push('- Work history (newest first): ' + exp.join('; '));
+    if (spans.length && JC.rules && JC.rules.mergedMonths) lines.push(`- Total work experience: ${(JC.rules.mergedMonths(spans) / 12).toFixed(1)} years`);
     const edu = (p.educationHistory || []).slice(0, 4).map((e) => [e.degree, e.fieldOfStudy, e.school, e.end && e.end.slice(0, 4)].filter(Boolean).join(', '));
     if (edu.length) lines.push('- Schools: ' + edu.join('; '));
     add('Languages', w.languages);

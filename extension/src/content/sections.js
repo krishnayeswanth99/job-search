@@ -254,6 +254,8 @@
       const note = (step, extra) => JC.recorder && JC.recorder.note && JC.recorder.note(Object.assign({ step }, extra || {}));
       const name = { exp: 'work experience', edu: 'education', lang: 'languages' }[kind];
       const listed = kind === 'exp' ? (profile.experience || []).length : kind === 'edu' ? (profile.educationHistory || []).length : items.length;
+      // A page without this kind of section (no blocks, no heading for it): nothing to say.
+      if (!gs.length && !headings().some((h) => h.kind === kind)) continue;
       if (!listed && kind !== 'lang') note(`${name}: your profile has no ${kind === 'exp' ? 'work history' : 'school'} list, only the current one is used (upload your resume again in options, or add entries under "Work experience & education")`);
       for (let tries = 0; gs.length < items.length && tries < items.length + 2; tries++) {
         const b = addButton(kind);

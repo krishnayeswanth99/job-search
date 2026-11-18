@@ -161,6 +161,9 @@
     // Yes/no "Have you used Python or Java?": Yes when the resume or skills show it.
     const yesNo = f.type === 'listbox' || (f.options || []).some((o) => /^yes\b/i.test(String(o.text || '').trim()));
     if (!f.key && yesNo) {
+      // "Do you have 3+ years of data scientist experience?": added up from your work history.
+      const yrs = R.yearsAnswer(f.label, profile);
+      if (yrs) return { value: yrs, source: 'resume' };
       // "Have you ever worked at Applied Materials?": Yes if your resume lists it, else No.
       const was = R.formerEmployerAnswer(f.label, resumeText);
       if (was) return { value: was, source: 'resume' };

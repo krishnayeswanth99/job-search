@@ -300,3 +300,20 @@ test('cover letter: a text box is the draft letter, an upload is the file', () =
   assert.equal(key({ label: 'Cover Letter', type: 'file' }), 'coverLetter');
   assert.equal(valueForKey({ coverLetterText: 'Dear Acme Team,' }, 'coverLetterText'), 'Dear Acme Team,');
 });
+
+test('"Do you have N+ years of X experience?" is worked out from the work history', () => {
+  const p = JC.normalizeProfile({
+    experience: [
+      { title: 'Data Scientist', company: 'Acme', start: '2023-01', current: true, description: '• Built machine learning models for pricing.' },
+      { title: 'Data Analyst', company: 'Beta', start: '2020-01', end: '2022-12', description: '• Statistical modeling of churn.' },
+    ],
+  });
+  const now = new Date(2026, 10, 18);
+  const y = (q) => JC.rules.yearsAnswer(q, p, now);
+  assert.equal(y('Do you have 2+ years of data scientist experience?'), 'Yes'); // ~3.9 years as Data Scientist
+  assert.equal(y('Do you have 3+ years of machine learning/statistical modeling data analysis tools and techniques, and parameters that affect their performance experience?'), 'Yes');
+  assert.equal(y('Do you have 5+ years of data scientist experience?'), null); // 6.9 years in total: not a clear No
+  assert.equal(y('Do you have at least 10 years of experience?'), 'No'); // under 7 years in all
+  assert.equal(y('Do you have 3+ years of experience in Rust?'), null);
+  assert.equal(y('Do you have experience applying theoretical models in an applied environment?'), null);
+});

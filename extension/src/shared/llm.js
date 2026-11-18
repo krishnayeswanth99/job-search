@@ -106,6 +106,8 @@
         } catch (_) {}
         if (res.ok) return readResponse(cfg, json);
         last = new Error(`${res.status} from ${new URL(url).host}: ${(json && json.error && (json.error.message || json.error)) || res.statusText}`.slice(0, 300));
+        if (res.status === 403 && /:11434/.test(url))
+          last = new Error('Ollama refused the extension (403). Allow it: run  launchctl setenv OLLAMA_ORIGINS "chrome-extension://*"  then quit and reopen Ollama (see docs/models.md)');
         if (res.status === 401 || res.status === 403 || res.status === 404 || res.status === 429) break; // not a format problem
         if (!schema) break;
       }

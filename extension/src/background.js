@@ -316,7 +316,7 @@ async function maybeContinue(tabId, r) {
   if (pending) {
     const a = await Promise.race([pending, new Promise((res) => setTimeout(() => res({ answered: 0, timeout: true }), 90000))]);
     if (a && a.answered) {
-      debugAdd(tabId, { type: 'extension-step', detail: { step: 'on-device AI answered questions on this page: read them, then click Continue yourself' } });
+      debugAdd(tabId, { type: 'extension-step', detail: { step: 'AI answered questions on this page: read them, then click Continue yourself' } });
       return;
     }
     const key = 'fill:' + tabId;
@@ -328,7 +328,7 @@ async function maybeContinue(tabId, r) {
   const fk = 'fill:' + tabId;
   const flags = (((await chrome.storage.session.get(fk).catch(() => ({})))[fk] || {}).flags) || {};
   if (Object.values(flags).includes('wrong')) {
-    debugAdd(tabId, { type: 'extension-step', detail: { step: 'on-device AI thinks an answer here may be wrong: check it, then click Continue yourself' } });
+    debugAdd(tabId, { type: 'extension-step', detail: { step: 'AI thinks an answer here may be wrong: check it, then click Continue yourself' } });
     return;
   }
   const blocking = (r.needsInput || []).filter((f) => f.required);
@@ -657,10 +657,10 @@ function aiCheck(tabId, review) {
       res = { ok: false, error: String(e.message || e) };
     }
     if (!res || !res.ok) {
-      debugAdd(tabId, { type: 'extension-step', detail: { step: 'on-device check skipped', reason: ((res && res.error) || 'no reply').slice(0, 200) } });
+      debugAdd(tabId, { type: 'extension-step', detail: { step: 'AI field check skipped', reason: ((res && res.error) || 'no reply').slice(0, 200) } });
       return;
     }
-    debugAdd(tabId, { type: 'extension-step', detail: { step: 'on-device check', checked: res.checked, ms: Date.now() - t0, disagreed: res.fixes.map((f) => `${f.label.slice(0, 60)}: ${f.from} -> ${f.to}`) } });
+    debugAdd(tabId, { type: 'extension-step', detail: { step: 'AI field check', checked: res.checked, ms: Date.now() - t0, disagreed: res.fixes.map((f) => `${f.label.slice(0, 60)}: ${f.from} -> ${f.to}`) } });
     if (!res.fixes.length) return;
     const byFrame = await runInFrames(tabId, 'reviewFix', { fixes: res.fixes, _origin: 'ai-check' }).catch(() => []);
     const out = merge('reviewFix', byFrame);
@@ -700,10 +700,10 @@ function aiVerify(tabId, items) {
       res = { ok: false, error: String(e.message || e) };
     }
     if (!res || !res.ok) {
-      debugAdd(tabId, { type: 'extension-step', detail: { step: 'on-device answer check skipped', reason: ((res && res.error) || 'no reply').slice(0, 200) } });
+      debugAdd(tabId, { type: 'extension-step', detail: { step: 'AI answer check skipped', reason: ((res && res.error) || 'no reply').slice(0, 200) } });
       return;
     }
-    debugAdd(tabId, { type: 'extension-step', detail: { step: `on-device AI checked ${res.checked} answer${res.checked === 1 ? '' : 's'}`, ms: Date.now() - t0, doubtful: res.flags.map((f) => `${f.label.slice(0, 60)}: ${f.verdict}`) } });
+    debugAdd(tabId, { type: 'extension-step', detail: { step: `AI checked ${res.checked} answer${res.checked === 1 ? '' : 's'}`, ms: Date.now() - t0, doubtful: res.flags.map((f) => `${f.label.slice(0, 60)}: ${f.verdict}`) } });
     if (!res.flags.length) return;
     await runInFrames(tabId, 'flagFields', { flags: res.flags, _origin: 'ai-check' }).catch(() => []);
     const key = 'fill:' + tabId;
@@ -734,11 +734,11 @@ async function aiAnswer(tabId, needsInput) {
     res = { ok: false, error: String(e.message || e) };
   }
   if (!res || !res.ok) {
-    debugAdd(tabId, { type: 'extension-step', detail: { step: 'on-device AI did not answer the open questions', reason: ((res && res.error) || 'no reply').slice(0, 200) } });
+    debugAdd(tabId, { type: 'extension-step', detail: { step: 'AI did not answer the open questions', reason: ((res && res.error) || 'no reply').slice(0, 200) } });
     return { answered: 0 };
   }
   const n = Object.keys(res.overrides || {}).length;
-  debugAdd(tabId, { type: 'extension-step', detail: { step: `on-device AI drafted ${n} of ${questions.length} open answer${questions.length === 1 ? '' : 's'}`, ms: Date.now() - t0, askMe: (res.askMe || []).slice(0, 8), problems: (res.problems || []).slice(0, 3) } });
+  debugAdd(tabId, { type: 'extension-step', detail: { step: `AI drafted ${n} of ${questions.length} open answer${questions.length === 1 ? '' : 's'}`, ms: Date.now() - t0, askMe: (res.askMe || []).slice(0, 8), problems: (res.problems || []).slice(0, 3) } });
   if (!n) return { answered: 0 };
   await runCommand(tabId, 'autofill', { overrides: res.overrides, overrideSource: 'ai', aiPass: true }, 'popup').catch(() => null);
   return { answered: n };

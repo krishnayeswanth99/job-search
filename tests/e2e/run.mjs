@@ -41,6 +41,7 @@ const ROUTES = {
   'https://careers.acme-robotics.example/jobs/data-scientist': fx('employer-apply-modal.html'),
   'https://careers.acme-robotics.example/apply/multi-step': fx('multi-step.html'),
   'https://jobs.gem.com/acme/test-job': fx('gem-form.html'),
+  'https://www.linkedin.com/jobs/search-results/?currentJobId=4483723475&keywords=data%20scientist': fx('linkedin-new-search.html'),
   'https://job-boards.greenhouse.io/acme/jobs/dropdowns': fx('misc-dropdowns.html'),
   'https://careers.acme-robotics.example/apply/ai-questions': fx('ai-questions.html'),
   'https://www.ziprecruiter.com/jobs/v2/test-1click': fx('ziprecruiter-1click.html'),
@@ -614,6 +615,22 @@ try {
     } finally {
       await ext.evaluate(async (s) => { await chrome.storage.local.remove('__testNanoReply'); await chrome.storage.local.set({ profile: s.profile, drafts: s.drafts || {} }); }, saved);
     }
+  });
+
+  await check("LinkedIn's newer search page: link-less job cards are all listed; the job pane is read", async () => {
+    const p = await open('https://www.linkedin.com/jobs/search-results/?currentJobId=4483723475&keywords=data%20scientist');
+    const r = await bridge(p, () => window.jobCopilot.extractJobs());
+    const ids = r.jobs.map((j) => j.jobId);
+    assert.deepEqual(ids, ['4483723475', '4191961576', '4448124115'], JSON.stringify(r.jobs));
+    const pt = r.jobs.find((j) => j.jobId === '4191961576');
+    assert.equal(pt.title, 'Data Scientist, Proprietary Research');
+    assert.equal(pt.company, 'Point72');
+    assert.equal(pt.url, 'https://www.linkedin.com/jobs/view/4191961576/');
+    assert.equal(r.jobs[2].easyApply, true);
+    const j = await bridge(p, () => window.jobCopilot.extractJob());
+    assert.equal(j.job.title, 'Data Scientist, Amazon Ads Marketing Decision Science');
+    assert.equal(j.job.company, 'Amazon');
+    assert.match(j.job.description, /3\+ years of machine learning/);
   });
 
   await check('bridge: fillField answers a custom question', async () => {

@@ -317,3 +317,13 @@ test('"Do you have N+ years of X experience?" is worked out from the work histor
   assert.equal(y('Do you have 3+ years of experience in Rust?'), null);
   assert.equal(y('Do you have experience applying theoretical models in an applied environment?'), null);
 });
+
+test('years questions: "ML" counts as machine learning; unanswered ones say what the history shows', () => {
+  const p = JC.normalizeProfile({ experience: [{ title: 'Data Scientist', company: 'Acme', start: '2022-01', current: true, description: '• Built ML models and statistical forecasts.' }] });
+  const now = new Date(2026, 10, 18);
+  assert.equal(JC.rules.yearsAnswer('Do you have 3+ years of machine learning/statistical modeling data analysis tools and techniques experience?', p, now), 'Yes');
+  const d = JC.rules.yearsDetail('Do you have 3+ years of Rust experience?', p, now);
+  assert.equal(d.answer, null);
+  assert.ok(d.total > 4 && d.years === 0);
+  assert.equal(JC.rules.yearsAnswer('Do you have 2+ years of AI experience?', JC.normalizeProfile({ experience: [{ title: 'Engineer', start: '2020-01', end: '2021-01', description: 'Email marketing' }] }), now), 'No');
+});

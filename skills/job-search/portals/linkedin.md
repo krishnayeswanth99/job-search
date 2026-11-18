@@ -54,3 +54,11 @@ return, LinkedIn may ask "Did you apply?" (see `job-apply/references/boards-and-
 
 - LinkedIn is strict about automation. Keep runs small: 3 pages or fewer, 25 detail views or fewer, with pauses.
 - Never send connection requests or messages, and never "follow" companies, unless the user asks.
+
+## Newer search layout (`/jobs/search-results/`)
+Cards are `div[role="button"][componentkey="job-card-component-ref-<jobId>"]` with generated class names and no
+links; `extractJobs()` reads the id from `componentkey` and builds `https://www.linkedin.com/jobs/view/<id>/`. Card
+text is `<p>` elements in order: title (minus "(Verified job)"), company, location, then pay/benefits. On job pages
+in this layout the title and company come from the tab title ("Title | Company | LinkedIn") and the description from
+the section under "About the job".
+

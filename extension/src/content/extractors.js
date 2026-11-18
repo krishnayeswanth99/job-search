@@ -59,8 +59,29 @@
       return 'unknown';
     },
     listings() {
+      // LinkedIn's newer search page (/jobs/search-results/): clickable cards with generated class
+      // names and no links; the job id is in componentkey="job-card-component-ref-<id>".
+      const fresh = qsa('[componentkey^="job-card-component-ref-"]').filter((c) => !(c.parentElement && c.parentElement.closest('[componentkey^="job-card-component-ref-"]')));
+      const freshJobs = cardsToJobs(fresh, (c) => {
+        const id = (c.getAttribute('componentkey').match(/(\d{6,})/) || [])[1] || '';
+        const ps = [];
+        for (const p of c.querySelectorAll('p')) {
+          const t = text(p).replace(/\s*\(verified job\)\s*/i, '').trim();
+          if (t && !ps.includes(t)) ps.push(t);
+        }
+        return {
+          jobId: id,
+          title: ps[0] || '',
+          company: ps[1] || '',
+          location: ps[2] || '',
+          salary: ps.find((t) => /\$|€|£|₹|\/yr|\/hr|per (year|hour)/i.test(t)) || '',
+          easyApply: /easy apply/i.test(text(c)),
+          url: id ? `https://www.linkedin.com/jobs/view/${id}/` : '',
+          selector: c.getAttribute('componentkey') ? `[componentkey="${c.getAttribute('componentkey')}"]` : undefined,
+        };
+      });
       const cards = qsa('li[data-occludable-job-id], div.job-card-container, li.jobs-search-results__list-item, ul.jobs-search__results-list > li, div.base-card, [data-job-id]');
-      return cardsToJobs(cards, (c) => {
+      return freshJobs.concat(cardsToJobs(cards, (c) => {
         const id =
           c.getAttribute('data-occludable-job-id') ||
           c.getAttribute('data-job-id') ||
@@ -79,17 +100,30 @@
           easyApply: /easy apply/i.test(text(c)),
           url: id ? `https://www.linkedin.com/jobs/view/${id}/` : absUrl(pickAttr(c, ['a[href*="/jobs/view/"]'], 'href')),
         };
-      });
+      }));
     },
     job() {
       const id = (location.href.match(/currentJobId=(\d+)/) || location.pathname.match(/\/jobs\/view\/(?:[^/]*-)?(\d+)/) || [])[1] || '';
-      const title = pick(document, ['.job-details-jobs-unified-top-card__job-title', '.jobs-unified-top-card__job-title', '.t-24.job-details-jobs-unified-top-card__job-title', 'h1.top-card-layout__title', '.jobs-details h1', 'main h1']);
+      let title = pick(document, ['.job-details-jobs-unified-top-card__job-title', '.jobs-unified-top-card__job-title', '.t-24.job-details-jobs-unified-top-card__job-title', 'h1.top-card-layout__title', '.jobs-details h1', 'main h1']);
+      // Newer layout (generated class names): "Title | Company | LinkedIn" in the tab title, and the
+      // description under an "About the job" heading.
+      const tparts = document.title.split(' | ').map((s) => s.trim());
+      if (!title && tparts.length >= 3 && /linkedin/i.test(tparts[tparts.length - 1])) title = tparts[0].replace(/^\(\d+\)\s*/, '');
       if (!title) return null;
-      const descEl = document.querySelector('#job-details, .jobs-description__content, .jobs-box__html-content, .show-more-less-html__markup, .description__text');
+      let descEl = document.querySelector('#job-details, .jobs-description__content, .jobs-box__html-content, .show-more-less-html__markup, .description__text');
+      if (!descEl) {
+        const head = [...document.querySelectorAll('h1, h2, h3, h4, span, p, div')].find((e) => e.children.length <= 1 && /^about the job$/i.test(text(e)));
+        for (let a = head && head.parentElement, up = 0; a && up < 5; a = a.parentElement, up++) {
+          if (text(a).length > 300) {
+            descEl = a;
+            break;
+          }
+        }
+      }
       return job({
         jobId: id,
         title,
-        company: pick(document, ['.job-details-jobs-unified-top-card__company-name', '.jobs-unified-top-card__company-name', '.topcard__org-name-link', '.top-card-layout__second-subline a']),
+        company: pick(document, ['.job-details-jobs-unified-top-card__company-name', '.jobs-unified-top-card__company-name', '.topcard__org-name-link', '.top-card-layout__second-subline a']) || (tparts.length >= 3 ? tparts[1] : ''),
         location: pick(document, ['.job-details-jobs-unified-top-card__primary-description-container .tvm__text', '.job-details-jobs-unified-top-card__bullet', '.jobs-unified-top-card__bullet', '.topcard__flavor--bullet']),
         easyApply: !!findButton(/^easy apply/i),
         url: id ? `https://www.linkedin.com/jobs/view/${id}/` : location.href,

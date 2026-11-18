@@ -11,7 +11,7 @@
   if (JC.applied) return;
 
   const DONE_TEXT = /(thank(s| you) for (applying|your application|submitting|your interest[^.]{0,40}we('ve| have) received)|application (has been |was |is )?(successfully )?(submitted|received|sent|complete)|we('ve| have) (successfully )?received your application|your application (is|was|has been) (successfully )?(submitted|received|sent|complete)|successfully (applied|submitted)|you('ve| have) (successfully )?applied|application submitted)/i;
-  const DONE_URL = /\/(confirmation|confirm|thank[-_]?you|thanks|application[-_]?(confirmation|submitted|complete|success)|success)(\/|\?|#|$)|[?&](submitted|success|applied|show_apply_submit_banner|apply_submitted)=(1|true)/i;
+  const DONE_URL = /\/(confirmation|confirm|thank[-_]?you|thanks|application[-_]?(confirmation|submitted|complete|success)|success)(\/|\?|#|$)|[?&](submitted|success|applied|show_apply_submit_banner|apply_submitted)=(1|true)|[?&](result|status)=(success|submitted|complete)\b/i;
   const SUBMIT_RE = /^(submit|submit application|submit your application|send application|send|finish|complete application|apply now|submit & apply|confirm and submit)\b/i;
   const KEY = 'jcSubmitAt';
 

@@ -342,7 +342,26 @@
    * bullets or details mention it add up to N years; 'No' when all your work history together is
    * under N years; otherwise null (left for the AI or you). Internships count like other jobs.
    */
+  // Same thing, different words: "ML" counts as "machine learning".
+  const SYNONYMS = [
+    ['machine learning', 'ml', 'machine-learning'],
+    ['artificial intelligence', 'ai'],
+    ['natural language processing', 'nlp'],
+    ['deep learning', 'neural network', 'dl'],
+    ['computer vision', 'cv', 'image recognition'],
+    ['data scientist', 'data science'],
+    ['statistical modeling', 'statistical modelling', 'statistics', 'statistical', 'econometrics'],
+    ['data analysis', 'data analytics', 'analytics', 'data analyst'],
+    ['software engineering', 'software engineer', 'software development', 'software developer'],
+  ];
+
   function yearsAnswer(label, profile, now) {
+    const d = yearsDetail(label, profile, now);
+    return d ? d.answer : null;
+  }
+
+  /** The numbers behind yearsAnswer: { n, terms, years, total, answer } or null if not a years question. */
+  function yearsDetail(label, profile, now) {
     const q = String(label || '').toLowerCase();
     const m = q.match(/(\d+(?:\.\d+)?|one|two|three|four|five|six|seven|eight|nine|ten)\s*\+?\s*(?:or more |plus |\(\d+\)\s*)?years?/) || q.match(/(?:at least|minimum of|more than|over)\s+(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+years?/);
     if (!m || !/\b(do|have|are|did|would)\b/.test(q)) return null;
@@ -359,18 +378,24 @@
       .split(/\/|,|\bor\b|\band\b|\(|\)/)
       .map((t) => t.replace(/[^a-z0-9+#. -]/g, ' ').replace(/\s+/g, ' ').trim().split(' ').slice(0, 3).join(' '))
       .filter((t) => t.length >= 2 && !/^(the|a|an|in|of|with|tools?|techniques?|role|roles|position)$/.test(t));
-    if (!terms.length) return totalYears >= n ? 'Yes' : jobs.length ? 'No' : null;
+    if (!terms.length) return { n, terms, years: totalYears, total: totalYears, answer: totalYears >= n ? 'Yes' : jobs.length ? 'No' : null };
     const stem = (w) => w.replace(/(ists?|ists|ing|ics|ic|al|s)$/, '');
-    const mentions = (text, t) => {
-      if (text.includes(t)) return true;
-      const words = t.split(' ').map(stem).filter((w) => w.length >= 3);
-      return words.length > 0 && words.every((w) => text.includes(w));
+    const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const alts = (t) => {
+      const out = [t];
+      for (const g of SYNONYMS) if (g.some((x) => t === x || t.startsWith(x + ' ') || t.includes(x))) out.push(...g);
+      return [...new Set(out)];
     };
+    const mentions = (text, t) =>
+      alts(t).some((a) => {
+        if (a.length <= 3) return new RegExp('(^|[^a-z])' + esc(a) + '($|[^a-z])').test(text); // "ml", "ai", "nlp": whole words
+        if (text.includes(a)) return true;
+        const words = a.split(' ').map(stem).filter((w) => w.length >= 3);
+        return words.length > 1 && words.every((w) => text.includes(w));
+      });
     const relevant = jobs.filter((j) => terms.some((t) => mentions(j.text, t)));
     const years = mergedMonths(relevant.map((j) => j.span)) / 12;
-    if (years >= n) return 'Yes';
-    if (totalYears < n) return 'No';
-    return null;
+    return { n, terms, years, total: totalYears, answer: years >= n ? 'Yes' : totalYears < n ? 'No' : null };
   }
 
   /**
@@ -813,7 +838,7 @@
     }
   }
 
-  JC.rules = { yearsAnswer, mergedMonths, parseLanguages, levelCandidates, degreeCandidates, formerEmployerOf, formerEmployerAnswer, choosePhoneCode, dialCode, evidenceAnswer, experienceTerms, chooseResumeSource, sameValue, timeZoneCandidates, classifyField, valueForKey, chooseOption, matchSavedAnswer, mergeAnswers, isCompanySpecific, looksSensitive, NEVER_REMEMBER, humanize, norm, payPeriod, amounts, parseAmount, toNumberValue, emptyReason, LONG_LABEL };
+  JC.rules = { yearsAnswer, yearsDetail, mergedMonths, parseLanguages, levelCandidates, degreeCandidates, formerEmployerOf, formerEmployerAnswer, choosePhoneCode, dialCode, evidenceAnswer, experienceTerms, chooseResumeSource, sameValue, timeZoneCandidates, classifyField, valueForKey, chooseOption, matchSavedAnswer, mergeAnswers, isCompanySpecific, looksSensitive, NEVER_REMEMBER, humanize, norm, payPeriod, amounts, parseAmount, toNumberValue, emptyReason, LONG_LABEL };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = JC;
 })(typeof globalThis !== 'undefined' ? globalThis : self);

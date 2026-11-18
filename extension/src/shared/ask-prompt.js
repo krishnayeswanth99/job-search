@@ -21,6 +21,17 @@
       .map((f) => ({ id: f.ref, label: f.label.trim().slice(0, 400), type: f.type, required: !!f.required, options: (f.options || []).filter(Boolean).slice(0, 40), maxLength: f.maxLength || undefined }));
   }
 
+  // Never answered automatically (you can still ask Claude / ChatGPT, or the on-device AI by hand).
+  const NOT_AUTOMATIC = /\b(signature|sign (your|here)|initials|certify|attest|declare|criminal|convict|felony|arrest|disabilit|veteran|gender|race|ethnic|religio|sexual|pronoun|salary|compensation|pay (expectation|range|rate)|desired pay|ctc|ssn|social security|national (id|insurance)|passport|date of birth|birth ?date|\bdob\b|bank|account number|password)\b/i;
+
+  /** Questions the on-device AI may answer by itself after autofill (a subset of questionsFrom). */
+  function autoQuestionsFrom(fields) {
+    return questionsFrom(fields).filter((q) => {
+      const f = (fields || []).find((x) => x.ref === q.id) || {};
+      return !NOT_AUTOMATIC.test(q.label) && !['desiredPay', 'currentPay', 'desiredSalary', 'desiredHourlyRate'].includes(f.profileKey) && !/^consent/.test(f.reason || '');
+    });
+  }
+
   function clip(s, n) {
     s = String(s || '').trim();
     return s.length > n ? s.slice(0, n) + ' …[truncated]' : s;
@@ -213,7 +224,7 @@
     return out;
   }
 
-  JC.ask = { relevantResume, questionsFrom, buildPrompt, parseReply, profileText, buildCompactPrompt, schemaFor, batches };
+  JC.ask = { autoQuestionsFrom, relevantResume, questionsFrom, buildPrompt, parseReply, profileText, buildCompactPrompt, schemaFor, batches };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = JC;
 })(typeof globalThis !== 'undefined' ? globalThis : self);

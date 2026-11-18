@@ -43,7 +43,63 @@ async function check(review, profile, testReply) {
   }
 }
 
+/** Draft answers to the questions autofill left open, a few at a time, from the profile and resume only. */
+async function answer({ questions, job, profile, resumeText, testReply }) {
+  const A = JC.ask;
+  const s = await getSession(testReply);
+  const overrides = {};
+  const askMe = [];
+  const problems = [];
+  // End-to-end tests: "BY_LABEL:{\"part of a label\": \"answer\"}" answers by label instead of a model.
+  const byLabel = typeof testReply === 'string' && testReply.startsWith('BY_LABEL:') ? JSON.parse(testReply.slice(9)) : null;
+  for (const group of A.batches(questions, 3)) {
+    if (byLabel) {
+      const answers = {};
+      for (const q of group) answers[q.id] = Object.entries(byLabel).find(([k]) => q.label.toLowerCase().includes(k.toLowerCase()))?.[1] || 'ASK_ME';
+      const parsed = A.parseReply(JSON.stringify({ answers }), group);
+      Object.assign(overrides, parsed.overrides);
+      askMe.push(...parsed.askMe);
+      continue;
+    }
+    const prompt = A.buildCompactPrompt({ questions: group, job, profile, resumeText });
+    const c = s.clone ? await s.clone() : s;
+    let reply = null;
+    try {
+      reply = await c.prompt(prompt, { responseConstraint: A.schemaFor(group) });
+    } catch (e) {
+      try {
+        reply = await c.prompt(prompt + '\n\nReply with only the JSON object {"answers": {"<id>": "<answer>"}}.');
+      } catch (e2) {
+        problems.push(String((e2 && e2.message) || e2).slice(0, 120));
+      }
+    } finally {
+      if (c !== s && c.destroy) c.destroy();
+    }
+    if (reply === null) continue;
+    try {
+      const parsed = A.parseReply(reply, group);
+      for (const q of group) {
+        const v = parsed.overrides[q.id];
+        if (!v) continue;
+        if (q.options && q.options.length && !q.options.includes(v)) continue; // choices: real options only
+        if (q.maxLength && v.length > q.maxLength) continue;
+        overrides[q.id] = v;
+      }
+      askMe.push(...parsed.askMe);
+    } catch (_) {
+      problems.push('reply was not JSON');
+    }
+  }
+  return { ok: true, overrides, askMe, problems };
+}
+
 chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
+  if (msg && msg.target === 'offscreen' && msg.type === 'jc:nano-answer') {
+    answer(msg)
+      .then(reply)
+      .catch((e) => reply({ ok: false, error: String((e && e.message) || e) }));
+    return true;
+  }
   if (!msg || msg.target !== 'offscreen' || msg.type !== 'jc:nano-check') return;
   check(msg.review, msg.profile, msg.testReply)
     .then(reply)

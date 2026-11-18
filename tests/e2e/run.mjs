@@ -39,6 +39,7 @@ const ROUTES = {
   'https://acme.wd5.myworkdayjobs.com/en-US/careers/job/New-York-NY/ML-Engineer_123/apply/questions': fx('workday-prompt.html'),
   'https://careers.acme-robotics.example/jobs/data-scientist': fx('employer-apply-modal.html'),
   'https://careers.acme-robotics.example/apply/multi-step': fx('multi-step.html'),
+  'https://careers.acme-robotics.example/apply/ai-questions': fx('ai-questions.html'),
   'https://www.ziprecruiter.com/jobs/v2/test-1click': fx('ziprecruiter-1click.html'),
   'https://acme.wd5.myworkdayjobs.com/en-US/careers/job/New-York-NY/ML-Engineer_123/apply/myExperience': fx('workday-experience.html'),
   'https://careers.acme-robotics.example/jobs/data-scientist?v=2': fx('employer-apply-modal.html'),
@@ -460,6 +461,28 @@ try {
     assert.deepEqual(v, { spon: 'No', li: 'https://www.linkedin.com/in/ada', search: '', searchFlag: false, exit: false });
     await p.waitForTimeout(7000);
     assert.equal(await p.evaluate(() => window.__submitted), false);
+  });
+
+  await check('on-device AI answers open questions by itself (never salary), and the page then waits for you', async () => {
+    await ext.evaluate(() => chrome.storage.local.set({ __testNanoReply: 'BY_LABEL:' + JSON.stringify({ commuting: 'Yes, I can commute to San Mateo.', salary: '$200,000' }) }));
+    try {
+      const url = 'https://careers.acme-robotics.example/apply/ai-questions';
+      const p = await open(url);
+      const tid = await ext.evaluate(async (url) => {
+        const [t] = await chrome.tabs.query({ url });
+        await chrome.storage.session.set({ ['applying:' + t.id]: { at: Date.now(), key: 'test-ai', title: 'Engineer' } });
+        chrome.tabs.reload(t.id);
+        return t.id;
+      }, url);
+      await p.waitForFunction(() => document.getElementById('cm') && document.getElementById('cm').value.includes('San Mateo'), null, { timeout: 30000 });
+      assert.notEqual(await p.evaluate(() => sal.value), '$200,000'); // salary: your profile's value or you, never the AI
+      await p.waitForTimeout(6000);
+      assert.equal(await p.evaluate(() => window.__next), false);
+      const fill = await ext.evaluate(async (k) => (await chrome.storage.session.get(k))[k], 'fill:' + tid);
+      assert.ok(fill.filled.some((f) => f.source === 'ai' && /San Mateo/.test(f.value)), JSON.stringify(fill.filled));
+    } finally {
+      await ext.evaluate(() => chrome.storage.local.remove('__testNanoReply'));
+    }
   });
 
   await check('bridge: fillField answers a custom question', async () => {

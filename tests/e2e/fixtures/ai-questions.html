@@ -1,0 +1,15 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Apply</title></head>
+<body>
+<form>
+  <label for="fn">First Name *</label><input id="fn" name="firstName" required>
+  <label for="em">Email *</label><input id="em" type="email" name="email" required>
+  <label for="cm">Are you comfortable commuting to our San Mateo office? *</label><textarea id="cm" name="q_commute" required></textarea>
+  <label for="sal">What are your salary expectations? *</label><input id="sal" name="q_salary" required>
+</form>
+<button type="button" id="next">Continue</button>
+<script>
+  window.__next = false;
+  document.getElementById('next').addEventListener('click', () => (window.__next = true));
+</script>
+</body></html>

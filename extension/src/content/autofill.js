@@ -93,6 +93,7 @@
       : key === 'timeZone'
         ? R.timeZoneCandidates(value, new Date().getTimezoneOffset())
         : [value];
+  let overrideSource = null; // 'ai' when the on-device AI's answers are filled
   let userCountry = ''; // set per autofill run: picks between countries sharing a dialing code
   function chooseFrom(opts, desiredList, key) {
     if (key === 'phoneCountryCode') return R.choosePhoneCode(opts, desiredList[0], userCountry);
@@ -147,7 +148,7 @@
   function resolve(f, profile, overrides, resumeText) {
     if (overrides) {
       const o = overrides[f.ref] ?? overrides[f.label] ?? (f.key && overrides[f.key]);
-      if (o !== undefined && o !== null && o !== '') return { value: String(o), source: 'override' };
+      if (o !== undefined && o !== null && o !== '') return { value: String(o), source: overrideSource || 'override' };
     }
     const saved = R.matchSavedAnswer(f.label, profile.answers, JC.memory ? JC.memory.context() : null);
     if (saved) return { value: String(saved), source: 'saved-answer' };
@@ -177,6 +178,7 @@
   async function autofill(opts) {
     const profile = JC.normalizeProfile(opts.profile);
     userCountry = (profile.personal || {}).country || '';
+    overrideSource = opts.overrideSource === 'ai' ? 'ai' : null;
     const profileWins = opts.profileWins !== false;
     const combos = [];
     const files = opts.files || {};

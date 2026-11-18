@@ -5,7 +5,7 @@
  * - Fetches local files for attachFile (localhost only).
  * - Maintains the toolbar badge.
  */
-importScripts('shared/config.js', 'shared/profile-schema.js', 'shared/field-rules.js');
+importScripts('shared/config.js', 'shared/profile-schema.js', 'shared/field-rules.js', 'shared/ask-prompt.js');
 
 const FRAME_CMDS = new Set(['startApplication', 'nextStep', 'ping', 'detect', 'extractJobs', 'loadMoreJobs', 'resolveApplyLinks', 'stopResolve', 'extractJob', 'scanForm', 'autofill', 'fillField', 'attachFile', 'followApply', 'reviewFix', 'showField']);
 
@@ -311,6 +311,17 @@ async function maybeContinue(tabId, r) {
   if (portal && (portal.aggregator || ['linkedin', 'indeed', 'glassdoor', 'wellfound'].includes(portal.id))) {
     debugAdd(tabId, { type: 'extension-step', detail: { step: `${portal.name}'s own application form: filled, Continue / Submit left to you` } });
     return;
+  }
+  const pending = aiAnswerPending.get(tabId);
+  if (pending) {
+    const a = await Promise.race([pending, new Promise((res) => setTimeout(() => res({ answered: 0, timeout: true }), 90000))]);
+    if (a && a.answered) {
+      debugAdd(tabId, { type: 'extension-step', detail: { step: 'on-device AI answered questions on this page: read them, then click Continue yourself' } });
+      return;
+    }
+    const key = 'fill:' + tabId;
+    const latest = (await chrome.storage.session.get(key).catch(() => ({})))[key];
+    if (latest) r = Object.assign({}, r, { needsInput: latest.needsInput });
   }
   const blocking = (r.needsInput || []).filter((f) => f.required);
   if (blocking.length) {
@@ -619,6 +630,35 @@ function aiCheck(tabId, review) {
   return aiQueue;
 }
 
+// Unanswered questions after autofill: drafted by the on-device AI from the profile and resume only.
+// Sensitive ones (EEO, signatures, salary, criminal history, IDs) are never answered automatically.
+const aiAnswerPending = new Map(); // tabId -> Promise<{ answered }>
+async function aiAnswer(tabId, needsInput) {
+  await aiQueue.catch(() => {}); // after the on-device check
+  const { settings, profile, resumeText, __testNanoReply } = await chrome.storage.local.get(['settings', 'profile', 'resumeText', '__testNanoReply']);
+  if ((settings && settings.aiAnswer === false) || !profile) return { answered: 0 };
+  const questions = self.JC.ask.autoQuestionsFrom(needsInput).slice(0, 12);
+  if (!questions.length) return { answered: 0 };
+  const t0 = Date.now();
+  let res;
+  try {
+    const job = await runCommand(tabId, 'extractJob', {}, 'popup').catch(() => null);
+    await ensureOffscreen();
+    res = await chrome.runtime.sendMessage({ target: 'offscreen', type: 'jc:nano-answer', questions, job: job && job.job ? { title: job.job.title, company: job.job.company, description: job.job.description } : null, profile: self.JC.normalizeProfile(profile), resumeText, testReply: __testNanoReply });
+  } catch (e) {
+    res = { ok: false, error: String(e.message || e) };
+  }
+  if (!res || !res.ok) {
+    debugAdd(tabId, { type: 'extension-step', detail: { step: 'on-device AI did not answer the open questions', reason: ((res && res.error) || 'no reply').slice(0, 200) } });
+    return { answered: 0 };
+  }
+  const n = Object.keys(res.overrides || {}).length;
+  debugAdd(tabId, { type: 'extension-step', detail: { step: `on-device AI drafted ${n} of ${questions.length} open answer${questions.length === 1 ? '' : 's'}`, ms: Date.now() - t0, askMe: (res.askMe || []).slice(0, 8), problems: (res.problems || []).slice(0, 3) } });
+  if (!n) return { answered: 0 };
+  await runCommand(tabId, 'autofill', { overrides: res.overrides, overrideSource: 'ai', aiPass: true }, 'popup').catch(() => null);
+  return { answered: n };
+}
+
 async function runCommand(tabId, cmd, payload, origin) {
   if (!FRAME_CMDS.has(cmd) || cmd === 'reviewFix') return { ok: false, error: `unknown command: ${cmd}` };
   // Never trust an origin claimed by the page; it is set here from the sender.
@@ -646,6 +686,8 @@ async function runCommand(tabId, cmd, payload, origin) {
     debugAdd(tabId, { type: 'autofill', url: tab.url, from: origin, ok: out.ok, error: out.error, filled: out.filledCount, needsInput: (out.needsInput || []).map((f) => `${(f.label || '').slice(0, 80)} (${f.reason})`).slice(0, 30), corrected: (out.corrected || []).map((c) => c.label), parseWaitMs: out.parseWaitMs });
     if (out.review && out.review.length) aiCheck(tabId, out.review); // runs on its own, after the reply
     delete out.review;
+    // Questions left open: the on-device AI drafts answers by itself (not for its own pass).
+    if (!payload.aiPass && out.ok && origin !== 'bridge') aiAnswerPending.set(tabId, aiAnswer(tabId, out.needsInput || []));
     // The side panel shows what was filled with what (values stay inside the extension).
     await chrome.storage.session
       .set({

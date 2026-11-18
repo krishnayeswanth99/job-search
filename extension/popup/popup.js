@@ -89,7 +89,8 @@ const SOURCE_TAG = {
   profile: ['profile', 'profile'],
   resume: ['resume', 'resume'],
   'saved-answer': ['saved answer', 'profile'],
-  override: ['AI / pasted', 'ai'],
+  override: ['pasted / AI', 'ai'],
+  ai: ['on-device AI', 'ai'],
   coverLetter: ['file', 'resume'],
 };
 async function renderLive() {

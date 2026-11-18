@@ -57,3 +57,16 @@ test('on-device prompt keeps the resume lines that match the questions', () => {
   assert.ok(out.startsWith('Ada Lovelace'));
   assert.ok(out.includes('Java at Acme'));
 });
+
+test('automatic on-device answers never cover sensitive questions', () => {
+  const f = (ref, label, extra) => Object.assign({ ref, label, type: 'textarea', required: true, hasValue: false }, extra || {});
+  const qs = JC.ask.autoQuestionsFrom([
+    f('a', 'Are you comfortable commuting to our San Mateo office?'),
+    f('b', 'Please type your full legal name as your electronic signature'),
+    f('c', 'What are your salary expectations?', { profileKey: 'desiredPay' }),
+    f('d', 'Have you ever been convicted of a felony?'),
+    f('e', 'Gender', { profileKey: 'gender', type: 'select' }),
+    f('g', 'Why do you want to work here?'),
+  ]);
+  assert.deepEqual(qs.map((q) => q.id), ['a', 'g']);
+});

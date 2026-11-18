@@ -209,8 +209,12 @@
       fields = JC.fields.scan();
     }
 
+    // Work experience / education blocks are filled per entry by JC.sections (below).
+    const hs = JC.sections ? JC.sections.headings() : [];
+    const inSection = (f) => JC.sections && f.el && f.type !== 'file' && !!JC.sections.kindOf(f.el, hs);
     for (const f of fields) {
       if (f.type === 'file' && fileDone.has(f.ref)) continue;
+      if (inSection(f)) continue;
       const d = JC.fields.describe(f);
       try {
         if (f.key === 'consent') {
@@ -310,6 +314,18 @@
             suggested: r.value,
           })
         );
+    }
+    // Repeatable sections: Add entries and fill them from the profile's work history and schools.
+    if (JC.sections && opts.sections !== false) {
+      try {
+        const sec = await JC.sections.fill(profile);
+        const done = new Set(sec.filled.map((x) => x.selector));
+        for (const x of sec.filled) filled.push({ label: `${x.section}${x.entry ? ' ' + x.entry : ''}: ${x.label}${x.added ? ' (' + x.added.join(', ') + ')' : ''}`, selector: x.selector, source: 'profile', profileKey: x.section });
+        for (let k = needsInput.length - 1; k >= 0; k--) if (done.has(needsInput[k].selector)) needsInput.splice(k, 1);
+        needsInput.push(...sec.needsInput);
+      } catch (e) {
+        needsInput.push({ label: 'Work experience / education', reason: 'error: ' + e.message });
+      }
     }
     // Choosing "upload a resume" (Taleo, SuccessFactors…) reveals a follow-up choice and then the
     // file box: answer those as they appear, up to three rounds.
@@ -700,5 +716,5 @@
     return { ok: true };
   }
 
-  JC.autofill = { autofill, fillOne, attachFile, setValue, applyReview };
+  JC.autofill = { autofill, fillOne, attachFile, setValue, setText, fillSelect, fillCombobox, applyReview };
 })(typeof globalThis !== 'undefined' ? globalThis : self);

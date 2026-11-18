@@ -290,12 +290,36 @@ function scheduleAutofill(tabId, openerTabId, pageKey) {
     const r = await runCommand(tabId, 'autofill', {}, 'popup').catch((e) => ({ ok: false, error: String(e) }));
     debugAdd(tabId, { type: 'extension-step', detail: { step: 'auto-filled application page', page: pageKey || tab.url, filled: r && r.filledCount, needsInput: r && r.needsInput && r.needsInput.length, error: r && r.error } });
     if (openerTabId) recAdd(openerTabId, { type: 'extension-step', detail: { step: 'autofilled employer form', tabId, filled: r && r.filledCount, needsInput: r && r.needsInput && r.needsInput.length, error: r && r.error } });
+    if (r && r.ok) await maybeContinue(tabId, r);
     if (r && r.ok) {
       await chrome.action.setBadgeText({ tabId, text: 'FILL' }).catch(() => {});
       await chrome.action.setBadgeBackgroundColor({ tabId, color: '#16a34a' }).catch(() => {});
     }
   };
   autofillPending.set(tabId, setTimeout(() => attempt(0), 1500));
+}
+
+// Multi-page applications: after a page is filled with nothing required left for you, click Next /
+// Continue / Save and Continue. Never Submit: on the last page the submit button is outlined for you.
+const advanced = new Map(); // tabId -> pages advanced (a cap against loops)
+async function maybeContinue(tabId, r) {
+  const { settings } = await chrome.storage.local.get('settings');
+  if (settings && settings.autoNext === false) return;
+  const blocking = (r.needsInput || []).filter((f) => f.required);
+  if (blocking.length) {
+    debugAdd(tabId, { type: 'extension-step', detail: { step: 'waiting for you before Save and Continue', required: blocking.map((f) => (f.label || '').slice(0, 60)).slice(0, 10) } });
+    return;
+  }
+  if ((advanced.get(tabId) || 0) >= 15) return;
+  // Let the on-device check finish, and give you a moment to see the page.
+  await Promise.race([aiQueue, new Promise((res) => setTimeout(res, 15000))]);
+  await new Promise((res) => setTimeout(res, 2500));
+  const n = await runCommand(tabId, 'nextStep', {}, 'popup').catch((e) => ({ ok: false, reason: String(e) }));
+  if (n && n.ok && n.clicked) advanced.set(tabId, (advanced.get(tabId) || 0) + 1);
+  debugAdd(tabId, {
+    type: 'extension-step',
+    detail: n && n.ok ? { step: `clicked "${n.clicked}"`, siteErrors: n.errors && n.errors.length ? n.errors : undefined } : { step: n && n.submit ? `last page: review it and click "${n.submit}" yourself` : 'no Next / Continue button found', reason: n && n.reason },
+  });
 }
 
 // Application tabs (opened from a job board): autofill each new page or step as it loads.

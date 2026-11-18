@@ -73,3 +73,15 @@ test('docx text extraction feeds the same parser', async () => {
   assert.equal(v['work.currentCompany'], 'Stripe');
   assert.equal(v['education.degree'], 'B.S.');
 });
+
+test('work history and schools come out as full lists, newest first', () => {
+  const r = JC.resume.parse(readFileSync(path.join(dir, "classic-us.txt"), 'utf8'), { now: new Date(2026, 10, 18) });
+  const [a, b, c] = r.lists.experience;
+  assert.deepEqual([a.title, a.company, a.location, a.start, a.end, a.current], ['Senior Software Engineer', 'Stripe', 'San Francisco, CA', '2021-03', '', true]);
+  assert.match(a.description, /ledger service/);
+  assert.ok(!/Dropbox/.test(a.description));
+  assert.deepEqual([b.company, b.start, b.end, b.current], ['Dropbox', '2017-06', '2021-02', false]);
+  assert.equal(c.title, 'Software Engineering Intern');
+  assert.equal(r.lists.educationHistory[0].school, 'University of California, Berkeley');
+  assert.equal(r.lists.educationHistory[0].fieldOfStudy, 'Computer Science');
+});

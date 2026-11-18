@@ -51,7 +51,72 @@ function renderProfile() {
   $('howDidYouHear').value = profile.howDidYouHear || '';
   $('summary').value = profile.summary || '';
   renderAnswers();
+  renderHistory();
 }
+
+// ------------------------------------------- work experience & education lists
+const EXP_FIELDS = [
+  ['title', 'Job title'],
+  ['company', 'Company'],
+  ['location', 'Location'],
+  ['start', 'Start (YYYY-MM)'],
+  ['end', 'End (YYYY-MM, empty if current)'],
+  ['current', 'I currently work here', 'checkbox'],
+  ['description', 'Description', 'textarea'],
+];
+const EDU_FIELDS = [
+  ['school', 'School'],
+  ['degree', 'Degree'],
+  ['fieldOfStudy', 'Field of study'],
+  ['start', 'Start (YYYY-MM)'],
+  ['end', 'End (YYYY-MM)'],
+  ['gpa', 'GPA'],
+];
+function renderList(boxId, list, fields, empty) {
+  const box = $(boxId);
+  box.replaceChildren();
+  if (!list.length) box.append(el('p', { class: 'muted' }, empty));
+  list.forEach((item, i) => {
+    const grid = el('div', { class: 'grid history-entry' });
+    for (const [key, label, type] of fields) {
+      let input;
+      if (type === 'checkbox') {
+        input = el('input', { type: 'checkbox' });
+        input.checked = !!item[key];
+        input.addEventListener('change', () => {
+          item[key] = input.checked;
+          if (input.checked && key === 'current') item.end = '';
+          scheduleSave();
+        });
+      } else {
+        input = el(type === 'textarea' ? 'textarea' : 'input', type === 'textarea' ? { rows: 3 } : { value: item[key] || '' });
+        if (type === 'textarea') input.value = item[key] || '';
+        input.addEventListener('input', () => {
+          item[key] = input.value;
+          scheduleSave();
+        });
+      }
+      grid.append(el('label', type === 'textarea' ? { class: 'wide' } : {}, label, input));
+    }
+    const up = el('button', { class: 'small', type: 'button', onclick: () => { if (i > 0) { [list[i - 1], list[i]] = [list[i], list[i - 1]]; scheduleSave(); renderHistory(); } } }, 'Move up');
+    const del = el('button', { class: 'small', type: 'button', onclick: () => { list.splice(i, 1); scheduleSave(); renderHistory(); } }, 'Remove');
+    box.append(grid, el('div', { class: 'buttons' }, up, del));
+  });
+}
+function renderHistory() {
+  renderList('experience-list', profile.experience, EXP_FIELDS, 'No jobs yet: upload your resume above, or add them here.');
+  renderList('education-list', profile.educationHistory, EDU_FIELDS, 'No schools yet: upload your resume above, or add them here.');
+}
+$('add-experience').addEventListener('click', () => {
+  profile.experience.push({ title: '', company: '', location: '', start: '', end: '', current: false, description: '' });
+  scheduleSave();
+  renderHistory();
+});
+$('add-education').addEventListener('click', () => {
+  profile.educationHistory.push({ school: '', degree: '', fieldOfStudy: '', start: '', end: '', gpa: '' });
+  scheduleSave();
+  renderHistory();
+});
 
 $('howDidYouHear').addEventListener('input', (e) => {
   profile.howDidYouHear = e.target.value;
@@ -196,7 +261,7 @@ $('clear-jobs').addEventListener('click', async () => {
 async function renderSettings() {
   const { settings } = await chrome.storage.local.get('settings');
   const s = Object.assign({}, JC.DEFAULT_SETTINGS, settings || {});
-  for (const k of ['bridgeEnabled', 'bridgeAutofill', 'showBadge', 'rememberAnswers', 'answerAppliedPrompt', 'autoContinue', 'autoFillOpened', 'profileWins', 'learnFromOtherAutofill', 'aiCheck']) {
+  for (const k of ['bridgeEnabled', 'bridgeAutofill', 'showBadge', 'rememberAnswers', 'answerAppliedPrompt', 'autoContinue', 'autoFillOpened', 'profileWins', 'learnFromOtherAutofill', 'aiCheck', 'autoNext']) {
     $(k).checked = !!s[k];
     $(k).onchange = async () => {
       s[k] = $(k).checked;
@@ -242,6 +307,12 @@ window.JCOptions = {
     await chrome.storage.local.set({ profile });
     renderProfile();
     flash('Profile updated from resume');
+  },
+  async applyLists(lists) {
+    await ready;
+    for (const k of ['experience', 'educationHistory']) if (Array.isArray(lists[k])) profile[k] = lists[k];
+    await chrome.storage.local.set({ profile });
+    renderProfile();
   },
 };
 

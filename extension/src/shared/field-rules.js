@@ -299,6 +299,32 @@
     return hit ? hit.i : -1;
   }
 
+  /**
+   * Ways a degree is offered in dropdowns: "M.S." -> ["M.S.", "Master of Science", "Master's Degree",
+   * "Masters", "Master"…]. The degree as written comes first.
+   */
+  function degreeCandidates(degree) {
+    const d = String(degree || '').trim();
+    const n = d.toLowerCase().replace(/[.\s']/g, '');
+    const out = [d];
+    const add = (...xs) => xs.forEach((x) => out.includes(x) || out.push(x));
+    if (/^(phd|dphil|doctor|doctorate|doctoral)/.test(n) || /doctor/.test(n)) add('Doctorate', "Doctorate Degree", 'Doctoral Degree', 'PhD', 'Ph.D.', 'Doctor of Philosophy');
+    else if (/^(mba|masterofbusiness)/.test(n)) add('MBA', 'Master of Business Administration', "Master's Degree", 'Masters', 'Master');
+    else if (/^(ms|msc|ma|meng|mtech|me|mca|mphil|mfa|mps|master)/.test(n)) {
+      if (/^(ms|msc|masterofscience)/.test(n)) add('Master of Science', 'MS', 'M.S.');
+      if (/^(ma|masterofarts)/.test(n)) add('Master of Arts', 'MA', 'M.A.');
+      if (/^(meng|me|mtech)/.test(n)) add('Master of Engineering', 'Master of Technology', 'M.Tech');
+      add("Master's Degree", 'Masters Degree', 'Masters', 'Master', 'Graduate Degree', 'Postgraduate');
+    } else if (/^(bs|bsc|ba|beng|btech|be|bca|bba|bcom|bachelor|ab|bfa|bachelors)/.test(n)) {
+      if (/^(bs|bsc|bachelorofscience)/.test(n)) add('Bachelor of Science', 'BS', 'B.S.');
+      if (/^(ba|ab|bachelorofarts)/.test(n)) add('Bachelor of Arts', 'BA', 'B.A.');
+      if (/^(beng|btech|be|bachelorofengineering|bacheloroftechnology)/.test(n)) add('Bachelor of Engineering', 'Bachelor of Technology', 'B.Tech', 'B.E.');
+      add("Bachelor's Degree", 'Bachelors Degree', 'Bachelors', 'Bachelor', 'Undergraduate Degree');
+    } else if (/^(as|aa|associate)/.test(n)) add("Associate's Degree", 'Associate Degree', 'Associates');
+    else if (/(highschool|ged|secondary|diploma)/.test(n)) add('High School Diploma', 'High School', 'GED', 'Diploma');
+    return out.filter(Boolean);
+  }
+
   function classifyField(f) {
     const type = (f.type || '').toLowerCase();
     if (['hidden', 'submit', 'button', 'reset', 'image', 'password', 'search'].includes(type)) return null;
@@ -669,7 +695,7 @@
     }
   }
 
-  JC.rules = { formerEmployerOf, formerEmployerAnswer, choosePhoneCode, dialCode, evidenceAnswer, experienceTerms, chooseResumeSource, sameValue, timeZoneCandidates, classifyField, valueForKey, chooseOption, matchSavedAnswer, mergeAnswers, isCompanySpecific, looksSensitive, NEVER_REMEMBER, humanize, norm, payPeriod, amounts, parseAmount, toNumberValue, emptyReason, LONG_LABEL };
+  JC.rules = { degreeCandidates, formerEmployerOf, formerEmployerAnswer, choosePhoneCode, dialCode, evidenceAnswer, experienceTerms, chooseResumeSource, sameValue, timeZoneCandidates, classifyField, valueForKey, chooseOption, matchSavedAnswer, mergeAnswers, isCompanySpecific, looksSensitive, NEVER_REMEMBER, humanize, norm, payPeriod, amounts, parseAmount, toNumberValue, emptyReason, LONG_LABEL };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = JC;
 })(typeof globalThis !== 'undefined' ? globalThis : self);

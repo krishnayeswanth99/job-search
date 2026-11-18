@@ -38,6 +38,8 @@ const ROUTES = {
   'https://uab.taleo.net/careersection/application.jss?lang=en&reqNo=330173': fx('taleo-resume.html'),
   'https://acme.wd5.myworkdayjobs.com/en-US/careers/job/New-York-NY/ML-Engineer_123/apply/questions': fx('workday-prompt.html'),
   'https://careers.acme-robotics.example/jobs/data-scientist': fx('employer-apply-modal.html'),
+  'https://careers.acme-robotics.example/apply/multi-step': fx('multi-step.html'),
+  'https://acme.wd5.myworkdayjobs.com/en-US/careers/job/New-York-NY/ML-Engineer_123/apply/myExperience': fx('workday-experience.html'),
   'https://careers.acme-robotics.example/jobs/data-scientist?v=2': fx('employer-apply-modal.html'),
   'https://job-boards.greenhouse.io/acme/jobs/ai-check': '<html><head><meta charset="utf-8"></head><body><form><label for="seg">Segundo nombre</label><input id="seg" name="legalName.fullName"><label for="em">Email</label><input id="em" name="email"></form></body></html>',
   'https://jobs.lever.co/learntest/apply-2': fx('learn-form.html'),
@@ -383,6 +385,70 @@ try {
     assert.equal(await p.evaluate(() => !!window.__linkedin), false);
   });
 
+  await check('application tab: fills a page, clicks "Save and Continue", fills the next page, never clicks Submit', async () => {
+    const url = 'https://careers.acme-robotics.example/apply/multi-step';
+    const p = await open(url);
+    await ext.evaluate(async (url) => {
+      const [t] = await chrome.tabs.query({ url });
+      await chrome.storage.session.set({ ['applying:' + t.id]: { at: Date.now(), key: 'test-multi', title: 'Data Scientist' } });
+      chrome.tabs.reload(t.id);
+    }, url);
+    await p.waitForFunction(() => window.__step1 && document.getElementById('city') && document.getElementById('city').value === 'London', null, { timeout: 30000 });
+    assert.equal(await p.evaluate(() => window.__step1.fn), 'Ada');
+    await p.waitForTimeout(6000);
+    assert.equal(await p.evaluate(() => window.__submitted), false);
+    assert.equal(await p.evaluate(() => document.getElementById('submit').style.outline.includes('solid')), true);
+  });
+
+  await check('Workday My Experience: adds and fills a block per job and school, dates typed, degree picked, skills added', async () => {
+    const saved = await ext.evaluate(async () => (await chrome.storage.local.get('profile')).profile);
+    const prof = Object.assign({}, saved, {
+      work: Object.assign({}, saved.work, { skills: 'Python, SQL, Rust' }),
+      experience: [
+        { title: 'Senior Data Scientist', company: 'Acme Robotics', location: 'London', start: '2022-03', end: '', current: true, description: '• Built forecasting models.' },
+        { title: 'Data Analyst', company: 'Beta Corp', location: 'Leeds', start: '2019-07', end: '2022-02', current: false, description: '• Dashboards.' },
+      ],
+      educationHistory: [{ school: 'University of Oxford', degree: 'M.S.', fieldOfStudy: 'Statistics', start: '2017-09', end: '2019-06', gpa: '' }],
+    });
+    await ext.evaluate(async (p) => chrome.storage.local.set({ profile: p }), prof);
+    try {
+      const p = await open('https://acme.wd5.myworkdayjobs.com/en-US/careers/job/New-York-NY/ML-Engineer_123/apply/myExperience');
+      const r = await bridge(p, () => window.jobCopilot.autofill());
+      const v = await p.evaluate(() => {
+        const q = (s) => [...document.querySelectorAll(s)].map((e) => (e.type === 'checkbox' ? e.checked : e.value || e.textContent));
+        return {
+          titles: q('[id$="--jobTitle"]'),
+          companies: q('[id$="--companyName"]'),
+          current: q('[id$="--currentlyWorkHere"]'),
+          startMonth: q('[id$="--startDate-dateSectionMonth-input"]'),
+          startYear: q('[id$="--startDate-dateSectionYear-input"]'),
+          endYear: q('[id$="--endDate-dateSectionYear-input"]'),
+          desc: q('[id$="--roleDescription"]'),
+          schools: q('[id$="--schoolName"]'),
+          degrees: q('[id$="--degree"]'),
+          fields: q('[id$="--fieldOfStudy"]'),
+          skills: q('#skill-pills li'),
+          web: document.getElementById('web').value,
+        };
+      });
+      const msg = JSON.stringify({ v, needsInput: r.needsInput });
+      assert.deepEqual(v.titles, ['Senior Data Scientist', 'Data Analyst'], msg);
+      assert.deepEqual(v.companies, ['Acme Robotics', 'Beta Corp'], msg);
+      assert.deepEqual(v.current, [true, false], msg);
+      assert.deepEqual(v.startMonth, ['03', '07'], msg);
+      assert.deepEqual(v.startYear, ['2022', '2019'], msg);
+      assert.deepEqual(v.endYear, ['', '2022'], msg);
+      assert.match(v.desc[0], /forecasting/);
+      assert.deepEqual(v.schools, ['University of Oxford'], msg);
+      assert.deepEqual(v.degrees, ["Master's Degree"], msg);
+      assert.deepEqual(v.fields, ['Statistics'], msg);
+      assert.deepEqual(v.skills, ['Python (Programming Language)', 'SQL'], msg);
+      assert.equal(v.web, '');
+    } finally {
+      await ext.evaluate(async (p) => chrome.storage.local.set({ profile: p }), saved);
+    }
+  });
+
   await check('bridge: fillField answers a custom question', async () => {
     const r = await bridge(gh, () => window.jobCopilot.fillField({ label: 'What is your favorite robot?', value: 'Curiosity rover' }));
     assert.equal(r.ok, true, r.error);
@@ -496,7 +562,7 @@ try {
   const resumePdf = await pdfPage.pdf({ format: 'Letter' });
   await pdfBrowser.close();
 
-  const readReview = (page) => page.$$eval('.review-row', (rows) => Object.fromEntries(rows.map((r) => [r.querySelector('.review-label').firstChild.textContent.trim(), { value: r.querySelector('input:not([type=checkbox]), textarea').value, checked: r.querySelector('input[type=checkbox]').checked }])));
+  const readReview = (page) => page.$$eval('.review-row', (rows) => Object.fromEntries(rows.map((r) => [r.querySelector('.review-label').firstChild.textContent.trim(), { value: (r.querySelector('input:not([type=checkbox]), textarea') || {}).value ?? (r.querySelector('ul') || {}).innerText, checked: r.querySelector('input[type=checkbox]').checked }])));
 
   await check('options: uploading a PDF resume suggests profile fields for review', async () => {
     const errors = [];
@@ -521,6 +587,8 @@ try {
     assert.equal(rv['LinkedIn URL'].value, 'https://www.linkedin.com/in/janedoe');
     assert.equal(rv['Degree (e.g. Bachelor of Science)'].value, 'B.S.');
     assert.match(rv['Key skills (comma-separated)'].value, /Kubernetes/);
+    assert.equal(rv['Work experience (3)'].checked, true);
+    assert.match(rv['Work experience (3)'].value, /Senior Software Engineer at Stripe/);
 
     // Edit a suggestion, then save.
     const titleRow = opt.locator('.review-row', { hasText: 'Current / most recent title' });
@@ -531,6 +599,10 @@ try {
     assert.equal(saved.profile.work.currentTitle, 'Staff Software Engineer');
     assert.equal(saved.profile.personal.email, 'jane.doe@gmail.com');
     assert.equal(saved.profile.personal.firstName, 'Janet');
+    assert.equal(saved.profile.experience.length, 3);
+    assert.equal(saved.profile.experience[1].company, 'Dropbox');
+    assert.equal(saved.profile.educationHistory[0].fieldOfStudy, 'Computer Science');
+    assert.equal(await opt.locator('#experience-list .history-entry').count(), 3);
     assert.equal(saved.resume.name, 'jane-doe.pdf');
     // The editable profile form shows the saved values.
     assert.equal(await opt.inputValue('input[data-section="work"][data-key="currentTitle"]'), 'Staff Software Engineer');

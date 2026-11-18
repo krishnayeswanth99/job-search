@@ -35,7 +35,13 @@
   it's left outlined for the user.
 - Name parts: Middle Name is filled only from the profile's middle name; Prefix, Suffix and local-script names are
   left alone.
-- `jobCopilot.nextStep()` clicks **Save and Continue**. It never submits.
+- **My Experience:** `autofill()` clicks **Add** / **Add Another** until there is a block per job and school in the
+  profile (`experience`, `educationHistory`; from the resume, editable in options), then fills Job Title, Company,
+  Location, I currently work here, From/To (typed into the month/year boxes), Role Description, School, Degree
+  (matched to Workday's wording, e.g. "M.S." -> "Master's Degree"), Field of Study, and adds up to 10 skills to the
+  Skills picker. Blocks that already have values are left alone.
+- `jobCopilot.nextStep()` clicks **Save and Continue**. It never submits. In tabs opened from a job board (or after
+  you clicked Apply), it's clicked automatically once a page is filled and nothing required is left for you.
 
 ## Technique
 - Workday inputs carry `data-automation-id` attributes, which the extension uses for matching. Dropdowns are

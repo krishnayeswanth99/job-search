@@ -149,9 +149,19 @@
           const label = (b) => JC.dom.clean(b.innerText || b.value || b.getAttribute('aria-label') || '');
           const next = btns.find((b) => NEXT.test(label(b)) && label(b).length < 40);
           if (next) {
+            const before = location.href;
             next.scrollIntoView({ block: 'center' });
             next.click();
-            return { ok: true, frame: location.href, clicked: label(next) };
+            // Still here after a moment, with error messages showing? The site rejected the step.
+            await new Promise((r) => setTimeout(r, 1800));
+            const errors =
+              location.href === before && next.isConnected
+                ? [...document.querySelectorAll('[data-automation-id="errorMessage"], [role="alert"], .error-message, .field-error, .invalid-feedback, [class*="error" i][id*="error" i]')]
+                    .filter((e) => e.getClientRects().length && JC.dom.clean(e.innerText).length)
+                    .map((e) => JC.dom.clean(e.innerText).slice(0, 120))
+                    .slice(0, 8)
+                : [];
+            return { ok: true, frame: location.href, clicked: label(next), errors };
           }
           const sub = btns.find((b) => SUBMIT.test(label(b)) && label(b).length < 40);
           if (sub) {

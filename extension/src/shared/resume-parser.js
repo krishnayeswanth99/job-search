@@ -205,12 +205,77 @@
         if (isBullet(lines[j]) || rangesIn(lines[j], now).length) break;
         above.unshift(lines[j]);
       }
-      const parts = splitHeader([...above, headerText].join(' | ')).filter((p) => !looksLikeLocation(p) && !/^(19|20)\d{2}$/.test(p));
+      const allParts = splitHeader([...above, headerText].join(' | '));
+      // "City, ST" is split at its comma by splitHeader: look for it in the header text itself.
+      const whole = [...above, headerText].join(' | ');
+      const cityState = whole.match(/(?:^|[|·•—–,@]\s*|\s{2,})([A-Z][A-Za-z.' ]+,\s*(?:[A-Z]{2}|[A-Z][a-z]+(?: [A-Z][a-z]+)?))(?=\s*(?:$|[|·•—–(]|\s{2,}))/);
+      let cs = cityState ? cityState[1].trim() : '';
+      const parts = allParts.filter((p) => !looksLikeLocation(p) && !/^(19|20)\d{2}$/.test(p));
       const title = parts.find((p) => ROLE_WORDS.test(p) && p.length <= 70) || '';
       const company = parts.find((p) => p !== title && p.length <= 60 && !ROLE_WORDS.test(p)) || parts.find((p) => p !== title && p.length <= 60) || '';
-      roles.push({ title, company, start: rs[0].start, end: rs[0].end, current: rs[0].current });
+      // "Title, Company" also looks like "City, ST": only a real place counts. "Company, City" -> City.
+      if (cs) {
+        const [a, b] = cs.split(/,\s*/);
+        if (a === title || b === company || ROLE_WORDS.test(a)) cs = '';
+        else if (a === company) cs = /^[A-Z]{2}$/.test(b) ? '' : b;
+      }
+      const location = cs || allParts.find((p) => looksLikeLocation(p) && !/^remote$/i.test(p) && p !== company) || (allParts.find((p) => /^remote$/i.test(p)) ? 'Remote' : '');
+      // The role's bullet points (or plain lines) up to the next dated role.
+      const desc = [];
+      for (let j = i + 1; j < lines.length && desc.length < 12; j++) {
+        if (rangesIn(lines[j], now).length) break;
+        // The next role's title/company lines sit just above its dates: stop before them.
+        if (!isBullet(lines[j]) && j + 1 < lines.length && rangesIn(lines[j + 1], now).length) break;
+        if (!isBullet(lines[j]) && j + 2 < lines.length && rangesIn(lines[j + 2], now).length && !isBullet(lines[j + 1])) break;
+        desc.push(clean(lines[j].replace(/^\s*([•\-*–▪◦]|\d+[.)])\s*/, '')));
+      }
+      roles.push({ title, company, location, start: rs[0].start, end: rs[0].end, current: rs[0].current, description: desc.filter(Boolean).map((d) => '• ' + d).join('\n').slice(0, 2000) });
     });
     return roles;
+  }
+
+  const ym = (idx) => `${Math.floor(idx / 12)}-${String((idx % 12) + 1).padStart(2, '0')}`;
+
+  /** Profile `experience` entries, newest first. */
+  function experienceList(roles) {
+    return roles
+      .slice()
+      .sort((a, b) => b.end - a.end || b.start - a.start)
+      .map((r) => ({ title: r.title, company: r.company, location: r.location || '', start: ym(r.start), end: r.current ? '' : ym(r.end), current: !!r.current, description: r.description || '' }));
+  }
+
+  /** Profile `educationHistory` entries: one per school line (degree, field, years nearby). */
+  function educationList(lines, now) {
+    const out = [];
+    lines.forEach((l, i) => {
+      if (!SCHOOL_WORDS.test(l)) return;
+      const block = lines.slice(Math.max(0, i - 1), i + 3);
+      // The school is the line's first segment, commas included ("University of California, Berkeley").
+      const seg = l.replace(RANGE_RE, ' ').split(/\s+[|·•—–-]\s+|\s{2,}|\t/).map(clean).find((p) => SCHOOL_WORDS.test(p));
+      const pick = seg && DEGREE_RE.test(seg) ? seg.split(/,\s*/).find((p) => SCHOOL_WORDS.test(p) && !DEGREE_RE.test(p)) || seg : seg;
+      const school = (pick || clean(l)).replace(/\s*\(?(19|20)\d{2}\)?\s*$/, '').replace(/,\s*$/, '').trim();
+      if (out.some((e) => e.school === school)) return;
+      const degLine = block.find((b) => DEGREE_RE.test(b)) || '';
+      const m = degLine.match(DEGREE_RE);
+      let fieldOfStudy = '';
+      if (m) {
+        const fos = degLine.slice(m.index + m[0].length).match(/^\s*(?:in|of|,|-|–|:)?\s*((?:[A-Z][A-Za-z&/]*)(?:\s+(?:and|&|of|[A-Z][A-Za-z&/]*))*)/);
+        if (fos && fos[1] && !SCHOOL_WORDS.test(fos[1]) && fos[1].length >= 3) fieldOfStudy = clean(fos[1]).replace(/\s+(and|&|of)$/, '');
+      }
+      const txt = block.join(' ');
+      const r = rangesIn(txt, now)[0];
+      const years = (txt.match(/\b(19|20)\d{2}\b/g) || []).map(Number).filter((y) => y <= now.getFullYear() + 6);
+      const gpa = txt.match(/\b(?:C?GPA|grade)\b[:\s]*([0-9](?:\.\d{1,2})?)\s*(?:\/\s*(4(?:\.0+)?|10(?:\.0+)?))?/i);
+      out.push({
+        school,
+        degree: m ? clean(m[1]) : '',
+        fieldOfStudy,
+        start: r ? ym(r.start) : '',
+        end: r ? (r.current ? '' : ym(r.end)) : years.length ? `${Math.max(...years)}-05` : '',
+        gpa: gpa ? (gpa[2] ? `${gpa[1]}/${gpa[2]}` : gpa[1]) : '',
+      });
+    });
+    return out.slice(0, 6);
   }
 
   function totalYears(roles) {
@@ -341,7 +406,9 @@
     }
 
     if (lines.length < 8) warnings.push('Very little text was found. If the resume is a scanned image, type your details in instead.');
-    return { fields, sections, warnings };
+    // Full lists for applications with repeatable sections (Workday "My Experience").
+    const lists = { experience: experienceList(roles), educationHistory: educationList(sections.education || lines.filter((l) => SCHOOL_WORDS.test(l) || DEGREE_RE.test(l)), now) };
+    return { fields, sections, warnings, lists };
   }
 
   JC.resume = { parse, normalizeText, splitSections, rangesIn: (l, now) => rangesIn(l, now || new Date()) };

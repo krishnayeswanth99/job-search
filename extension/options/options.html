@@ -66,6 +66,20 @@
         <label class="block">Short professional summary<textarea id="summary" rows="3"></textarea></label>
       </section>
 
+      <section id="history" class="card">
+        <h2>Work experience &amp; education</h2>
+        <p class="muted">
+          For applications with repeatable sections (Workday's "My Experience", "Add another"): one entry per job and school,
+          newest first. Filled from your resume when you upload it; edit or add entries here. Months are YYYY-MM.
+        </p>
+        <h3>Work experience</h3>
+        <div id="experience-list"></div>
+        <button id="add-experience">Add job</button>
+        <h3>Education</h3>
+        <div id="education-list"></div>
+        <button id="add-education">Add school</button>
+      </section>
+
       <section id="answers" class="card">
         <h2>Saved answers</h2>
         <p class="muted">
@@ -119,6 +133,7 @@
         <label class="check"><input type="checkbox" id="rememberAnswers" /> Remember my answers to new application questions and reuse them</label>
         <label class="check"><input type="checkbox" id="learnFromOtherAutofill" /> Learn field labels from other autofills (Simplify, the site's resume reader…): only which profile field a label means, never the values</label>
         <div id="learned-list" class="muted small"></div>
+        <label class="check"><input type="checkbox" id="autoNext" /> Multi-page applications: after a page is filled and nothing required is left for me, click Next / Save and Continue (never Submit: the last page is left for me to review and submit)</label>
         <label class="check"><input type="checkbox" id="aiCheck" /> After autofill, let Chrome's on-device AI (Gemini Nano, nothing leaves this computer) check that each field got the right profile field, and fix or outline the ones that didn't</label>
         <label class="check"><input type="checkbox" id="profileWins" /> My profile is the source of truth: upload the resume first, let the site read it, then correct fields the site got wrong (and keep them corrected while I review)</label>
         <label class="check"><input type="checkbox" id="autoContinue" /> When I click Apply on a job board (Jobright…), continue past its pop-up ("Apply Without Customizing") and open the employer's application</label>

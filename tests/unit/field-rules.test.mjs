@@ -258,3 +258,14 @@ test('"Country/Region of Residence" is the country; a city never picks a same-na
   assert.equal(chooseOption(o, 'United States'), 1);
   assert.equal(chooseOption([{ text: 'New Jersey', value: 'NJ' }, { text: 'Jersey', value: 'JE' }], 'New Jersey'), 0);
 });
+
+test('degree candidates match how dropdowns name degrees', () => {
+  const c = (d) => JC.rules.degreeCandidates(d);
+  assert.ok(c('M.S.').includes("Master's Degree"));
+  assert.ok(c('Master of Science').includes("Master's Degree"));
+  assert.ok(c('B.Tech').includes("Bachelor's Degree"));
+  assert.ok(c('B.S.').includes('Bachelor of Science'));
+  assert.ok(c('PhD').includes('Doctorate'));
+  assert.ok(c('MBA').includes('Master of Business Administration'));
+  assert.equal(c('B.S.')[0], 'B.S.');
+});

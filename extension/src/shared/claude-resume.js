@@ -61,7 +61,43 @@
       items: { type: 'string' },
       description: 'Short notes for the user about anything uncertain: e.g. how years of experience were counted, ambiguous dates, multiple degrees, text that could not be read.',
     };
-    required.push('summary', 'notes');
+    const str = (d) => ({ type: 'string', description: d });
+    props.experience = {
+      type: 'array',
+      description: 'Every role in the resume, newest first.',
+      items: {
+        type: 'object',
+        properties: {
+          title: str('Job title as written.'),
+          company: str('Employer as written.'),
+          location: str('City, State/Country as written; empty if not shown.'),
+          start: str('Start as YYYY-MM (YYYY-01 if only the year is shown).'),
+          end: str('End as YYYY-MM; empty if this is the current role.'),
+          current: { type: 'boolean', description: 'True if the role is ongoing (Present / Current).' },
+          description: str('The role\'s bullet points as written, one per line starting with "• ".'),
+        },
+        required: ['title', 'company', 'location', 'start', 'end', 'current', 'description'],
+        additionalProperties: false,
+      },
+    };
+    props.educationHistory = {
+      type: 'array',
+      description: 'Every school or degree in the resume, newest first.',
+      items: {
+        type: 'object',
+        properties: {
+          school: str('Institution as written.'),
+          degree: str('Degree as written, e.g. "Master of Science" or "B.Tech".'),
+          fieldOfStudy: str('Major / field of study.'),
+          start: str('Start as YYYY-MM; empty if not shown.'),
+          end: str('End or expected graduation as YYYY-MM (YYYY-05 if only the year is shown).'),
+          gpa: str('As written, with its scale if shown.'),
+        },
+        required: ['school', 'degree', 'fieldOfStudy', 'start', 'end', 'gpa'],
+        additionalProperties: false,
+      },
+    };
+    required.push('summary', 'notes', 'experience', 'educationHistory');
     return { type: 'object', properties: props, required, additionalProperties: false };
   }
 
@@ -96,7 +132,13 @@
       else fields['work.yearsExperience'].value = String(n);
     }
     const warnings = Array.isArray(json.notes) ? json.notes.map((n) => String(n).trim()).filter(Boolean).slice(0, 8) : [];
-    return { fields, warnings };
+    const s = (v, n) => (v === undefined || v === null ? '' : String(v).trim().slice(0, n || 200));
+    const ymOk = (v) => (/^(19|20)\d{2}-(0[1-9]|1[0-2])$/.test(s(v)) ? s(v) : /^(19|20)\d{2}$/.test(s(v)) ? s(v) + '-01' : '');
+    const lists = {
+      experience: (Array.isArray(json.experience) ? json.experience : []).slice(0, 15).map((e) => ({ title: s(e.title), company: s(e.company), location: s(e.location), start: ymOk(e.start), end: e.current ? '' : ymOk(e.end), current: !!e.current, description: s(e.description, 2000) })).filter((e) => e.title || e.company),
+      educationHistory: (Array.isArray(json.educationHistory) ? json.educationHistory : []).slice(0, 8).map((e) => ({ school: s(e.school), degree: s(e.degree), fieldOfStudy: s(e.fieldOfStudy), start: ymOk(e.start), end: ymOk(e.end), gpa: s(e.gpa, 20) })).filter((e) => e.school || e.degree),
+    };
+    return { fields, warnings, lists };
   }
 
   JC.claudeResume = { MODELS, DEFAULT_MODEL, FIELDS, schema, prompt, toResult };

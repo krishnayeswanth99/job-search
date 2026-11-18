@@ -7,7 +7,7 @@
 (function (root) {
   const JC = (root.JC = root.JC || {});
 
-  JC.VERSION = '0.26.0';
+  JC.VERSION = '0.27.0';
   JC.BRIDGE_CHANNEL = 'job-copilot';
 
   /**
@@ -61,6 +61,7 @@
     autoContinue: true, // you click Apply on a job board: take its "Apply Without Customizing" and open the employer form
     autoFillOpened: true, // autofill the employer form when it opens from a job board (never submits)
     learnFromOtherAutofill: true, // learn field labels from what other autofills fill in (label -> profile field only)
+    autoNext: true, // application tabs: after a page is filled and nothing required is left, click Next / Save and Continue (never Submit)
     aiCheck: true, // after autofill, Chrome's on-device AI (Gemini Nano) checks which profile field fits each filled field
     profileWins: true, // profile is the source of truth: upload resume first, let the site parse, then correct it
   };

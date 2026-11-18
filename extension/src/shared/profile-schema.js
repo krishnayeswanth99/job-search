@@ -107,6 +107,10 @@
     p.summary = '';
     /** Saved answers to custom questions: [{ question, answer }]. */
     p.answers = [];
+    /** Work history, newest first: [{ title, company, location, start: 'YYYY-MM', end: 'YYYY-MM' | '', current, description }]. */
+    p.experience = [];
+    /** Schools, newest first: [{ school, degree, fieldOfStudy, start: 'YYYY-MM', end: 'YYYY-MM', gpa }]. */
+    p.educationHistory = [];
     return p;
   };
 
@@ -123,6 +127,8 @@
       }
     }
     if (!Array.isArray(base.answers)) base.answers = [];
+    if (!Array.isArray(base.experience)) base.experience = [];
+    if (!Array.isArray(base.educationHistory)) base.educationHistory = [];
     return base;
   };
 

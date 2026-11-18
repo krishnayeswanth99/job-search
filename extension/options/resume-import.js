@@ -96,6 +96,7 @@ function renderReview(result, fileName) {
   const profile = window.JCOptions.getProfile();
   const order = JC.PROFILE_SECTIONS.flatMap((s) => s.fields.map(([k]) => `${s.id}.${k}`)).concat(['summary']);
   const paths = Object.keys(result.fields).sort((a, b) => order.indexOf(a) - order.indexOf(b));
+  const hasLists = !!(result.lists && ((result.lists.experience || []).length || (result.lists.educationHistory || []).length));
   const rows = [];
 
   const body = el('div', { class: 'review-rows' });
@@ -130,6 +131,35 @@ function renderReview(result, fileName) {
     );
   }
 
+  // Work history and schools: saved as whole lists (replacing what's there only if ticked).
+  const lists = result.lists || {};
+  const listRows = [];
+  for (const [key, title, line] of [
+    ['experience', 'Work experience', (e) => `${e.title || '?'} at ${e.company || '?'} (${e.start || '?'} – ${e.current ? 'present' : e.end || '?'})`],
+    ['educationHistory', 'Education', (e) => `${e.degree || ''} ${e.fieldOfStudy ? 'in ' + e.fieldOfStudy : ''}, ${e.school || '?'}${e.end ? ' (' + e.end.slice(0, 4) + ')' : ''}`.trim()],
+  ]) {
+    const items = Array.isArray(lists[key]) ? lists[key] : [];
+    if (!items.length) continue;
+    const have = (profile[key] || []).length;
+    const check = el('input', { type: 'checkbox', checked: !have, 'aria-label': `Use ${title}` });
+    if (!have) check.checked = true;
+    listRows.push({ key, items, check });
+    body.append(
+      el(
+        'div',
+        { class: 'review-row' },
+        check,
+        el(
+          'div',
+          { class: 'review-field' },
+          el('div', { class: 'review-label' }, `${title} (${items.length})`, ' ', el('span', { class: 'conf conf-medium' }, 'check')),
+          el('ul', { class: 'small' }, items.map((e) => el('li', {}, line(e)))),
+          have ? el('div', { class: 'muted small' }, `Your profile already has ${have}; ticking this replaces them. You can edit every entry below after saving.`) : el('div', { class: 'muted small' }, 'You can edit every entry in "Work experience & education" after saving.'),
+        ),
+      ),
+    );
+  }
+
   const status = el('span', { class: 'muted' });
   const save = el(
     'button',
@@ -139,6 +169,9 @@ function renderReview(result, fileName) {
         const updates = {};
         for (const r of rows) if (r.check.checked && r.input.value.trim()) updates[r.path] = r.input.value.trim();
         await window.JCOptions.applyUpdates(updates);
+        const chosen = {};
+        for (const r of listRows) if (r.check.checked) chosen[r.key] = r.items;
+        if (Object.keys(chosen).length) await window.JCOptions.applyLists(chosen);
         box.replaceChildren(
           el(
             'p',
@@ -179,9 +212,9 @@ function renderReview(result, fileName) {
             result.warnings.map((w) => el('li', {}, w)),
           )
         : null,
-      paths.length ? toggle : null,
-      paths.length ? body : el('p', {}, 'Nothing could be read automatically. Fill in the profile below by hand.'),
-      el('div', { class: 'buttons' }, paths.length ? save : null, discard, status),
+      paths.length || hasLists ? toggle : null,
+      paths.length || hasLists ? body : el('p', {}, 'Nothing could be read automatically. Fill in the profile below by hand.'),
+      el('div', { class: 'buttons' }, paths.length || hasLists ? save : null, discard, status),
     ].filter(Boolean), // replaceChildren() would print "null" for empty slots
   );
   box.hidden = false;

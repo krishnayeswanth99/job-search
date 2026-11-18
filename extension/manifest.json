@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Job Copilot",
-  "version": "0.35.0",
+  "version": "0.36.0",
   "description": "Finds jobs on the current tab, autofills applications, and gives Claude in Chrome a bridge to do the same.",
   "minimum_chrome_version": "116",
   "permissions": [
@@ -60,6 +60,7 @@
         "src/shared/config.js",
         "src/shared/profile-schema.js",
         "src/shared/field-rules.js",
+        "src/shared/draft.js",
         "src/content/util.js",
         "src/content/jsonld.js",
         "src/content/login.js",

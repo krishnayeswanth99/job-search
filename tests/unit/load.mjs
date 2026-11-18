@@ -8,7 +8,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../e
 
 export function loadJC(files = ['shared/config.js', 'shared/profile-schema.js', 'shared/field-rules.js']) {
   // Web APIs some scripts use (docx-text.js needs DecompressionStream/Blob/Response).
-  const sandbox = { console, DecompressionStream, Blob, Response, TextDecoder, Uint8Array, DataView };
+  const sandbox = { console, DecompressionStream, Blob, Response, TextDecoder, Uint8Array, DataView, URL, AbortSignal };
   sandbox.globalThis = sandbox;
   vm.createContext(sandbox);
   for (const f of files) vm.runInContext(readFileSync(path.join(root, f), 'utf8'), sandbox, { filename: f });

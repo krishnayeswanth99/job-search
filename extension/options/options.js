@@ -62,7 +62,8 @@ const EXP_FIELDS = [
   ['start', 'Start (YYYY-MM)'],
   ['end', 'End (YYYY-MM, empty if current)'],
   ['current', 'I currently work here', 'checkbox'],
-  ['description', 'Description', 'textarea'],
+  ['description', 'Resume bullets (one per line)', 'textarea'],
+  ['details', 'More detail & projects, for tailoring (what you built, tools, scale, results; as much as you like, only real facts)', 'textarea'],
 ];
 const EDU_FIELDS = [
   ['school', 'School'],
@@ -89,7 +90,7 @@ function renderList(boxId, list, fields, empty) {
           scheduleSave();
         });
       } else {
-        input = el(type === 'textarea' ? 'textarea' : 'input', type === 'textarea' ? { rows: 3 } : { value: item[key] || '' });
+        input = el(type === 'textarea' ? 'textarea' : 'input', type === 'textarea' ? { rows: key === 'details' ? 5 : 3 } : { value: item[key] || '' });
         if (type === 'textarea') input.value = item[key] || '';
         input.addEventListener('input', () => {
           item[key] = input.value;
@@ -108,7 +109,7 @@ function renderHistory() {
   renderList('education-list', profile.educationHistory, EDU_FIELDS, 'No schools yet: upload your resume above, or add them here.');
 }
 $('add-experience').addEventListener('click', () => {
-  profile.experience.push({ title: '', company: '', location: '', start: '', end: '', current: false, description: '' });
+  profile.experience.push({ title: '', company: '', location: '', start: '', end: '', current: false, description: '', details: '' });
   scheduleSave();
   renderHistory();
 });
@@ -343,3 +344,43 @@ async function renderLearned() {
     box.append(el('div', { class: 'learned-row' }, `"${v.display || k}" → ${v.key}${v.host ? ` (seen on ${v.host})` : ''} `, rm));
   }
 }
+
+// ------------------------------------------------------------ AI model
+async function renderModel() {
+  const { settings } = await chrome.storage.local.get('settings');
+  const llm = Object.assign({ provider: 'nano' }, (settings && settings.llm) || {});
+  $('llm-provider').replaceChildren(...JC.llm.PROVIDERS.map((p) => el('option', { value: p.id }, p.name)));
+  $('llm-provider').value = llm.provider;
+  if (!$('llm-preset').options.length || $('llm-preset').options.length === 1)
+    for (const [id, p] of Object.entries(JC.llm.PRESETS)) $('llm-preset').append(el('option', { value: id }, p.label));
+  $('llm-baseUrl').value = llm.baseUrl || '';
+  $('llm-model').value = llm.model || '';
+  $('llm-apiKey').value = llm.apiKey || '';
+  $('llm-openai').hidden = llm.provider !== 'openai';
+  $('llm-claude-note').hidden = llm.provider !== 'claude';
+}
+async function saveModel() {
+  const { settings } = await chrome.storage.local.get('settings');
+  const s = Object.assign({}, settings || {});
+  s.llm = { provider: $('llm-provider').value, baseUrl: $('llm-baseUrl').value.trim(), model: $('llm-model').value.trim(), apiKey: $('llm-apiKey').value.trim() };
+  if (s.llm.provider !== 'openai') s.llm = { provider: s.llm.provider };
+  await chrome.storage.local.set({ settings: s });
+  $('llm-openai').hidden = s.llm.provider !== 'openai';
+  $('llm-claude-note').hidden = s.llm.provider !== 'claude';
+  flash('Saved');
+}
+for (const id of ['llm-provider', 'llm-baseUrl', 'llm-model', 'llm-apiKey']) $(id).addEventListener('change', saveModel);
+$('llm-preset').addEventListener('change', () => {
+  const p = JC.llm.PRESETS[$('llm-preset').value];
+  if (!p) return;
+  $('llm-baseUrl').value = p.baseUrl;
+  $('llm-model').value = p.model;
+  saveModel();
+});
+$('llm-test').addEventListener('click', async () => {
+  $('llm-status').textContent = 'Asking the model…';
+  const r = await chrome.runtime.sendMessage({ type: 'jc:llm-test' });
+  $('llm-status').textContent = r && r.ok ? `Works (${r.ms} ms): "${String(r.reply).slice(0, 80)}"` : `Didn't work: ${(r && r.error) || 'no reply'}`;
+});
+$('build-resume').addEventListener('click', () => chrome.tabs.create({ url: chrome.runtime.getURL('draft/draft.html?general=1') }));
+renderModel();

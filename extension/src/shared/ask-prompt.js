@@ -35,7 +35,7 @@
   function autoQuestionsFrom(fields) {
     return questionsFrom(fields).filter((q) => {
       const f = (fields || []).find((x) => x.ref === q.id) || {};
-      return !NOT_AUTOMATIC.test(q.label) && !['desiredPay', 'currentPay', 'desiredSalary', 'desiredHourlyRate'].includes(f.profileKey) && !/^consent/.test(f.reason || '');
+      return !NOT_AUTOMATIC.test(q.label) && !['desiredPay', 'currentPay', 'desiredSalary', 'desiredHourlyRate', 'coverLetterText'].includes(f.profileKey) && !/^consent/.test(f.reason || '');
     });
   }
 

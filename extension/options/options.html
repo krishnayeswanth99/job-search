@@ -78,6 +78,11 @@
         <h3>Education</h3>
         <div id="education-list"></div>
         <button id="add-education">Add school</button>
+        <p class="muted">
+          The more you write under <em>More detail &amp; projects</em>, the better tailored resumes get: they are built only
+          from what you write here.
+        </p>
+        <button id="build-resume">Build a resume from my details</button>
       </section>
 
       <section id="answers" class="card">
@@ -100,6 +105,26 @@
           <button id="clear-jobs">Clear</button>
         </div>
         <div id="jobs-list"></div>
+      </section>
+
+      <section id="ai-model" class="card">
+        <h2>AI model</h2>
+        <p class="muted">
+          Used for drafting answers, checking what was filled, and tailoring resumes and cover letters. Chrome's on-device
+          Gemini Nano is free and private but small; a bigger model writes better drafts. See <code>docs/models.md</code> for
+          setting up Ollama, LM Studio, OpenRouter or another server.
+        </p>
+        <label class="block">Model<select id="llm-provider"></select></label>
+        <div id="llm-openai" hidden>
+          <label class="block">Preset<select id="llm-preset"><option value="">Choose one, or fill in below</option></select></label>
+          <div class="grid">
+            <label>Server address (OpenAI-compatible, ends in /v1)<input id="llm-baseUrl" placeholder="http://localhost:11434/v1" /></label>
+            <label>Model name<input id="llm-model" placeholder="qwen2.5:7b-instruct" /></label>
+            <label>API key (leave empty for Ollama / LM Studio)<input id="llm-apiKey" type="password" autocomplete="off" /></label>
+          </div>
+        </div>
+        <p id="llm-claude-note" class="muted" hidden>Uses the API key and model from the Claude API section below.</p>
+        <div class="buttons"><button id="llm-test">Test the model</button><span id="llm-status" class="muted"></span></div>
       </section>
 
       <section id="claude" class="card">
@@ -156,6 +181,7 @@
     <script src="../src/shared/resume-parser.js"></script>
     <script src="../src/shared/docx-text.js"></script>
     <script src="../src/shared/claude-resume.js"></script>
+    <script src="../src/shared/llm.js"></script>
     <script src="options.js"></script>
     <script type="module" src="resume-import.js"></script>
   </body>

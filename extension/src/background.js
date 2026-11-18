@@ -5,7 +5,7 @@
  * - Fetches local files for attachFile (localhost only).
  * - Maintains the toolbar badge.
  */
-importScripts('shared/config.js', 'shared/profile-schema.js', 'shared/field-rules.js', 'shared/ask-prompt.js');
+importScripts('shared/config.js', 'shared/profile-schema.js', 'shared/field-rules.js', 'shared/ask-prompt.js', 'shared/nano-check.js', 'shared/draft.js', 'shared/ai-tasks.js', 'shared/llm.js', 'shared/pdf-writer.js');
 
 const FRAME_CMDS = new Set(['startApplication', 'nextStep', 'ping', 'detect', 'extractJobs', 'loadMoreJobs', 'resolveApplyLinks', 'stopResolve', 'extractJob', 'scanForm', 'autofill', 'fillField', 'attachFile', 'followApply', 'reviewFix', 'showField', 'flagFields']);
 
@@ -614,16 +614,45 @@ async function ensureOffscreen() {
   await offscreenReady;
 }
 
+/** The model chosen under "AI model" in options (Claude reuses the "Read my resume with Claude" key). */
+async function llmConfig() {
+  const { settings, claudeApi } = await chrome.storage.local.get(['settings', 'claudeApi']);
+  const c = Object.assign({ provider: 'nano' }, (settings && settings.llm) || {});
+  if (c.provider === 'claude') {
+    c.apiKey = c.apiKey || (claudeApi && claudeApi.apiKey) || '';
+    c.model = c.model || (claudeApi && claudeApi.model) || 'claude-haiku-5-5';
+  }
+  return c;
+}
+
+/**
+ * Run an AI task (src/shared/ai-tasks.js) on the chosen model: Gemini Nano in the offscreen page,
+ * anything else over HTTP from here. End-to-end tests store a canned reply (__testNanoReply).
+ */
+async function runAI(kind, args) {
+  const cfg = await llmConfig();
+  const { __testNanoReply } = await chrome.storage.local.get('__testNanoReply');
+  args = Object.assign({ testReply: __testNanoReply }, args);
+  if (cfg.provider === 'nano' || args.testReply) {
+    await ensureOffscreen();
+    return chrome.runtime.sendMessage({ target: 'offscreen', type: 'jc:ai', kind, args });
+  }
+  try {
+    return await self.JC.aiTasks[kind](Object.assign({ batch: 8, small: false }, args), self.JC.llm.completer(cfg));
+  } catch (e) {
+    return { ok: false, error: `${cfg.provider === 'claude' ? 'Claude' : cfg.model || 'model'}: ${e.message || e}` };
+  }
+}
+
 let aiQueue = Promise.resolve();
 function aiCheck(tabId, review) {
   aiQueue = aiQueue.then(async () => {
-    const { settings, profile, __testNanoReply } = await chrome.storage.local.get(['settings', 'profile', '__testNanoReply']);
+    const { settings, profile } = await chrome.storage.local.get(['settings', 'profile']);
     if ((settings && settings.aiCheck === false) || !profile) return;
     const t0 = Date.now();
     let res;
     try {
-      await ensureOffscreen();
-      res = await chrome.runtime.sendMessage({ target: 'offscreen', type: 'jc:nano-check', review, profile, testReply: __testNanoReply });
+      res = await runAI('check', { review, profile });
     } catch (e) {
       res = { ok: false, error: String(e.message || e) };
     }
@@ -655,7 +684,7 @@ async function jobFor(tabId) {
 }
 function aiVerify(tabId, items) {
   aiQueue = aiQueue.then(async () => {
-    const { settings, profile, resumeText, __testNanoReply } = await chrome.storage.local.get(['settings', 'profile', 'resumeText', '__testNanoReply']);
+    const { settings, profile, resumeText } = await chrome.storage.local.get(['settings', 'profile', 'resumeText']);
     if ((settings && settings.aiCheck === false) || !profile) return;
     const seen = verified.get(tabId) || new Set();
     verified.set(tabId, seen);
@@ -665,9 +694,8 @@ function aiVerify(tabId, items) {
     const t0 = Date.now();
     let res;
     try {
-      await ensureOffscreen();
       const job = await jobFor(tabId).catch(() => null);
-      res = await chrome.runtime.sendMessage({ target: 'offscreen', type: 'jc:nano-verify', items: fresh, job, profile: self.JC.normalizeProfile(profile), resumeText, testReply: __testNanoReply });
+      res = await runAI('verify', { items: fresh, job, profile: self.JC.normalizeProfile(profile), resumeText });
     } catch (e) {
       res = { ok: false, error: String(e.message || e) };
     }
@@ -693,7 +721,7 @@ function aiVerify(tabId, items) {
 const aiAnswerPending = new Map(); // tabId -> Promise<{ answered }>
 async function aiAnswer(tabId, needsInput) {
   await aiQueue.catch(() => {}); // after the on-device check
-  const { settings, profile, resumeText, __testNanoReply } = await chrome.storage.local.get(['settings', 'profile', 'resumeText', '__testNanoReply']);
+  const { settings, profile, resumeText } = await chrome.storage.local.get(['settings', 'profile', 'resumeText']);
   if ((settings && settings.aiAnswer === false) || !profile) return { answered: 0 };
   const questions = self.JC.ask.autoQuestionsFrom(needsInput).slice(0, 12);
   if (!questions.length) return { answered: 0 };
@@ -701,8 +729,7 @@ async function aiAnswer(tabId, needsInput) {
   let res;
   try {
     const job = await jobFor(tabId);
-    await ensureOffscreen();
-    res = await chrome.runtime.sendMessage({ target: 'offscreen', type: 'jc:nano-answer', questions, job, profile: self.JC.normalizeProfile(profile), resumeText, testReply: __testNanoReply });
+    res = await runAI('answer', { questions, job, profile: self.JC.normalizeProfile(profile), resumeText });
   } catch (e) {
     res = { ok: false, error: String(e.message || e) };
   }
@@ -738,10 +765,12 @@ async function runCommand(tabId, cmd, payload, origin) {
       payload.file = stored;
     }
   }
-  if (cmd === 'autofill' && !payload.jobDesc) {
+  if (cmd === 'autofill') {
     // Skills pickers rank skills by the job description: give it the one kept with the application.
     const kept = await getApplying(tabId);
-    if (kept && kept.description) payload.jobDesc = kept.description;
+    if (!payload.jobDesc && kept && kept.description) payload.jobDesc = kept.description;
+    // An approved tailored draft for this job: fill and attach from it.
+    if (!payload.draftKey) payload.draftKey = await draftKeyFor(tabId);
   }
   const out = merge(cmd, await runInFrames(tabId, cmd, payload));
   if (cmd === 'autofill') {
@@ -823,6 +852,7 @@ async function rememberAnswers(items, ctx) {
 const isExtensionPage = (sender) => sender.id === chrome.runtime.id && String(sender.url || '').startsWith(chrome.runtime.getURL(''));
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg && (msg.target === 'offscreen' || /^jc:(draft-|llm-test)/.test(msg.type || ''))) return false; // handled elsewhere
   (async () => {
     const fromExt = isExtensionPage(sender);
     if (msg.type === 'jc:status' && sender.tab && !fromExt) {
@@ -994,4 +1024,85 @@ async function applyPanelSetting() {
 applyPanelSetting();
 chrome.storage.onChanged.addListener((ch, area) => {
   if (area === 'local' && ch.settings) applyPanelSetting();
+});
+
+// ------------------------------------------------------------ application drafts
+// A tailored resume + cover letter per job (src/shared/draft.js), reviewed on draft/draft.html.
+// Approved drafts fill the form (work history bullets, summary, skills, cover letter text) and
+// their PDFs are the resume / cover letter that get attached, so both say the same thing.
+async function draftKeyFor(tabId) {
+  const a = await getApplying(tabId);
+  if (a && a.key) return a.key;
+  const tab = await chrome.tabs.get(tabId).catch(() => null);
+  return tab && tab.url ? pathOf(tab.url) : '';
+}
+async function getDrafts() {
+  return (await chrome.storage.local.get('drafts')).drafts || {};
+}
+async function saveDraft(d) {
+  const all = await getDrafts();
+  all[d.key] = d;
+  const keys = Object.keys(all).sort((a, b) => String(all[a].createdAt).localeCompare(String(all[b].createdAt)));
+  while (keys.length > 40) delete all[keys.shift()];
+  await chrome.storage.local.set({ drafts: all });
+  return d;
+}
+async function createDraft({ tabId, general }) {
+  const { profile, resumeText } = await chrome.storage.local.get(['profile', 'resumeText']);
+  if (!profile) return { ok: false, error: 'No profile yet: add it in options first.' };
+  let job = null;
+  let key = 'general';
+  if (!general && tabId) {
+    job = await jobFor(tabId);
+    key = await draftKeyFor(tabId);
+    if (!job.title && !(job.description || '').trim()) return { ok: false, error: "Couldn't read this job. Open the job posting (or the application opened from it) and try again." };
+  }
+  const t0 = Date.now();
+  const res = await runAI('tailor', { profile: self.JC.normalizeProfile(profile), resumeText, job: job && Object.assign({ key }, job) });
+  if (!res || !res.ok) return { ok: false, error: (res && res.error) || 'no reply from the model' };
+  const d = Object.assign(res.draft, { key, ms: Date.now() - t0, model: (await llmConfig()).provider });
+  if (job && (job.description || '').length < 200) d.warnings.unshift("This page shows little or none of the job description, so the draft is tailored mostly to the title. Open the job posting and write it again for a better fit.");
+  if (tabId) debugAdd(tabId, { type: 'extension-step', detail: { step: 'tailored draft written', key, ms: d.ms, bullets: d.experience.reduce((n, e) => n + e.bullets.length, 0), warnings: d.warnings } });
+  return { ok: true, draft: await saveDraft(d) };
+}
+function fileName(name, what, company) {
+  const clean = (s) => String(s || '').replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  return [clean(name) || 'Resume', what, clean(company)].filter(Boolean).join('-') + '.pdf';
+}
+async function approveDraft(d) {
+  const { profile } = await chrome.storage.local.get('profile');
+  const p = self.JC.normalizeProfile(profile);
+  const doc = self.JC.draft.resumeDoc(p, d);
+  const resume = self.JC.pdf.resume(doc);
+  const files = { resume: { name: fileName(doc.name, 'Resume', d.job && d.job.company), type: 'application/pdf', size: resume.length, dataBase64: self.JC.pdf.toBase64(resume) } };
+  if (d.coverLetter) {
+    const letter = self.JC.pdf.letter({ name: doc.name, contact: doc.contact.slice(0, 3), body: d.coverLetter });
+    files.coverLetter = { name: fileName(doc.name, 'Cover-Letter', d.job && d.job.company), type: 'application/pdf', size: letter.length, dataBase64: self.JC.pdf.toBase64(letter) };
+  }
+  return saveDraft(Object.assign({}, d, { status: 'approved', approvedAt: new Date().toISOString(), files }));
+}
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  const fromExt = sender.id === chrome.runtime.id && String(sender.url || '').startsWith(chrome.runtime.getURL(''));
+  if (!fromExt || !msg || !/^jc:(draft-|llm-test)/.test(msg.type || '')) return;
+  (async () => {
+    if (msg.type === 'jc:llm-test') return runAI('ping', { testReply: undefined });
+    if (msg.type === 'jc:draft-for-tab') {
+      const key = msg.general ? 'general' : await draftKeyFor(msg.tabId);
+      const job = msg.general ? null : await jobFor(msg.tabId).catch(() => null);
+      return { ok: true, key, job, draft: (await getDrafts())[key] || null, model: await llmConfig() };
+    }
+    if (msg.type === 'jc:draft-create') return createDraft(msg);
+    if (msg.type === 'jc:draft-save') return { ok: true, draft: await saveDraft(msg.draft) };
+    if (msg.type === 'jc:draft-approve') return { ok: true, draft: await approveDraft(msg.draft) };
+    if (msg.type === 'jc:draft-delete') {
+      const all = await getDrafts();
+      delete all[msg.key];
+      await chrome.storage.local.set({ drafts: all });
+      return { ok: true };
+    }
+    return { ok: false, error: 'unknown draft message' };
+  })()
+    .then(sendResponse)
+    .catch((e) => sendResponse({ ok: false, error: String(e.message || e) }));
+  return true;
 });

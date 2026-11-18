@@ -28,6 +28,8 @@
     // resume file to upload", "Apply with: LinkedIn / Upload / Manually"): pick uploading a file.
     { key: 'resumeSource', re: /\b((resume|cv) (upload )?(selection|source|options?|method)|resume upload|select the (resume |cv )?file to upload|how (would|do) you (like|want) to (apply|submit|provide|share|add) (your )?(resume|cv|application|profile)|upload (method|source|from)|import (your )?(resume|profile) from)\b/, choiceOnly: true, q: true },
     { key: 'coverLetter', re: /\bcover ?letter\b/, fileOnly: true, q: true },
+    // A cover letter typed into a box (not uploaded): the approved draft's letter.
+    { key: 'coverLetterText', re: /\b(cover ?letter|letter of (motivation|interest)|motivation(al)? letter)\b/, textOnly: true, q: true },
     { key: 'email', re: /\be-?mail\b/ },
     // "How do you pronounce your name?" is a free-text question, not the name itself.
     { key: 'skip', re: /\bpronounc/, q: true },
@@ -400,6 +402,7 @@
         if (c.long && !r.q) continue;
         if (r.fileOnly && !isFile) continue;
         if (r.choiceOnly && !CHOICE_TYPES.includes(type)) continue;
+        if (r.textOnly && !['textarea', 'text', ''].includes(type)) continue;
         if (isFile && !r.fileOnly) continue;
         if (r.re.test(c.text)) {
           if (r.key === 'skip') return null;
@@ -457,6 +460,8 @@
         const c = dialCode(profile);
         return c ? '+' + c : '';
       }
+      case 'coverLetterText': // from an approved tailored draft
+        return profile.coverLetterText || '';
       case 'resumeSource': // which option: chooseResumeSource()
         return 'Upload';
       case 'timeZone':
@@ -535,6 +540,7 @@
   /** Why a classified field was left empty, in words Claude can act on. */
   function emptyReason(key, period, profile) {
     const w = (profile && profile.work) || {};
+    if (key === 'coverLetterText') return 'cover letter: click "Tailor resume & cover letter" in the side panel, review the draft, then Approve';
     if (key === 'currentPay') return 'asks for current/previous pay: leave blank if optional, otherwise ask the user';
     if (key === 'desiredPay') {
       if (period === 'unknown') return 'pay question does not say hourly or annual: ask the user';

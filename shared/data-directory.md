@@ -27,7 +27,8 @@ committed. Override it with the `JOB_SEARCH_HOME` environment variable.
 Same shape as `extension/src/shared/profile-schema.js`. Top-level sections are `personal`, `links`, `work`,
 `education`, `authorization`, and `eeo`, plus `howDidYouHear`, `summary`, and `answers: [{ question, answer }]`.
 Work history and schools, newest first, for applications with repeatable sections (Workday "My Experience"):
-`experience: [{ title, company, location, start: "YYYY-MM", end: "YYYY-MM" or "", current, description }]` and
+`experience: [{ title, company, location, start: "YYYY-MM", end: "YYYY-MM" or "", current, description, details }]`
+(`description` = resume bullets, `details` = longer notes on projects, tools and results, used for tailoring) and
 `educationHistory: [{ school, degree, fieldOfStudy, start: "YYYY-MM", end: "YYYY-MM", gpa }]`. Languages are
 `work.languages`, a comma-separated list such as `English (native), Hindi (fluent)`.
 EEO fields default to `"Decline to self-identify"`. A template is at `setup/assets/profile.template.json`.

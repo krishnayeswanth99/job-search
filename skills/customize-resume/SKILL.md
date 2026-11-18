@@ -78,3 +78,9 @@ Update the tracker: `tracker.py update --id N --status tailored --folder jobs/<f
 ### Step 7: Hand off
 Suggest `/job-copilot:job-apply <tracker id>`. job-apply attaches `<folder>/*.pdf` automatically through the extension.
 The user can also set it as the active resume in Job Copilot's options.
+
+## In the Job Copilot extension
+The extension has the same workflow built in: **Tailor resume & cover letter for this job** writes a draft (from the
+profile's work history and its `details` notes), the user edits and approves it on the draft page, and autofill then
+uses the draft's bullets and attaches its PDFs. Prefer it when the user is applying in the browser; use this skill for
+a polished, hand-reviewed resume file.

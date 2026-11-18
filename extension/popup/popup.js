@@ -210,6 +210,13 @@ async function init() {
     refreshAsk();
     $('btn-next').hidden = false;
   }
+  if (d.application || d.pageType === 'job') {
+    $('btn-tailor').hidden = false;
+    const { drafts } = await chrome.storage.local.get('drafts');
+    const key = await chrome.runtime.sendMessage({ type: 'jc:draft-for-tab', tabId }).then((x) => x && x.key).catch(() => '');
+    const dr = drafts && key && drafts[key];
+    if (dr) $('btn-tailor').textContent = dr.status === 'approved' ? 'Tailored draft approved ✓ (open / edit)' : 'Tailored draft ready: review & approve';
+  }
   if (isAggregator()) {
     $('btn-queue').hidden = false;
     refreshQueue();
@@ -508,3 +515,5 @@ $('btn-rec').addEventListener('click', async () => {
 
 init();
 refreshRec();
+
+$('btn-tailor').addEventListener('click', () => chrome.tabs.create({ url: chrome.runtime.getURL('draft/draft.html?tab=' + tabId) }));

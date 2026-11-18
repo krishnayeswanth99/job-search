@@ -108,7 +108,8 @@
     p.summary = '';
     /** Saved answers to custom questions: [{ question, answer }]. */
     p.answers = [];
-    /** Work history, newest first: [{ title, company, location, start: 'YYYY-MM', end: 'YYYY-MM' | '', current, description }]. */
+    /** Work history, newest first: [{ title, company, location, start: 'YYYY-MM', end: 'YYYY-MM' | '', current, description, details }].
+     *  `description` is the resume bullets; `details` is longer free text (projects, tools, results) used for tailoring. */
     p.experience = [];
     /** Schools, newest first: [{ school, degree, fieldOfStudy, start: 'YYYY-MM', end: 'YYYY-MM', gpa }]. */
     p.educationHistory = [];

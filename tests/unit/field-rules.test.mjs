@@ -294,3 +294,9 @@ test('"how did you first hear" and long portfolio-link questions', () => {
   assert.equal(key({ label: 'How did you first hear about this position at Casap?' }), 'howDidYouHear');
   assert.equal(key({ label: 'Link to website, portfolio, code repository, etc. Please include passcode if needed.' }), 'portfolio');
 });
+
+test('cover letter: a text box is the draft letter, an upload is the file', () => {
+  assert.equal(key({ label: 'Cover Letter', type: 'textarea' }), 'coverLetterText');
+  assert.equal(key({ label: 'Cover Letter', type: 'file' }), 'coverLetter');
+  assert.equal(valueForKey({ coverLetterText: 'Dear Acme Team,' }, 'coverLetterText'), 'Dear Acme Team,');
+});

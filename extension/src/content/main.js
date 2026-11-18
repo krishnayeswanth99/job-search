@@ -121,7 +121,17 @@
         case 'autofill': {
           const fields = JC.fields.scan();
           if (!fields.length) return { ok: true, frame: location.href, filledCount: 0, filled: [], skipped: [], needsInput: [] };
-          const { profile, resume, coverLetter, resumeText } = await storage(['profile', 'resume', 'coverLetter', 'resumeText']);
+          const got = await storage(['profile', 'resume', 'coverLetter', 'resumeText', 'drafts']);
+          let { profile, resume, coverLetter } = got;
+          const { resumeText } = got;
+          // An approved tailored draft for this job: its bullets, summary, skills and cover letter
+          // fill the form, and its PDFs are what gets attached.
+          const draft = payload.draftKey && got.drafts && got.drafts[payload.draftKey];
+          if (profile && draft && draft.status === 'approved' && JC.draft) {
+            profile = JC.draft.applyToProfile(profile, draft);
+            if (draft.files && draft.files.resume) resume = draft.files.resume;
+            if (draft.files && draft.files.coverLetter) coverLetter = draft.files.coverLetter;
+          }
           if (!profile) return { ok: false, frame: location.href, error: 'No profile saved in Job Copilot. Open the options page and import profile.json.' };
           const files = { resume: payload.files?.resume || resume, coverLetter: payload.files?.coverLetter || coverLetter };
           const st = await settings();

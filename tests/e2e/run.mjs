@@ -48,6 +48,7 @@ const ROUTES = {
   'https://acme.wd5.myworkdayjobs.com/en-US/careers/job/New-York-NY/ML-Engineer_123/apply/myExperience?v=skills': fx('workday-experience.html'),
   'https://careers.acme-robotics.example/jobs/data-scientist?v=2': fx('employer-apply-modal.html'),
   'https://job-boards.greenhouse.io/panelco/jobs/1': fx('greenhouse-job.html'),
+  'https://job-boards.greenhouse.io/draftco/jobs/1': fx('greenhouse-job.html').replace('</form>', '<div class="field"><label for="cl">Cover Letter</label><textarea id="cl" name="cover_letter_text"></textarea></div></form>'),
   'https://job-boards.greenhouse.io/acme/jobs/ai-check': '<html><head><meta charset="utf-8"></head><body><form><label for="seg">Segundo nombre</label><input id="seg" name="legalName.fullName"><label for="em">Email</label><input id="em" name="email"></form></body></html>',
   'https://jobs.lever.co/learntest/apply-2': fx('learn-form.html'),
   'https://careers-acme.icims.com/jobs/1234/data-scientist/candidate': fx('icims-like.html'),
@@ -580,6 +581,38 @@ try {
       assert.equal(mem.names.python, 'Python (Programming Language)');
     } finally {
       await ext.evaluate(async (s) => chrome.storage.local.set({ profile: s.profile, resumeText: s.resumeText || '', skillMemory: s.skillMemory || {} }), saved);
+    }
+  });
+
+  await check('tailored draft: written from the profile, edited, approved; autofill attaches its PDF and fills the letter', async () => {
+    const saved = await ext.evaluate(async () => chrome.storage.local.get(['profile', 'drafts']));
+    const prof = Object.assign({}, saved.profile, {
+      experience: [{ title: 'Senior Data Scientist', company: 'Acme Robotics', start: '2022-03', end: '', current: true, description: '• Built forecasting models that cut stockouts 18%.', details: 'Owned the demand-forecasting platform on Kubernetes, serving 40 warehouses.' }],
+    });
+    const reply = JSON.stringify({ summary: 'Engineer who ships forecasting systems.', experience: [{ job: 0, bullets: ['Ran forecasting on Kubernetes for 40 warehouses', 'Cut stockouts 18% with forecasting models'] }], skills: ['Kubernetes'], coverLetter: 'Dear Acme Team,\n\nI build forecasting systems on Kubernetes.\n\nAda Lovelace', notes: ['Check the cover letter tone.'] });
+    await ext.evaluate(async (a) => chrome.storage.local.set({ profile: a.prof, __testNanoReply: a.reply }), { prof, reply });
+    try {
+      const g = await open('https://job-boards.greenhouse.io/draftco/jobs/1');
+      const tid = await ext.evaluate(async (url) => (await chrome.tabs.query({ url })).at(0)?.id, g.url());
+      const pg = await context.newPage();
+      await pg.goto(`chrome-extension://${extId}/draft/draft.html?tab=${tid}`);
+      await pg.click('#btn-generate');
+      await pg.waitForSelector('#draft:not([hidden]) #experience textarea', { timeout: 20000 }).catch(async (e) => { throw new Error('status: ' + (await pg.textContent('#status')) + ' / model: ' + (await pg.textContent('#model'))); });
+      assert.match(await pg.inputValue('#experience textarea'), /40 warehouses/);
+      assert.match(await pg.textContent('#warnings'), /cover letter tone/);
+      await pg.fill('#summary', 'Engineer who ships forecasting systems at scale.');
+      await pg.click('#btn-approve');
+      await pg.waitForFunction(() => /Approved/.test(document.getElementById('approved').textContent));
+      const drafts = await ext.evaluate(async () => (await chrome.storage.local.get('drafts')).drafts);
+      const d = Object.values(drafts).find((x) => x.status === 'approved' && x.summary.includes('at scale'));
+      assert.ok(d && d.files && d.files.resume && d.files.coverLetter, JSON.stringify(Object.keys(drafts)));
+      const r = await ext.evaluate(async (tabId) => chrome.runtime.sendMessage({ type: 'jc:popup', tabId, cmd: 'autofill', payload: {} }), tid);
+      const v = await g.evaluate(() => ({ cv: resume.files[0] && resume.files[0].name, cl: cl.value }));
+      assert.equal(v.cv, d.files.resume.name, JSON.stringify(r.needsInput));
+      assert.match(v.cl, /^Dear Acme Team,/);
+      await pg.close();
+    } finally {
+      await ext.evaluate(async (s) => { await chrome.storage.local.remove('__testNanoReply'); await chrome.storage.local.set({ profile: s.profile, drafts: s.drafts || {} }); }, saved);
     }
   });
 

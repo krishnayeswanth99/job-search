@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Job Copilot: tailored application</title>
+    <link rel="stylesheet" href="draft.css" />
+  </head>
+  <body>
+    <header>
+      <img src="../icons/icon32.png" alt="" width="22" height="22" />
+      <div>
+        <h1 id="title">Tailored resume &amp; cover letter</h1>
+        <div id="subtitle" class="muted"></div>
+      </div>
+    </header>
+
+    <section class="card" id="intro">
+      <p>
+        Job Copilot writes a draft from your profile, your work history (including the <em>More detail &amp; projects</em>
+        notes in options) and this job's description. The model may only choose and reword: employers, titles and dates
+        come from your profile, and bullets with numbers that aren't in your data are left out. Read it, edit anything, then
+        <strong>Approve</strong>: the application is then filled from this draft and its PDFs are attached, so the form and
+        your resume say the same thing.
+      </p>
+      <div class="row">
+        <button id="btn-generate" class="primary">Write the draft</button>
+        <span id="model" class="muted"></span>
+      </div>
+      <div id="status" class="status"></div>
+    </section>
+
+    <div id="draft" hidden>
+      <section class="card" id="warn-box" hidden>
+        <strong>Check these</strong>
+        <ul id="warnings"></ul>
+      </section>
+
+      <section class="card">
+        <h2>Summary</h2>
+        <textarea id="summary" rows="3"></textarea>
+      </section>
+
+      <section class="card">
+        <h2>Experience</h2>
+        <p class="muted small">One bullet per line. Titles, companies and dates are from your profile (edit them in options).</p>
+        <div id="experience"></div>
+      </section>
+
+      <section class="card">
+        <h2>Skills</h2>
+        <input id="skills" />
+      </section>
+
+      <section class="card">
+        <h2>Cover letter</h2>
+        <textarea id="letter" rows="14"></textarea>
+      </section>
+
+      <section class="card actions">
+        <button id="btn-approve" class="primary">Approve &amp; use for this application</button>
+        <button id="btn-resume">Download resume PDF</button>
+        <button id="btn-letter">Download cover letter PDF</button>
+        <button id="btn-main" hidden>Use as my main resume</button>
+        <span id="approved" class="ok"></span>
+      </section>
+    </div>
+
+    <script src="../src/shared/config.js"></script>
+    <script src="../src/shared/profile-schema.js"></script>
+    <script src="../src/shared/field-rules.js"></script>
+    <script src="../src/shared/ask-prompt.js"></script>
+    <script src="../src/shared/draft.js"></script>
+    <script src="../src/shared/pdf-writer.js"></script>
+    <script src="../src/shared/llm.js"></script>
+    <script src="draft.js"></script>
+  </body>
+</html>

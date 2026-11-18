@@ -21,6 +21,7 @@
 
   // Ready-made settings for common servers (the model is a suggestion; use any you have).
   const PRESETS = {
+    'ollama-phi': { label: 'Ollama: Phi-3.5 mini (8 GB laptops, ~2.3 GB)', baseUrl: 'http://localhost:11434/v1', model: 'phi3.5' },
     'ollama-small': { label: 'Ollama, small model (8 GB laptops)', baseUrl: 'http://localhost:11434/v1', model: 'qwen2.5:3b-instruct' },
     ollama: { label: 'Ollama (16 GB or more)', baseUrl: 'http://localhost:11434/v1', model: 'qwen2.5:7b-instruct' },
     lmstudio: { label: 'LM Studio (this computer)', baseUrl: 'http://localhost:1234/v1', model: 'qwen2.5-7b-instruct' },

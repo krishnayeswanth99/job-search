@@ -37,7 +37,7 @@ Memory is shared by macOS, Chrome and the model, so:
   |---|---|---|
   | `qwen2.5:3b-instruct` (preset "Ollama, small model") | ~2 GB | yes/no and short answers, checks |
   | `llama3.2:3b` | ~2 GB | similar |
-  | `phi3.5` | ~2.3 GB | a bit better reasoning, slower |
+  | `phi3.5` (preset "Ollama: Phi-3.5 mini") | ~2.3 GB | a bit better reasoning, slower; long context helps tailoring |
 
   Fine for answering and checking; tailored resumes and cover letters are noticeably better with a cloud model.
 - **Cloud with no load on your Mac:** the *Google Gemini API* preset (free tier, key from aistudio.google.com), Groq

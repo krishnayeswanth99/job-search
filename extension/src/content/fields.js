@@ -93,8 +93,16 @@
     const out = [];
     const groups = new Map(); // radio/checkbox groups keyed by name
 
-    const controls = document.querySelectorAll('input, textarea, select');
+    // An open modal with form fields (ZipRecruiter 1-Click Apply, LinkedIn Easy Apply, Indeed…):
+    // only its fields count, never the page behind it.
+    // Cookie / privacy windows don't count: they only hold checkboxes and toggles.
+    const modal = [...document.querySelectorAll('[role="dialog"][aria-modal="true"], dialog[open], [role="dialog"]')].find(
+      (d) => isVisible(d) && d.querySelector('input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]), textarea, select, button[aria-haspopup="listbox"]') && !/\b(cookies?|privacy (preferences|settings|choices)|consent preferences)\b/i.test((d.innerText || '').slice(0, 400))
+    );
+    const controls = (modal || document).querySelectorAll('input, textarea, select');
     for (const el of controls) {
+      // The site's own search / header boxes are never part of an application.
+      if (el.closest('header, nav, [role="search"], [role="banner"], [role="navigation"]') && !el.closest('form[action*="apply" i], [role="dialog"]')) continue;
       const type = (el.type || el.tagName).toLowerCase();
       if (['hidden', 'submit', 'button', 'reset', 'image', 'search'].includes(type)) continue;
       if (el.disabled) continue;
@@ -132,7 +140,8 @@
 
     // Dropdowns built from buttons/divs (Workday "Select One" buttons, ARIA comboboxes without an input).
     const PLACEHOLDER_TEXT = /^(select( one)?|choose( one)?|please select|--|—|make a selection|none selected)\b/i;
-    for (const el of document.querySelectorAll('button[aria-haspopup="listbox"], [role="combobox"]:not(input):not(:has(input))')) {
+    for (const el of (modal || document).querySelectorAll('button[aria-haspopup="listbox"], [role="combobox"]:not(input):not(:has(input))')) {
+      if (el.closest('header, nav, [role="search"], [role="banner"], [role="navigation"]') && !el.closest('[role="dialog"]')) continue;
       if (el.disabled || el.getAttribute('aria-disabled') === 'true' || !isVisible(el) || el.closest('[aria-hidden="true"]')) continue;
       const text = clean(el.innerText || el.textContent);
       out.push({ el, tag: el.tagName.toLowerCase(), type: 'listbox', name: el.getAttribute('name') || '', combobox: true, listboxText: text, listboxEmpty: !text || PLACEHOLDER_TEXT.test(text) });

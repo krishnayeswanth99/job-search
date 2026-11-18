@@ -1,0 +1,37 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Machine Learning Engineer | ZipRecruiter</title></head>
+<body>
+<header><label id="hl" for="hs">Search job title and location</label><input id="hs" role="combobox" aria-autocomplete="list" aria-labelledby="hl" placeholder="Search job title and location"></header>
+<main><h1>Machine Learning Engineer - Ad Sciences</h1><p>InMobi · San Francisco, CA</p>
+<button type="button" id="oneclick" aria-label="1-Click Apply"><p>1-Click Apply</p></button></main>
+<div id="layer"></div>
+<script>
+  // Like ZipRecruiter: 1-Click Apply opens a modal; a click outside it or Escape asks "Are you sure
+  // you want to exit?"; Continue submits.
+  window.__exit = false;
+  window.__submitted = false;
+  const layer = document.getElementById('layer');
+  function combo(id, label) {
+    return `<div><label id="${id}-l">${label}</label><button type="button" role="combobox" aria-haspopup="listbox" aria-expanded="false" aria-required="true" aria-label="${label}" id="${id}">Select</button><div class="opts"></div></div>`;
+  }
+  document.getElementById('oneclick').addEventListener('click', () => {
+    layer.innerHTML = `<div role="dialog" aria-modal="true" id="dlg"><h2>Machine Learning Engineer - Ad Sciences</h2><form novalidate>
+      <label for="s0">Preferred First Name</label><input id="s0" aria-label="Preferred First Name">
+      <label for="s1">LinkedIn Profile</label><input id="s1" aria-label="LinkedIn Profile">
+      ${combo('s3', 'Are you legally authorized to work in the United States?')}
+      ${combo('s4', 'Will you now, or in the future, require sponsorship for employment visa status?')}
+      <label for="s5">Are you comfortable commuting to our San Mateo office?</label><textarea id="s5" required></textarea>
+      </form><button type="button" id="cont">Continue</button></div>`;
+    const dlg = document.getElementById('dlg');
+    dlg.querySelectorAll('[role="combobox"]').forEach((b) => b.addEventListener('click', () => {
+      const box = b.nextElementSibling;
+      box.innerHTML = '<div role="listbox"><button type="button" role="option">Yes</button><button type="button" role="option">No</button></div>';
+      box.querySelectorAll('[role="option"]').forEach((o) => o.addEventListener('click', () => { b.textContent = o.textContent; box.innerHTML = ''; }));
+    }));
+    document.getElementById('cont').addEventListener('click', () => (window.__submitted = true));
+    const exit = () => (window.__exit = true);
+    document.addEventListener('click', (e) => { if (!dlg.contains(e.target) && e.target.id !== 'oneclick') exit(); }, true);
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') exit(); }, true);
+  });
+</script>
+</body></html>

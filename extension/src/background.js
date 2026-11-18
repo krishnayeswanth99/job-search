@@ -305,6 +305,13 @@ const advanced = new Map(); // tabId -> pages advanced (a cap against loops)
 async function maybeContinue(tabId, r) {
   const { settings } = await chrome.storage.local.get('settings');
   if (settings && settings.autoNext === false) return;
+  // Job boards' own forms (Easy Apply, 1-Click Apply): their "Continue" may submit right away.
+  const tab = await chrome.tabs.get(tabId).catch(() => null);
+  const portal = tab && tab.url ? self.JC.portalForHost(new URL(tab.url).hostname) : null;
+  if (portal && (portal.aggregator || ['linkedin', 'indeed', 'glassdoor', 'wellfound'].includes(portal.id))) {
+    debugAdd(tabId, { type: 'extension-step', detail: { step: `${portal.name}'s own application form: filled, Continue / Submit left to you` } });
+    return;
+  }
   const blocking = (r.needsInput || []).filter((f) => f.required);
   if (blocking.length) {
     debugAdd(tabId, { type: 'extension-step', detail: { step: 'waiting for you before Save and Continue', required: blocking.map((f) => (f.label || '').slice(0, 60)).slice(0, 10) } });

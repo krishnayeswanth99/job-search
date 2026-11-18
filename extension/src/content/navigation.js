@@ -527,6 +527,11 @@
         if (!portal || !portal.aggregator) return;
         const b = e.target && e.target.closest && e.target.closest('a, button, [role="button"]');
         if (!b || !APPLY_RE.test(label(b)) || SKIP_UPSELL.test(label(b))) return;
+        // "1-Click Apply" / "Easy Apply" open the board's own form: fill it, don't wait for the employer site.
+        if (EASY_RE.test(label(b) + ' ' + (b.getAttribute('aria-label') || ''))) {
+          markApplying();
+          return;
+        }
         try {
           const { settings } = await chrome.storage.local.get('settings');
           if (settings && settings.autoContinue === false) return;
@@ -561,8 +566,12 @@
       async (e) => {
         if (!e.isTrusted || assisting) return;
         const portal = JC.portalForHost(location.hostname);
-        if (portal && (portal.aggregator || BOARDS.has(portal.id))) return;
         const b = e.target && e.target.closest && e.target.closest('a, button, [role="button"], input[type="submit"], input[type="button"]');
+        if (portal && BOARDS.has(portal.id) && b && EASY_RE.test(label(b) + ' ' + (b.getAttribute('aria-label') || ''))) {
+          markApplying(); // LinkedIn / Indeed Easy Apply: fill the board's own form as it opens
+          return;
+        }
+        if (portal && (portal.aggregator || BOARDS.has(portal.id))) return;
         if (!b || !APPLY_RE.test(label(b)) || EASY_RE.test(label(b)) || /^submit/i.test(label(b))) return;
         if (JC.fields.looksLikeApplication()) return; // a button inside the form itself
         try {

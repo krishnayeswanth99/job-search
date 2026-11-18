@@ -39,6 +39,7 @@ const ROUTES = {
   'https://acme.wd5.myworkdayjobs.com/en-US/careers/job/New-York-NY/ML-Engineer_123/apply/questions': fx('workday-prompt.html'),
   'https://careers.acme-robotics.example/jobs/data-scientist': fx('employer-apply-modal.html'),
   'https://careers.acme-robotics.example/apply/multi-step': fx('multi-step.html'),
+  'https://www.ziprecruiter.com/jobs/v2/test-1click': fx('ziprecruiter-1click.html'),
   'https://acme.wd5.myworkdayjobs.com/en-US/careers/job/New-York-NY/ML-Engineer_123/apply/myExperience': fx('workday-experience.html'),
   'https://careers.acme-robotics.example/jobs/data-scientist?v=2': fx('employer-apply-modal.html'),
   'https://job-boards.greenhouse.io/acme/jobs/ai-check': '<html><head><meta charset="utf-8"></head><body><form><label for="seg">Segundo nombre</label><input id="seg" name="legalName.fullName"><label for="em">Email</label><input id="em" name="email"></form></body></html>',
@@ -447,6 +448,16 @@ try {
     } finally {
       await ext.evaluate(async (p) => chrome.storage.local.set({ profile: p }), saved);
     }
+  });
+
+  await check('ZipRecruiter 1-Click Apply: you click it, the pop-up is filled (not the header search), no exit prompt, Continue left to you', async () => {
+    const p = await open('https://www.ziprecruiter.com/jobs/v2/test-1click');
+    await p.click('#oneclick');
+    await p.waitForFunction(() => document.getElementById('s3') && document.getElementById('s3').textContent === 'Yes' && document.getElementById('s4').textContent !== 'Select', null, { timeout: 25000 });
+    const v = await p.evaluate(() => ({ spon: s4.textContent, li: s1.value, search: hs.value, searchFlag: hs.hasAttribute('data-jc-needs-input'), exit: window.__exit }));
+    assert.deepEqual(v, { spon: 'No', li: 'https://www.linkedin.com/in/ada', search: '', searchFlag: false, exit: false });
+    await p.waitForTimeout(7000);
+    assert.equal(await p.evaluate(() => window.__submitted), false);
   });
 
   await check('bridge: fillField answers a custom question', async () => {

@@ -607,6 +607,13 @@
     }
     const seen = texts().map((t) => t.text).filter(Boolean);
     const escape = () => {
+      // Inside a modal, Escape or a click outside closes the modal itself ("Are you sure you want
+      // to exit?"): click a neutral spot inside it (its heading) instead.
+      const dlg = el.closest('[role="dialog"], dialog');
+      if (dlg) {
+        fireMouse(dlg.querySelector('h1, h2, h3, [id*="title" i]') || dlg);
+        return;
+      }
       document.activeElement && document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, bubbles: true }));
       fireMouse(document.body);
     };

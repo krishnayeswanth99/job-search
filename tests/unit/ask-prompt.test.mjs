@@ -49,3 +49,11 @@ test('on-device: compact prompt, schema restricts choices, batching', () => {
   assert.deepEqual([...sch.properties.answers.required], ['jc-a-2', 'jc-a-3', 'jc-a-7']);
   assert.equal(JC.ask.batches(qs, 2).length, 2);
 });
+
+test('on-device prompt keeps the resume lines that match the questions', () => {
+  const resume = ['Ada Lovelace', 'Summary: engineer.'].concat(Array.from({ length: 80 }, (_, i) => `Did unrelated thing number ${i} with spreadsheets.`), ['Built production services in Java at Acme.']).join('\n');
+  const out = JC.ask.relevantResume(resume, [{ label: 'Have you built production software using Python or Java?' }], 1200);
+  assert.ok(out.length <= 1300, String(out.length));
+  assert.ok(out.startsWith('Ada Lovelace'));
+  assert.ok(out.includes('Java at Acme'));
+});

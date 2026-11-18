@@ -36,6 +36,7 @@ const ROUTES = {
   'https://uab.taleo.net/careersection/application.jss?lang=en&reqNo=330171&signedin=1&isOnLogoutPage=true&iss=https://accounts.google.com&scope=email+https://www.googleapis.com/auth/userinfo.email+openid': fx('taleo-application.html'),
   'https://uab.taleo.net/careersection/application.jss?lang=en&reqNo=330172': fx('taleo-application.html'),
   'https://uab.taleo.net/careersection/application.jss?lang=en&reqNo=330173': fx('taleo-resume.html'),
+  'https://acme.wd5.myworkdayjobs.com/en-US/careers/job/New-York-NY/ML-Engineer_123/apply/questions': fx('workday-prompt.html'),
   'https://job-boards.greenhouse.io/acme/jobs/ai-check': '<html><head><meta charset="utf-8"></head><body><form><label for="seg">Segundo nombre</label><input id="seg" name="legalName.fullName"><label for="em">Email</label><input id="em" name="email"></form></body></html>',
   'https://jobs.lever.co/learntest/apply-2': fx('learn-form.html'),
   'https://careers-acme.icims.com/jobs/1234/data-scientist/candidate': fx('icims-like.html'),
@@ -341,6 +342,23 @@ try {
     const v = await p.evaluate(() => ({ up: document.getElementById('r-up').checked, pc: !!document.getElementById('s-pc') && document.getElementById('s-pc').checked, file: document.getElementById('file') ? document.getElementById('file').files.length : -1 }));
     assert.deepEqual(v, { up: true, pc: true, file: 1 }, JSON.stringify(r));
     assert.ok(!r.needsInput.some((f) => /resume/i.test(f.label)), JSON.stringify(r.needsInput));
+  });
+
+  await check('Workday prompt search (Enter) finds "LinkedIn"; experience yes/no answered from the resume only with evidence', async () => {
+    const saved = await ext.evaluate(async () => (await chrome.storage.local.get(['profile', 'resumeText'])));
+    await ext.evaluate(async (s) => chrome.storage.local.set({ profile: Object.assign({}, s.profile, { howDidYouHear: 'LinkedIn' }), resumeText: 'Ada Lovelace\nSoftware engineer at Acme Robotics. Built analytics services in Python on AWS.\n' + 'Shipped dashboards and data pipelines. '.repeat(15) }), saved);
+    try {
+      const p = await open('https://acme.wd5.myworkdayjobs.com/en-US/careers/job/New-York-NY/ML-Engineer_123/apply/questions');
+      const r = await bridge(p, () => window.jobCopilot.autofill());
+      const v = await p.evaluate(() => ({ pill: document.getElementById('pills').textContent, q1: q1y.checked, q2: q2y.checked || q2n.checked, cc: cc.options[cc.selectedIndex].text, q3no: q3n.checked }));
+      assert.equal(v.cc, 'United States of America (+1)'); // +1, no +1 option for the profile's country: the main +1 country
+      assert.equal(v.q3no, true);
+      assert.equal(v.pill, 'LinkedIn', JSON.stringify(r.needsInput));
+      assert.equal(v.q1, true, JSON.stringify(r));
+      assert.equal(v.q2, false);
+    } finally {
+      await ext.evaluate(async (s) => chrome.storage.local.set({ profile: s.profile, resumeText: s.resumeText || '' }), saved);
+    }
   });
 
   await check('bridge: fillField answers a custom question', async () => {

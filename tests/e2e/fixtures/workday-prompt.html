@@ -1,0 +1,61 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>My Information</title></head>
+<body>
+<form>
+  <div data-automation-id="formField-source">
+    <label for="srch">How Did You Hear About Us?</label>
+    <div>
+      <div data-automation-id="multiselectInputContainer"><input id="srch" type="text" data-automation-id="searchBox" placeholder="Search"></div>
+      <ul data-automation-id="selectedItemList" id="pills"></ul>
+    </div>
+    <div id="pop" data-automation-id="activeListContainer"></div>
+  </div>
+  <fieldset>
+    <legend>Have you built and supported production software using Python or Java?</legend>
+    <label><input type="radio" name="q1" id="q1y" value="1"> Yes</label>
+    <label><input type="radio" name="q1" id="q1n" value="0"> No</label>
+  </fieldset>
+  <label for="cc">Country Phone Code</label>
+  <select id="cc"><option value="">Select One</option><option>Canada (+1)</option><option>Jamaica (+1)</option><option>United States of America (+1)</option><option>India (+91)</option></select>
+  <fieldset>
+    <legend>Have you ever worked at Applied Materials as a regular employee, contingent worker, intern, etc.?</legend>
+    <label><input type="radio" name="q3" id="q3y" value="1"> Yes</label>
+    <label><input type="radio" name="q3" id="q3n" value="0"> No</label>
+  </fieldset>
+  <fieldset>
+    <legend>Do you have experience with Rust?</legend>
+    <label><input type="radio" name="q2" id="q2y" value="1"> Yes</label>
+    <label><input type="radio" name="q2" id="q2n" value="0"> No</label>
+  </fieldset>
+</form>
+<script>
+  // Like Workday's prompt: click shows categories; typing only searches on Enter (across all
+  // levels); a pick adds a pill and leaves the list open.
+  const TREE = { 'Job Board': ['Indeed', 'Glassdoor'], 'Social Media': ['LinkedIn', 'Facebook'] };
+  const pop = document.getElementById('pop');
+  const input = document.getElementById('srch');
+  function list(items, onPick) {
+    pop.innerHTML = '';
+    for (const t of items) {
+      const d = document.createElement('div');
+      d.setAttribute('data-automation-id', 'promptOption');
+      d.setAttribute('role', 'option');
+      d.textContent = t;
+      d.addEventListener('click', () => onPick(t));
+      pop.appendChild(d);
+    }
+  }
+  const pick = (leaf) => {
+    document.getElementById('pills').innerHTML = `<li data-automation-id="selectedItem">${leaf}</li>`;
+    input.value = '';
+  };
+  const showTop = () => list(Object.keys(TREE), (cat) => list(TREE[cat], pick));
+  input.addEventListener("click", showTop);
+  input.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    const q = input.value.toLowerCase();
+    if (!q) return showTop();
+    list(Object.values(TREE).flat().filter((t) => t.toLowerCase().includes(q)), pick);
+  });
+</script>
+</body></html>

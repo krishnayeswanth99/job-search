@@ -121,11 +121,11 @@
         case 'autofill': {
           const fields = JC.fields.scan();
           if (!fields.length) return { ok: true, frame: location.href, filledCount: 0, filled: [], skipped: [], needsInput: [] };
-          const { profile, resume, coverLetter } = await storage(['profile', 'resume', 'coverLetter']);
+          const { profile, resume, coverLetter, resumeText } = await storage(['profile', 'resume', 'coverLetter', 'resumeText']);
           if (!profile) return { ok: false, frame: location.href, error: 'No profile saved in Job Copilot. Open the options page and import profile.json.' };
           const files = { resume: payload.files?.resume || resume, coverLetter: payload.files?.coverLetter || coverLetter };
           const st = await settings();
-          const run = () => JC.autofill.autofill({ profile, files, overrides: payload.overrides, overwrite: !!payload.overwrite, profileWins: st.profileWins !== false });
+          const run = () => JC.autofill.autofill({ profile, files, overrides: payload.overrides, overwrite: !!payload.overwrite, resumeText, profileWins: st.profileWins !== false });
           const r = await (JC.learn ? JC.learn.ours(run) : run());
           return Object.assign({ ok: true }, r);
         }

@@ -93,7 +93,9 @@
       : key === 'timeZone'
         ? R.timeZoneCandidates(value, new Date().getTimezoneOffset())
         : [value];
-  function chooseFrom(opts, desiredList) {
+  let userCountry = ''; // set per autofill run: picks between countries sharing a dialing code
+  function chooseFrom(opts, desiredList, key) {
+    if (key === 'phoneCountryCode') return R.choosePhoneCode(opts, desiredList[0], userCountry);
     for (const d of desiredList) {
       const i = R.chooseOption(opts, d);
       if (i >= 0) return i;
@@ -103,7 +105,7 @@
 
   function fillSelect(el, desired, key) {
     const opts = [...el.options].map((o) => ({ value: o.value, text: o.text }));
-    const i = key === 'resumeSource' ? R.chooseResumeSource(opts) : chooseFrom(opts, choices(key, desired));
+    const i = key === 'resumeSource' ? R.chooseResumeSource(opts) : chooseFrom(opts, choices(key, desired), key);
     if (i < 0) return false;
     if (el.selectedIndex === i) return true;
     setValue(el, el.options[i].value);
@@ -111,7 +113,7 @@
   }
 
   function fillGroup(f, desired) {
-    const i = f.key === 'resumeSource' ? R.chooseResumeSource(f.options) : R.chooseOption(f.options, desired);
+    const i = f.key === 'resumeSource' ? R.chooseResumeSource(f.options) : f.key === 'phoneCountryCode' ? R.choosePhoneCode(f.options, desired, userCountry) : R.chooseOption(f.options, desired);
     if (i < 0) return false;
     const target = f.els[i];
     if (f.type === 'radio') setChecked(target, true);
@@ -142,7 +144,7 @@
   }
 
   /** Decide the value for a field: explicit override > saved answer > profile. */
-  function resolve(f, profile, overrides) {
+  function resolve(f, profile, overrides, resumeText) {
     if (overrides) {
       const o = overrides[f.ref] ?? overrides[f.label] ?? (f.key && overrides[f.key]);
       if (o !== undefined && o !== null && o !== '') return { value: String(o), source: 'override' };
@@ -152,6 +154,15 @@
     if (f.key) {
       const v = R.valueForKey(profile, f.key);
       if (v) return { value: v, source: 'profile' };
+    }
+    // Yes/no "Have you used Python or Java?": Yes when the resume or skills show it.
+    const yesNo = f.type === 'listbox' || (f.options || []).some((o) => /^yes\b/i.test(String(o.text || '').trim()));
+    if (!f.key && yesNo) {
+      // "Have you ever worked at Applied Materials?": Yes if your resume lists it, else No.
+      const was = R.formerEmployerAnswer(f.label, resumeText);
+      if (was) return { value: was, source: 'resume' };
+      const v = R.evidenceAnswer(f.label, resumeText, (profile.work || {}).skills);
+      if (v) return { value: v, source: 'resume' };
     }
     return null;
   }
@@ -165,6 +176,7 @@
    */
   async function autofill(opts) {
     const profile = JC.normalizeProfile(opts.profile);
+    userCountry = (profile.personal || {}).country || '';
     const profileWins = opts.profileWins !== false;
     const combos = [];
     const files = opts.files || {};
@@ -228,7 +240,7 @@
         if (f.hasValue && !opts.overwrite && !sourceNotUpload) {
           // Profile fields: if the site (usually its resume parser) put in something that means
           // something different, the profile value replaces it. Answers to other questions are kept.
-          r = profileWins && f.key && !f.combobox ? resolve(f, profile, opts.overrides) : null;
+          r = profileWins && f.key && !f.combobox ? resolve(f, profile, opts.overrides, opts.resumeText) : null;
           const site = currentValue(f);
           if (!r || r.source !== 'profile' || matches(f, site, r.value)) {
             skipped.push(Object.assign(d, { reason: 'already filled' }));
@@ -237,7 +249,7 @@
           }
           corrected.push({ label: f.label, site: String(site).slice(0, 80) });
         }
-        r = r || resolve(f, profile, opts.overrides);
+        r = r || resolve(f, profile, opts.overrides, opts.resumeText);
         if (f.key === 'resumeSource' && !files.resume) {
           needsInput.push(Object.assign(d, { reason: 'how to give your resume: no resume stored in Job Copilot, choose by hand' }));
           continue;
@@ -286,7 +298,7 @@
     for (const { f, d, r } of combos) {
       let res = { ok: false, seen: [] };
       try {
-        res = await fillCombobox(f.el, choices(f.key, r.value));
+        res = await fillCombobox(f.el, choices(f.key, r.value), f.key);
       } catch (e) {
         res = { ok: false, seen: [], error: e.message };
       }
@@ -294,7 +306,7 @@
       else
         needsInput.push(
           Object.assign(d, {
-            reason: `custom dropdown: ${res.partial ? `picked "${res.partial}" but no matching option in its sub-list, finish by hand` : 'no matching option found, choose by hand'}${res.seen.length ? ` (options seen: ${res.seen.slice(0, 12).join(' | ')})` : ' (no options appeared after clicking it)'}`,
+            reason: `custom dropdown: ${res.partial ? `picked "${res.partial}" but no matching option in its sub-list, finish by hand` : 'no matching option found, choose by hand'}${res.seen.length ? ` (options seen: ${res.seen.slice(0, 12).join(' | ')})` : ' (no options appeared after clicking it)'}${res.error ? ` [error: ${res.error}]` : ''}`,
             suggested: r.value,
           })
         );
@@ -394,7 +406,7 @@
   function matches(f, site, ours) {
     if (f.type === 'select') {
       const opts = [...f.el.options].map((o) => ({ value: o.value, text: o.text }));
-      const i = chooseFrom(opts, choices(f.key, ours));
+      const i = chooseFrom(opts, choices(f.key, ours), f.key);
       return i < 0 || i === f.el.selectedIndex; // no matching option: nothing better to put there
     }
     if (f.els && f.els.length > 1) {
@@ -496,6 +508,10 @@
     else el.value = value;
     el.dispatchEvent(new Event('input', { bubbles: true }));
     el.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, key: value.slice(-1) || 'a' }));
+    // Workday prompt pickers only search when you press Enter (and search every level at once).
+    if (value && el.closest('[data-automation-id="multiselectInputContainer"], [data-uxi-widget-type="selectinput"], [data-automation-id="searchBox"]')) {
+      for (const type of ['keydown', 'keypress', 'keyup']) el.dispatchEvent(new KeyboardEvent(type, { bubbles: true, cancelable: true, key: 'Enter', code: 'Enter', keyCode: 13, which: 13 }));
+    }
   }
 
   const OPTION_SEL = '[role="option"], .select2-results__option, li[class*="option" i], div[class*="option" i]:not(:has(div[class*="option" i])), .dropdown-menu li, ul[role="listbox"] li, [class*="listbox" i] li, [data-automation-id="promptOption"]';
@@ -520,7 +536,7 @@
       .slice(0, 1500);
   }
 
-  async function fillCombobox(el, desiredList) {
+  async function fillCombobox(el, desiredList, key) {
     desiredList = [].concat(desiredList).filter(Boolean);
     const control =
       el.closest('[role="combobox"], .select2-container, .select2, [class*="select__control"], [class*="Select-control"], [class*="dropdown" i], [class*="Dropdown"]') ||
@@ -544,32 +560,33 @@
     const canSearch = () => search && JC.dom.isVisible(search);
     // 1) The exact value (e.g. "LinkedIn"), on screen or found by typing it. Typing searches every
     //    level of Workday's nested pickers. 2) Only then the fallbacks ("Job Board", "Other"…).
-    let i = chooseFrom(texts(), desiredList.slice(0, 1));
+    let i = chooseFrom(texts(), desiredList.slice(0, 1), key);
     if (i < 0 && canSearch()) {
-      typeInto(search, String(desiredList[0]).slice(0, 40));
+      // Phone codes: search by country name ("+1" matches several countries, or nothing).
+      typeInto(search, String(key === 'phoneCountryCode' && userCountry ? userCountry : desiredList[0]).slice(0, 40));
       await sleep(700);
       opts = collect();
-      i = chooseFrom(texts(), desiredList.slice(0, 1));
+      i = chooseFrom(texts(), desiredList.slice(0, 1), key);
       if (i < 0) {
         typeInto(search, '');
         await sleep(400);
         opts = collect();
       }
     }
-    if (i < 0) i = chooseFrom(texts(), desiredList);
+    if (i < 0) i = chooseFrom(texts(), desiredList, key);
     if (i < 0 && canSearch()) {
       for (const d of desiredList.slice(1, 3)) {
         typeInto(search, String(d).slice(0, 40));
         await sleep(600);
         opts = collect();
-        i = chooseFrom(texts(), desiredList);
+        i = chooseFrom(texts(), desiredList, key);
         if (i >= 0) break;
       }
       if (i < 0) {
         typeInto(search, '');
         await sleep(400);
         opts = collect();
-        i = chooseFrom(texts(), desiredList);
+        i = chooseFrom(texts(), desiredList, key);
       }
     }
     const seen = texts().map((t) => t.text).filter(Boolean);
@@ -595,8 +612,11 @@
         opts = collect();
         const now = texts();
         const added = now.filter((t) => t.text && !prev.has(t.text));
-        if (!now.length || added.length < Math.max(1, now.length / 2)) return { done: true, path }; // closed, or a leaf
-        idx = chooseFrom(now, strict ? desiredList.slice(0, 1) : desiredList.concat(['Other']));
+        if (!now.length || added.length < Math.max(1, now.length / 2)) {
+          if (level && now.length) escape(); // nested pickers stay open after the pick: close them
+          return { done: true, path }; // closed, or a leaf
+        }
+        idx = chooseFrom(now, strict ? desiredList.slice(0, 1) : desiredList.concat(["Other"]), key);
         if (idx < 0) return { done: false, path, seen: now.map((t) => t.text).filter(Boolean) };
       }
       return { done: true, path };
@@ -616,7 +636,7 @@
     for (let n = 0; n < 5 && desiredList.length > 1; n++) {
       await reopen();
       const left = texts().map((t, k) => (tried.includes(t.text) ? null : Object.assign({ k }, t)));
-      const j = chooseFrom(left.map((t) => t || { text: '', value: '' }), desiredList.slice(1));
+      const j = chooseFrom(left.map((t) => t || { text: '', value: '' }), desiredList.slice(1), key);
       if (j < 0) break;
       tried.push(texts()[j].text);
       res = await descend(j, true);

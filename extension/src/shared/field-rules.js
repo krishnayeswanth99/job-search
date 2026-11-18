@@ -199,6 +199,105 @@
     return m ? m.i : -1;
   }
 
+  // ------------------------------------------------ experience questions answered from the resume
+  // "Have you built and supported production software using Python or Java?" -> Yes when the
+  // resume or skills name Python or Java. Never answers No: without evidence it's left for you.
+  const EXPERIENCE_Q = /\b(have you|do you have|are you (familiar|experienced|proficient|comfortable)|(experience|expertise|proficien\w*) (with|in|using|of)|worked (with|on|in)|hands[- ]on|familiar with|proficient (in|with)|knowledge of|built|developed|used)\b/i;
+  const NOT_TECH = new Set('have do does did are is can could will would you your we our us please if yes no i the a an and or of in on with using for to at as by any years year experience production software systems system application applications building built supported support team teams company role this that these those currently previous professional work working environment environments services service tools tool such like etc'.split(' '));
+
+  /** Technologies or skills a question asks about: capitalised terms (Python, AWS, C++) and known skills. */
+  function experienceTerms(label, skills) {
+    const text = String(label || '');
+    const out = new Set();
+    const known = String(skills || '')
+      .split(/[,;\n|•]+/)
+      .map((s) => s.trim())
+      .filter((s) => s.length >= 1 && s.length <= 40);
+    for (const s of known) {
+      const re = new RegExp('(^|[^a-z0-9+#])' + s.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '($|[^a-z0-9+#])', 'i');
+      if (re.test(text)) out.add(s);
+    }
+    const toks = text.match(/[A-Za-z][A-Za-z0-9+#.\-]*[A-Za-z0-9+#]|\b[A-Z]\b[+#]*/g) || [];
+    toks.forEach((t, i) => {
+      if (i === 0 || NOT_TECH.has(t.toLowerCase())) return;
+      if (/[A-Z]/.test(t) || /[+#]/.test(t) || /\.js$/i.test(t)) out.add(t.replace(/\.$/, ''));
+    });
+    return [...out];
+  }
+
+  /**
+   * 'Yes' when a yes/no experience question names technologies the resume (or skills) shows,
+   * else null. "X or Y" needs one of them, "X and Y" needs all.
+   */
+  function evidenceAnswer(label, resumeText, skills) {
+    const q = String(label || '');
+    if (!EXPERIENCE_Q.test(q) || q.length > 300) return null;
+    // Employment / relationship questions name a company, not a skill.
+    if (/\b((worked|been employed|employed) (for|at|by)|relatives?|family|friends?|referr|previously (applied|interviewed)|current(ly)? employ|former employee|this company|our company)\b/i.test(q)) return null;
+    const terms = experienceTerms(q, skills);
+    if (!terms.length) return null;
+    const hay = ' ' + String(resumeText || '') + ' ' + String(skills || '') + ' ';
+    const has = (t) => new RegExp('(^|[^A-Za-z0-9+#])' + t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '($|[^A-Za-z0-9+#])', 'i').test(hay);
+    const needAll = /\band\b/i.test(q) && !/\bor\b/i.test(q) && terms.length > 1;
+    const found = terms.filter(has);
+    return (needAll ? found.length === terms.length : found.length > 0) ? 'Yes' : null;
+  }
+
+  // ------------------------------------------- "Have you ever worked at <Company>?" from the resume
+  const LEGAL = /\b(inc|incorporated|corp|corporation|co|company|ltd|limited|llc|llp|plc|gmbh|ag|sa|bv|pvt|private|group|holdings|technologies|technology)\b\.?/gi;
+  const companyKey = (s) => String(s || '').replace(/&/g, ' and ').replace(LEGAL, ' ').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+
+  /** The company a "have you worked at X" question names, or '' (also '' for "this company" / "us"). */
+  function formerEmployerOf(label) {
+    const q = String(label || '').replace(/\s+/g, ' ');
+    const m =
+      q.match(/\b(?:ever|previously|formerly|currently|before|in the past)?\s*(?:worked|been employed|employed|interned|been an? (?:employee|intern|contractor|worker)|been (?:a )?(?:regular|contingent)[^?]{0,40}?)\s+(?:at|for|by)\s+(.+?)(?=\s+(?:as|in any|in a|either|or any|including|\(|,|before|previously|at any)\b|[?(,.]|$)/i) ||
+      q.match(/\b(?:current|former|previous|past)\s+(?:employee|intern|contractor|worker)s?\s+(?:of|at)\s+(.+?)(?=\s+(?:as|or|\(|,)\b|[?(,.]|$)/i);
+    if (!m) return '';
+    const name = m[1].trim().replace(/^the\s+/i, '');
+    if (!name || /^(this|our|the) (company|organi[sz]ation|firm|employer)$|^(us|we|here|any of|one of)\b/i.test(name) || name.length > 60) return '';
+    return name;
+  }
+
+  /**
+   * "Have you ever worked at Applied Materials (as an employee, contractor, intern…)?" -> 'Yes' if
+   * the resume names that company, 'No' if it doesn't. Needs a real resume (not just a few lines).
+   */
+  function formerEmployerAnswer(label, resumeText) {
+    const name = formerEmployerOf(label);
+    const text = String(resumeText || '');
+    if (!name || text.length < 400) return null;
+    const k = companyKey(name);
+    if (!k || k.length < 3) return null;
+    return (' ' + companyKey(text) + ' ').includes(' ' + k + ' ') ? 'Yes' : 'No';
+  }
+
+  // ------------------------------------------------------------ country phone codes
+  // One code, several countries (+1 US/Canada/Caribbean, +7 Russia/Kazakhstan, +44 UK/Jersey…): pick
+  // the option with the right code AND the right country; without a country, the main one.
+  const MAIN_FOR_CODE = { 1: 'united states', 7: 'russia', 44: 'united kingdom', 61: 'australia', 47: 'norway', 39: 'italy', 358: 'finland', 262: 'reunion', 590: 'guadeloupe', 599: 'curacao', 212: 'morocco', 64: 'new zealand', 34: 'spain', 33: 'france', 41: 'switzerland', 46: 'sweden', 45: 'denmark' };
+  const COUNTRY_CODE = { 'united states': 1, usa: 1, us: 1, canada: 1, india: 91, 'united kingdom': 44, uk: 44, australia: 61, germany: 49, france: 33, singapore: 65, 'united arab emirates': 971, ireland: 353, netherlands: 31, china: 86, japan: 81, mexico: 52, brazil: 55 };
+  const codeOf = (s) => {
+    const m = String(s || '').match(/\+\s?(\d{1,4})\b|\(\s*(\d{1,4})\s*\)/);
+    return m ? Number(m[1] || m[2]) : null;
+  };
+
+  /** The applicant's dialing code as a number: profile code, else the phone's +NN, else the country's. */
+  function dialCode(profile) {
+    const p = (profile && profile.personal) || {};
+    return codeOf(p.phoneCountryCode && /^\d+$/.test(String(p.phoneCountryCode).trim()) ? '+' + p.phoneCountryCode : p.phoneCountryCode) || codeOf(String(p.phone || '').match(/^\s*\+\s?\d{1,4}/) || '') || COUNTRY_CODE[norm(p.country)] || null;
+  }
+
+  function choosePhoneCode(options, code, country) {
+    const want = typeof code === 'number' ? code : codeOf(code);
+    const opts = (options || []).map((o, i) => ({ i, t: norm(o.text || ''), c: codeOf(o.text) || codeOf(o.value) }));
+    const same = want ? opts.filter((o) => o.c === want) : [];
+    const names = country ? aliases(norm(country)) : [];
+    const byCountry = (list) => list.find((o) => names.some((n) => n.length > 1 && new RegExp('\\b' + n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b').test(o.t)));
+    const hit = byCountry(same) || (same.length === 1 ? same[0] : null) || same.find((o) => MAIN_FOR_CODE[want] && o.t.includes(MAIN_FOR_CODE[want])) || same[0] || (!want && byCountry(opts));
+    return hit ? hit.i : -1;
+  }
+
   function classifyField(f) {
     const type = (f.type || '').toLowerCase();
     if (['hidden', 'submit', 'button', 'reset', 'image', 'password', 'search'].includes(type)) return null;
@@ -291,6 +390,10 @@
         return '';
       case 'phoneType':
         return 'Mobile';
+      case 'phoneCountryCode': {
+        const c = dialCode(profile);
+        return c ? '+' + c : '';
+      }
       case 'resumeSource': // which option: chooseResumeSource()
         return 'Upload';
       case 'timeZone':
@@ -563,7 +666,7 @@
     }
   }
 
-  JC.rules = { chooseResumeSource, sameValue, timeZoneCandidates, classifyField, valueForKey, chooseOption, matchSavedAnswer, mergeAnswers, isCompanySpecific, looksSensitive, NEVER_REMEMBER, humanize, norm, payPeriod, amounts, parseAmount, toNumberValue, emptyReason, LONG_LABEL };
+  JC.rules = { formerEmployerOf, formerEmployerAnswer, choosePhoneCode, dialCode, evidenceAnswer, experienceTerms, chooseResumeSource, sameValue, timeZoneCandidates, classifyField, valueForKey, chooseOption, matchSavedAnswer, mergeAnswers, isCompanySpecific, looksSensitive, NEVER_REMEMBER, humanize, norm, payPeriod, amounts, parseAmount, toNumberValue, emptyReason, LONG_LABEL };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = JC;
 })(typeof globalThis !== 'undefined' ? globalThis : self);

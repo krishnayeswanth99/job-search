@@ -130,6 +130,49 @@
   // ------------------------------------------- on-device model (Chrome's Gemini Nano)
   // Small context window: a compact prompt, a few questions at a time, and a JSON schema that
   // limits choice questions to their real options (or ASK_ME).
+  /**
+   * The parts of the resume that matter for these questions: its first lines (name, summary,
+   * skills often come first), then the lines sharing the most words with the questions, in
+   * resume order, up to `max` characters.
+   */
+  function relevantResume(resumeText, questions, max) {
+    const text = String(resumeText || '');
+    if (text.length <= max) return text;
+    const stop = new Set('the and for you your have has with using use used are was were this that from what when where which who how any our will would can could please years year experience work worked'.split(' '));
+    const words = new Set(
+      (questions || [])
+        .map((q) => [q.label].concat(q.options || []).join(' '))
+        .join(' ')
+        .toLowerCase()
+        .match(/[a-z][a-z0-9+#.]{1,}/g) || []
+    );
+    for (const w of [...words]) if (stop.has(w) || w.length < 3) words.delete(w);
+    // Long lines (PDFs often come out as one line) are cut into sentence-sized pieces.
+    const lines = text
+      .split(/\n+|(?<=[.;•])\s+(?=[A-Z•])/)
+      .map((l) => l.trim().slice(0, 300))
+      .filter(Boolean);
+    const head = [];
+    let used = 0;
+    for (const l of lines) {
+      if (used + l.length > max * 0.25) break;
+      head.push(l);
+      used += l.length + 1;
+    }
+    const scored = lines
+      .map((l, i) => ({ l, i, s: (l.toLowerCase().match(/[a-z][a-z0-9+#.]{1,}/g) || []).filter((w) => words.has(w)).length }))
+      .filter((x) => x.i >= head.length && x.s > 0)
+      .sort((a, b) => b.s - a.s || a.i - b.i);
+    const pick = [];
+    for (const x of scored) {
+      if (used + x.l.length + 1 > max) continue;
+      pick.push(x);
+      used += x.l.length + 1;
+    }
+    pick.sort((a, b) => a.i - b.i);
+    return head.concat(pick.length ? ['…'] : [], pick.map((x) => x.l)).join('\n');
+  }
+
   function buildCompactPrompt({ questions, job, profile, resumeText }) {
     const qs = (questions || []).map((q) => {
       const o = { id: q.id, question: q.label };
@@ -138,11 +181,13 @@
       return o;
     });
     return [
-      'Answer these job application questions for me. Use ONLY the facts below. If a fact is missing, or it is a personal choice, answer "ASK_ME". Never invent experience, numbers or dates. Choice questions: copy one option exactly. Free text: 1-3 short first-person sentences.',
+      'Answer these job application questions for me. Use ONLY the facts below. Never invent experience, numbers or dates. Choice questions: copy one option exactly. Free text: 1-3 short first-person sentences.',
+      'Experience questions ("Have you built software using Python or Java?", "Do you have experience with AWS?"): answer Yes when my resume or skills show that experience (for "X or Y", one is enough). If they do not show it, answer "ASK_ME", never No.',
+      'Answer "ASK_ME" when a fact is missing or it is a personal choice (salary, relocation, start date).',
       `Job: ${(job && job.title) || ''} at ${(job && job.company) || ''}`,
       job && job.description ? 'Job summary: ' + clip(job.description, 1200) : '',
       'About me:\n' + profileText(profile),
-      resumeText ? 'Resume (excerpt):\n' + clip(resumeText, 2500) : '',
+      resumeText ? 'Resume (the parts that matter for these questions):\n' + relevantResume(resumeText, questions, 3000) : '',
       'Questions:\n' + JSON.stringify(qs),
     ]
       .filter(Boolean)
@@ -168,7 +213,7 @@
     return out;
   }
 
-  JC.ask = { questionsFrom, buildPrompt, parseReply, profileText, buildCompactPrompt, schemaFor, batches };
+  JC.ask = { relevantResume, questionsFrom, buildPrompt, parseReply, profileText, buildCompactPrompt, schemaFor, batches };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = JC;
 })(typeof globalThis !== 'undefined' ? globalThis : self);

@@ -217,3 +217,35 @@ test('resume source choices pick uploading a file', () => {
   assert.equal(JC.rules.chooseResumeSource(opts('Dropbox', 'Google Drive', 'My computer')), 2);
   assert.equal(JC.rules.chooseResumeSource(opts('LinkedIn', 'Manually')), -1);
 });
+
+test('experience yes/no questions: Yes only with evidence in the resume or skills', () => {
+  const resume = 'Built analytics services in Python and Spark on AWS.';
+  const ev = (q, skills = '') => JC.rules.evidenceAnswer(q, resume, skills);
+  assert.equal(ev('Have you built and supported production software using Python or Java?'), 'Yes');
+  assert.equal(ev('Do you have experience with AWS and Kubernetes?'), null);
+  assert.equal(ev('Do you have experience with AWS and Spark?'), 'Yes');
+  assert.equal(ev('Do you have experience with JavaScript?'), null); // "Java" is not JavaScript
+  assert.equal(ev('Do you have experience with Tableau?', 'SQL, Tableau'), 'Yes');
+  assert.equal(ev('Are you authorized to work in the US?'), null);
+  assert.equal(ev('Have you previously worked for Python Software Foundation?'), null);
+});
+
+test('"have you worked at X" is answered from the resume; shared phone codes pick your country', () => {
+  const resume = 'Experience\nData Scientist, Applied Materials Inc., Santa Clara, CA\n' + 'Built models. '.repeat(40);
+  const q = 'Have you ever worked at Applied Materials as a regular employee, contingent worker, intern, etc.?';
+  assert.equal(JC.rules.formerEmployerOf(q), 'Applied Materials');
+  assert.equal(JC.rules.formerEmployerAnswer(q, resume), 'Yes');
+  assert.equal(JC.rules.formerEmployerAnswer('Are you a current or former employee of Google?', resume), 'No');
+  assert.equal(JC.rules.formerEmployerAnswer('Have you ever worked for this company?', resume), null);
+  assert.equal(JC.rules.formerEmployerAnswer('Have you worked with Python?', resume), null);
+  assert.equal(JC.rules.formerEmployerAnswer(q, 'short'), null); // no real resume: leave it to you
+  const o = (...t) => t.map((x) => ({ text: x, value: x }));
+  const codes = o('Canada (+1)', 'United States of America (+1)', 'India (+91)', 'Jersey (+44)', 'United Kingdom (+44)');
+  assert.equal(JC.rules.choosePhoneCode(codes, '+1', 'United States'), 1);
+  assert.equal(JC.rules.choosePhoneCode(codes, '+1', 'Canada'), 0);
+  assert.equal(JC.rules.choosePhoneCode(codes, '+1', ''), 1);
+  assert.equal(JC.rules.choosePhoneCode(codes, '+44', 'India'), 4); // UK phone, living in India
+  assert.equal(JC.rules.choosePhoneCode(codes, '+91', 'United States'), 2);
+  assert.equal(valueForKey({ personal: { phone: '+91 98765 43210', country: 'United States' } }, 'phoneCountryCode'), '+91');
+  assert.equal(valueForKey({ personal: { phone: '555 0100', country: 'Canada' } }, 'phoneCountryCode'), '+1');
+});

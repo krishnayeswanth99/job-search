@@ -90,6 +90,12 @@ async function recStop(tabId) {
 chrome.tabs.onCreated.addListener((tab) => {
   if (tab.openerTabId !== undefined) recAdd(tab.openerTabId, { type: 'tab-opened', tabId: tab.id, url: tab.pendingUrl || tab.url || '' });
   if (tab.openerTabId === undefined) return;
+  // A tab opened by an application tab (a careers page opening its ATS in a new tab) is part of it.
+  // Only right after an Apply click there, so other tabs you open from it stay normal tabs.
+  if (Date.now() - (applyClickedAt.get(tab.openerTabId) || 0) < 15000)
+    getApplying(tab.openerTabId).then((a) => {
+      if (a) setApplying(tab.id, Object.assign({}, a, { openerTabId: a.openerTabId || tab.openerTabId }));
+    });
   const list = childTabs.get(tab.openerTabId) || [];
   list.push({ tabId: tab.id, url: tab.pendingUrl || tab.url || '', title: tab.title || '', openedAt: new Date().toISOString() });
   childTabs.set(tab.openerTabId, list.slice(-5));
@@ -221,7 +227,17 @@ async function markApplied(tabId, msg, senderUrl) {
 // Autofill an employer form opened from a job board, once it has loaded (setting autoFillOpened).
 const autofillDone = new Set();
 const autofillPending = new Map();
-const startedApply = new Set(); // tabs where the employer's Apply was clicked already
+const applyClickedAt = new Map(); // tabId -> when Apply was last clicked there (by Job Copilot or you)
+const startedApply = new Set(); // "tabId|path" pages where the employer's Apply was clicked already
+const pathOf = (u) => {
+  try {
+    const x = new URL(u);
+    return x.origin + x.pathname;
+  } catch (_) {
+    return String(u || '');
+  }
+};
+const startedCount = (tabId) => [...startedApply].filter((k) => k.startsWith(tabId + '|')).length;
 const loginNoted = new Set(); // tabId -> timer (debounce: several load events per step)
 function scheduleAutofill(tabId, openerTabId, pageKey) {
   clearTimeout(autofillPending.get(tabId));
@@ -248,11 +264,13 @@ function scheduleAutofill(tabId, openerTabId, pageKey) {
       if (n < 200) autofillPending.set(tabId, setTimeout(() => attempt(n + 1), 4000));
       return;
     }
-    if (d && !d.application && d.pageType === 'job' && !startedApply.has(tabId)) {
+    const pathKey = tabId + '|' + pathOf(tab.url);
+    if (d && !d.application && d.pageType === 'job' && !startedApply.has(pathKey) && startedCount(tabId) < 3) {
       // The employer's own job page (Workday, iCIMS, SmartRecruiters…): start the application.
+      // Once per page, up to three pages per tab (job page -> "Apply online" page -> form).
       const { settings: st } = await chrome.storage.local.get('settings');
       if (!st || st.autoContinue !== false) {
-        startedApply.add(tabId);
+        startedApply.add(pathKey);
         const s = await runCommand(tabId, 'startApplication', {}, 'popup').catch((e) => ({ ok: false, reason: String(e) }));
         debugAdd(tabId, { type: 'extension-step', detail: { step: 'started the application on the employer page', result: s && (s.chose || (s.login && 'sign-in') || (s.form && 'form') || s.reason), steps: s && s.steps } });
         return setTimeout(() => attempt(1), 2500);
@@ -653,7 +671,17 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     }
     if (msg.type === 'jc:applying' && sender.tab && !fromExt) {
       // followApply in the same tab: the job board page is replaced by the employer's form.
-      if (msg.job && msg.job.key) await setApplying(sender.tab.id, Object.assign({}, msg.job, { openerTabId: null, applyUrl: msg.url }));
+      if (msg.job && msg.job.key) {
+        const prev = await getApplying(sender.tab.id);
+        await setApplying(sender.tab.id, Object.assign({}, prev && prev.key ? prev : msg.job, { openerTabId: (prev && prev.openerTabId) || null, applyUrl: msg.url }));
+      }
+      // Apply was clicked on this page already (by Job Copilot or by you): don't click it again,
+      // just autofill what it opens.
+      if (msg.job && msg.job.started) {
+        applyClickedAt.set(sender.tab.id, Date.now());
+        startedApply.add(sender.tab.id + '|' + pathOf(sender.url || sender.tab.url));
+        scheduleAutofill(sender.tab.id, null, 'apply clicked');
+      }
       return { ok: true };
     }
     if (msg.type === 'jc:applied-confirmed' && sender.tab && !fromExt) {

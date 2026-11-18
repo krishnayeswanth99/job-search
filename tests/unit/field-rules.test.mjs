@@ -249,3 +249,12 @@ test('"have you worked at X" is answered from the resume; shared phone codes pic
   assert.equal(valueForKey({ personal: { phone: '+91 98765 43210', country: 'United States' } }, 'phoneCountryCode'), '+91');
   assert.equal(valueForKey({ personal: { phone: '555 0100', country: 'Canada' } }, 'phoneCountryCode'), '+1');
 });
+
+test('"Country/Region of Residence" is the country; a city never picks a same-named country', () => {
+  assert.equal(key({ label: 'Country/Region of Residence', type: 'select' }), 'country');
+  assert.equal(key({ label: 'State/Region', type: 'select' }), 'state');
+  const o = [{ text: 'Jersey', value: 'JE' }, { text: 'United States of America', value: 'US' }];
+  assert.equal(chooseOption(o, 'Jersey City'), -1);
+  assert.equal(chooseOption(o, 'United States'), 1);
+  assert.equal(chooseOption([{ text: 'New Jersey', value: 'NJ' }, { text: 'Jersey', value: 'JE' }], 'New Jersey'), 0);
+});

@@ -55,8 +55,9 @@
     { key: 'address1', re: /\b(street|address (line )?1|mailing address|home address|^address)\b|^address$/ },
     { key: 'postalCode', re: /\b(zip|postal|post ?code|pin ?code)\b/ },
     { key: 'city', re: /\b(city|town)\b/ },
-    { key: 'state', re: /\b(state|province|region|county)\b/ },
+    // "Country/Region of Residence" is the country, not a state: country first.
     { key: 'country', re: /\bcountry\b/ },
+    { key: 'state', re: /\b(state|province|region|county)\b/ },
     { key: 'location', re: /\b(location|where are you (based|located)|current(ly)? (located|based))\b/ },
     { key: 'requiresSponsorship', re: /\b(sponsor(ship)?|visa|h-?1b|work permit status)\b/, q: true },
     { key: 'authorizedToWork', re: /\b((legally )?(authori[sz]ed|eligible|permitted) to work|work authori[sz]ation|right to work|lawfully)\b/, q: true },
@@ -503,7 +504,9 @@
       if (m) return m.i;
     }
     for (const t of targets) {
-      const m = opts.find((o) => o.t.startsWith(t + ' ') || o.t.startsWith(t + ',') || t.startsWith(o.t + ' '));
+      // Our value at the start of an option ("India" -> "India (+91)"), or an option at the start of
+      // our value only when it is most of it: "Jersey City" must not pick the country "Jersey".
+      const m = opts.find((o) => o.t.startsWith(t + ' ') || o.t.startsWith(t + ',') || (t.startsWith(o.t + ' ') && o.t.length >= t.length * 0.7));
       if (m) return m.i;
     }
     for (const t of targets) {
@@ -533,7 +536,7 @@
         best = o.i;
       }
     }
-    return score >= 0.5 ? best : -1;
+    return score > 0.5 ? best : -1; // half the words is not enough: "Jersey City" is not "Jersey"
   }
 
   /**

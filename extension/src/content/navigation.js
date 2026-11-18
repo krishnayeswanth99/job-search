@@ -341,6 +341,9 @@
     // Scripted button: click it and follow through (only on job boards and aggregators,
     // where Apply leads elsewhere; on an employer's own page Claude should click it itself).
     if (a.kind === 'external') return fromClick(await clickAndWait(a.selector, 10000, opts.trace), a.kind);
+    // The employer's own page: its Apply starts the application right here (a form below, a
+    // pop-up with how-to-start choices, or the next page).
+    if (!opts.scope) return Object.assign({ kind: a.kind, via: 'startApplication' }, await startApplication(opts.trace));
     return { ok: false, kind: a.kind, selector: a.selector, reason: 'The Apply button has no link (it is scripted). Click it; it usually opens a new tab, then look at detect().openedTabs.' };
   }
 
@@ -350,6 +353,87 @@
    * Apply, then, if the site asks how to start (Workday: "Use My Last Application" / "Apply
    * Manually" / "Autofill with Resume"), choose. Stops at sign-in pages: those are the user's.
    */
+  // How-to-start choices after Apply, best first. Never a third-party import (LinkedIn, Indeed,
+  // Google, SEEK…): those need the user's own sign-in elsewhere.
+  const START_CHOICES = [
+    /^use my last application$/i,
+    /^apply manually$/i,
+    /^(apply|continue) (as (a )?guest|without (an )?account|without signing in)\b/i,
+    /^(continue|proceed) as guest$/i,
+    /^(apply|continue) with (my )?(resume|cv|email)\b/i,
+    /^(upload|attach) (my |your |a )?(resume|cv)\b/i,
+    /^autofill with (my )?resume$/i,
+    /^start (your |my |the )?application\b/i,
+    /^(begin|start) (applying|now)$/i,
+    /^(continue|proceed) to (the )?application$/i,
+  ];
+  const THIRD_PARTY = /\b(linked ?in|indeed|google|facebook|apple|microsoft|seek|xing|glassdoor|dropbox)\b/i;
+
+  /** Mark this tab as an application, so each later step is autofilled (and a confirmation counts). */
+  function markApplying() {
+    let job = null;
+    try {
+      job = JC.extract ? JC.extract.job() : null;
+    } catch (_) {
+      job = null;
+    }
+    const info = { key: (JC.applyLinks && job && JC.applyLinks.jobKey(job)) || location.origin + location.pathname, title: (job && job.title) || '', company: (job && job.company) || '', started: true };
+    try {
+      chrome.runtime.sendMessage({ type: 'jc:applying', url: location.href, job: info }).catch(() => {});
+    } catch (_) {
+      /* extension reloaded */
+    }
+  }
+
+  /**
+   * After Apply was clicked (by us or by you): wait for the form, a sign-in page, a new page, or
+   * how-to-start choices (picking the best, up to three in a row, e.g. "Apply manually" then
+   * "Continue as guest").
+   */
+  async function afterApply(note, trace, before, ms) {
+    const end = Date.now() + (ms || 9000);
+    let chose = null;
+    let picks = 0;
+    while (Date.now() < end) {
+      await sleep(400);
+      // "Sign in or continue as guest": take the guest route before calling it a sign-in wall.
+      const findChoice = () => {
+        if (picks >= 3) return null;
+        const btns = [...document.querySelectorAll('a, button, [role="button"], input[type="button"], input[type="submit"]')].filter((b) => isVisible(b) && !b.disabled && !THIRD_PARTY.test(label(b)));
+        for (const re of START_CHOICES) {
+          const hit = btns.find((x) => re.test(label(x)) && !x.hasAttribute('data-jc-start-picked'));
+          if (hit) return hit;
+        }
+        return null;
+      };
+      const pending = findChoice();
+      if (!pending && JC.login.detectLogin().required) {
+        note('sign-in or create-account page: waiting for you');
+        return { ok: true, login: true, chose, steps: trace };
+      }
+      if (!pending && JC.fields.looksLikeApplication()) {
+        note('application form is open');
+        return { ok: true, form: true, chose, steps: trace };
+      }
+      if (location.href !== before) {
+        note('page changed', { url: location.href });
+        return { ok: true, navigated: location.href, chose, steps: trace };
+      }
+      const hit = pending;
+      if (hit) {
+        hit.setAttribute('data-jc-start-picked', '1');
+        await click(hit, trace);
+        chose = label(hit);
+        picks++;
+        note(`chose "${chose}"`);
+        await sleep(900);
+      }
+    }
+    if (chose) return { ok: true, chose, steps: trace };
+    note('clicked Apply, but no form, start choice or sign-in appeared');
+    return { ok: false, reason: 'Clicked Apply, but no form appeared.', steps: trace };
+  }
+
   async function startApplication(trace) {
     trace = trace || [];
     const t0 = Date.now();
@@ -358,7 +442,10 @@
       trace.push(entry);
       if (JC.recorder && JC.recorder.note) JC.recorder.note(entry);
     };
-    if (JC.fields.looksLikeApplication()) return { ok: true, already: true, steps: trace };
+    if (JC.fields.looksLikeApplication()) {
+      markApplying();
+      return { ok: true, already: true, form: true, steps: trace };
+    }
     const a = applyInfo();
     if (!a) {
       note('no Apply button on this page');
@@ -368,40 +455,18 @@
     const before = location.href;
     const el = document.querySelector(a.selector);
     if (!el) return { ok: false, reason: 'Apply button disappeared.', steps: trace };
+    markApplying();
+    // A link that opens in a new tab: open it in this tab instead, so the application stays here.
+    if (el.tagName === 'A' && el.target === '_blank' && a.href && /^https?:/i.test(a.href)) {
+      note(`opening the employer's "${a.text}" here`, { url: a.href });
+      setTimeout(() => location.assign(a.href), 50);
+      return { ok: true, navigated: a.href, steps: trace };
+    }
     await click(el, trace);
     note(`clicked the employer's "${a.text}"`);
-    // How-to-start choices, best first (Workday and similar).
-    const CHOICES = [/^use my last application$/i, /^apply manually$/i, /^autofill with resume$/i, /^apply with (my )?resume$/i, /^start (your |my )?application$/i];
-    const end = Date.now() + 7000;
-    while (Date.now() < end) {
-      await sleep(400);
-      const login = JC.login.detectLogin();
-      if (login.required) {
-        note('sign-in or create-account page: waiting for you');
-        return { ok: true, login: true, steps: trace };
-      }
-      if (JC.fields.looksLikeApplication()) {
-        note('application form is open');
-        return { ok: true, form: true, steps: trace };
-      }
-      const btns = [...document.querySelectorAll('a, button, [role="button"]')].filter((b) => isVisible(b));
-      for (const re of CHOICES) {
-        const b = btns.find((x) => re.test(label(x)));
-        if (b) {
-          await click(b, trace);
-          note(`chose "${label(b)}"`);
-          await sleep(1200);
-          return { ok: true, chose: label(b), steps: trace };
-        }
-      }
-      if (location.href !== before) {
-        note('page changed', { url: location.href });
-        return { ok: true, navigated: location.href, steps: trace };
-      }
-    }
-    note('clicked Apply, but no form, start choice or sign-in appeared');
-    return { ok: false, reason: 'Clicked Apply, but no form appeared.', steps: trace };
+    return afterApply(note, trace, before);
   }
+
 
   // ------------------------------------------------ assist your own Apply clicks
   // On a job board / aggregator, when YOU click Apply (a real click), carry on for you: take the
@@ -487,5 +552,44 @@
     );
   }
 
-  JC.nav = { applyInfo, redirectInfo, interstitial, appliedPrompt, followApply, startApplication, closeDialogs, click, resolveTarget };
+  // You clicked Apply yourself on an employer's job page (not a job board): treat the tab as an
+  // application from here on, and take the how-to-start choices that follow.
+  const BOARDS = new Set(['linkedin', 'indeed', 'glassdoor', 'wellfound']);
+  if (typeof document !== 'undefined' && window === window.top) {
+    document.addEventListener(
+      'click',
+      async (e) => {
+        if (!e.isTrusted || assisting) return;
+        const portal = JC.portalForHost(location.hostname);
+        if (portal && (portal.aggregator || BOARDS.has(portal.id))) return;
+        const b = e.target && e.target.closest && e.target.closest('a, button, [role="button"], input[type="submit"], input[type="button"]');
+        if (!b || !APPLY_RE.test(label(b)) || EASY_RE.test(label(b)) || /^submit/i.test(label(b))) return;
+        if (JC.fields.looksLikeApplication()) return; // a button inside the form itself
+        try {
+          const { settings } = await chrome.storage.local.get('settings');
+          if (settings && (settings.autoContinue === false || settings.autoFillOpened === false)) return;
+        } catch (_) {
+          return;
+        }
+        markApplying();
+        const trace = [];
+        const t0 = Date.now();
+        const note = (step, extra) => {
+          const entry = Object.assign({ ms: Date.now() - t0, step }, extra || {});
+          trace.push(entry);
+          if (JC.recorder && JC.recorder.note) JC.recorder.note(entry);
+        };
+        note(`you clicked "${label(b)}": treating this tab as an application`);
+        assisting = true;
+        try {
+          await afterApply(note, trace, location.href, 8000);
+        } finally {
+          assisting = false;
+        }
+      },
+      true
+    );
+  }
+
+  JC.nav = { afterApply, markApplying, applyInfo, redirectInfo, interstitial, appliedPrompt, followApply, startApplication, closeDialogs, click, resolveTarget };
 })(typeof globalThis !== 'undefined' ? globalThis : self);

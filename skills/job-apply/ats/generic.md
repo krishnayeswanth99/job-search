@@ -38,3 +38,11 @@ forms.
   `autofill()` again after each step.
 - **Trusted sites:** if `autofill()` is refused because the domain isn't trusted (a custom company domain), ask the user
   to click **Autofill** in the Job Copilot popup, or to add the domain under Trusted sites in the options.
+
+## Apply buttons on the employer's own page
+- `followApply()` (popup **Go to application**) on an employer job page clicks its Apply and follows whatever comes:
+  a form on the same page, a pop-up of ways to apply ("Apply manually", "Continue as guest", "Apply with resume";
+  never LinkedIn/Indeed/Google imports), a new page, or a sign-in wall (left to the user).
+- When **you** click Apply on an employer page yourself, the tab becomes an application tab: the same choices are
+  taken, and each step is autofilled as it appears. A tab the site opens right after (an ATS in a new tab) counts too.
+

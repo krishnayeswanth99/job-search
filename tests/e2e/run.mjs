@@ -37,6 +37,8 @@ const ROUTES = {
   'https://uab.taleo.net/careersection/application.jss?lang=en&reqNo=330172': fx('taleo-application.html'),
   'https://uab.taleo.net/careersection/application.jss?lang=en&reqNo=330173': fx('taleo-resume.html'),
   'https://acme.wd5.myworkdayjobs.com/en-US/careers/job/New-York-NY/ML-Engineer_123/apply/questions': fx('workday-prompt.html'),
+  'https://careers.acme-robotics.example/jobs/data-scientist': fx('employer-apply-modal.html'),
+  'https://careers.acme-robotics.example/jobs/data-scientist?v=2': fx('employer-apply-modal.html'),
   'https://job-boards.greenhouse.io/acme/jobs/ai-check': '<html><head><meta charset="utf-8"></head><body><form><label for="seg">Segundo nombre</label><input id="seg" name="legalName.fullName"><label for="em">Email</label><input id="em" name="email"></form></body></html>',
   'https://jobs.lever.co/learntest/apply-2': fx('learn-form.html'),
   'https://careers-acme.icims.com/jobs/1234/data-scientist/candidate': fx('icims-like.html'),
@@ -87,6 +89,8 @@ const context = await chromium.launchPersistentContext(userDataDir, {
 let passed = 0;
 let failed = 0;
 async function check(name, fn) {
+  // ONLY="part of a check name" runs just the matching checks (the setup before them still runs).
+  if (process.env.ONLY && !name.includes(process.env.ONLY)) return;
   try {
     await fn();
     passed++;
@@ -291,6 +295,7 @@ try {
     try {
       const p = await open('https://acme.wd5.myworkdayjobs.com/en-US/careers/job/New-York-NY/ML-Engineer_123/apply/myInformation');
       const r = await bridge(p, () => window.jobCopilot.autofill());
+      if (process.env.DEBUG) console.log(JSON.stringify(r.filled), JSON.stringify(await ext.evaluate(async () => new Promise((r) => chrome.runtime.sendMessage({ type: 'jc:debug-get' }, r)).then((l) => (l.log || []).slice(-12)))));
       const v = await p.evaluate(() => ({ src: src.textContent, first: document.getElementById('name--legalName--firstName').value, middle: document.getElementById('name--legalName--middleName').value, suffix: document.getElementById('name--legalName--suffix').value }));
       assert.equal(v.src, 'LinkedIn', JSON.stringify(r.needsInput));
       assert.equal(v.first, 'Ada');
@@ -359,6 +364,23 @@ try {
     } finally {
       await ext.evaluate(async (s) => chrome.storage.local.set({ profile: s.profile, resumeText: s.resumeText || '' }), saved);
     }
+  });
+
+  await check('employer page: Apply -> pop-up "Apply manually" (not LinkedIn) -> "Continue as guest" -> form', async () => {
+    const p = await open('https://careers.acme-robotics.example/jobs/data-scientist');
+    const r = await bridge(p, () => window.jobCopilot.followApply());
+    assert.equal(r.ok, true, JSON.stringify(r));
+    assert.equal(r.form, true, JSON.stringify(r.steps));
+    assert.equal(await p.evaluate(() => !!window.__linkedin), false);
+    assert.ok(await p.evaluate(() => !!document.getElementById('fn')));
+  });
+
+  await check('your own Apply click on an employer page: start choices taken, then the form is autofilled', async () => {
+    const p = await open('https://careers.acme-robotics.example/jobs/data-scientist?v=2');
+    await p.click('#apply');
+    await p.waitForFunction(() => document.getElementById('fn') && document.getElementById('fn').value === 'Ada', null, { timeout: 25000 });
+    assert.equal(await p.evaluate(() => em.value), 'ada@example.com');
+    assert.equal(await p.evaluate(() => !!window.__linkedin), false);
   });
 
   await check('bridge: fillField answers a custom question', async () => {
@@ -456,7 +478,7 @@ try {
     assert.match(d.applicationFrame, /greenhouse/);
     const r = await bridge(embed, () => window.jobCopilot.autofill());
     assert.equal(r.ok, true, r.error);
-    assert.ok(r.filledCount >= 8, `filled ${r.filledCount}`);
+    assert.ok(r.filledCount >= 8, `filled ${r.filledCount} ${JSON.stringify(r.errors)} skipped=${JSON.stringify(r.skipped.slice(0, 4))}`);
     const frame = embed.frames().find((f) => f.url().includes('greenhouse'));
     assert.equal(await frame.evaluate(() => first_name.value), 'Ada');
   });

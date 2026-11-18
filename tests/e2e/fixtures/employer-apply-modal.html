@@ -1,0 +1,34 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Data Scientist - Acme Robotics Careers</title>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"JobPosting","title":"Data Scientist","hiringOrganization":{"@type":"Organization","name":"Acme Robotics"},"description":"Build models."}</script>
+</head>
+<body>
+<main>
+  <h1>Data Scientist</h1>
+  <p>Acme Robotics · Remote</p>
+  <button type="button" id="apply">Apply</button>
+  <div id="modal"></div>
+  <div id="app"></div>
+</main>
+<script>
+  // Like many career sites: Apply opens a pop-up with ways to apply; "Apply manually" asks for
+  // guest or account; guest shows the form on this same page.
+  const modal = document.getElementById('modal');
+  document.getElementById('apply').addEventListener('click', () => {
+    modal.innerHTML = '<div role="dialog"><h2>How would you like to apply?</h2><button id="li">Apply with LinkedIn</button><button id="man">Apply manually</button></div>';
+    document.getElementById('li').addEventListener('click', () => (window.__linkedin = true));
+    document.getElementById('man').addEventListener('click', () => {
+      modal.innerHTML = '<div role="dialog"><h2>Sign in or continue</h2><button id="guest">Continue as guest</button></div>';
+      document.getElementById('guest').addEventListener('click', () => {
+        modal.innerHTML = '';
+        document.getElementById('app').innerHTML = `<form>
+          <label for="fn">First Name</label><input id="fn" name="firstName">
+          <label for="ln">Last Name</label><input id="ln" name="lastName">
+          <label for="em">Email</label><input id="em" type="email" name="email">
+          <label for="ph">Phone</label><input id="ph" name="phone">
+          <label for="cv">Resume</label><input id="cv" type="file" name="resume"></form>`;
+      });
+    });
+  });
+</script>
+</body></html>

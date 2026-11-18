@@ -15,6 +15,8 @@
     <label><input type="radio" name="q1" id="q1y" value="1"> Yes</label>
     <label><input type="radio" name="q1" id="q1n" value="0"> No</label>
   </fieldset>
+  <div data-automation-id="formField-q9"><div><p>Are you legally authorized to work in the country in which the job is located?</p></div>
+    <div><button type="button" aria-haspopup="listbox" id="wq1" aria-label="Select One Required">Select One</button><div class="wpop"></div></div></div>
   <label for="cc">Country Phone Code</label>
   <select id="cc"><option value="">Select One</option><option>Canada (+1)</option><option>Jamaica (+1)</option><option>United States of America (+1)</option><option>India (+91)</option></select>
   <fieldset>
@@ -45,6 +47,11 @@
       pop.appendChild(d);
     }
   }
+  document.getElementById('wq1').addEventListener('click', (e) => {
+    const pop = e.target.nextElementSibling;
+    pop.innerHTML = '<ul role="listbox"><li role="option">Yes</li><li role="option">No</li></ul>';
+    pop.querySelectorAll('li').forEach((li) => li.addEventListener('click', () => { e.target.textContent = li.textContent; pop.innerHTML = ''; }));
+  });
   const pick = (leaf) => {
     document.getElementById('pills').innerHTML = `<li data-automation-id="selectedItem">${leaf}</li>`;
     input.value = '';

@@ -251,20 +251,31 @@
       if (!items.length) continue;
       let gs = groups(kind, JC.fields.scan());
       // Add blocks until there is one per entry (Workday starts with none: just an "Add" button).
+      const note = (step, extra) => JC.recorder && JC.recorder.note && JC.recorder.note(Object.assign({ step }, extra || {}));
+      const name = { exp: 'work experience', edu: 'education', lang: 'languages' }[kind];
+      const listed = kind === 'exp' ? (profile.experience || []).length : kind === 'edu' ? (profile.educationHistory || []).length : items.length;
+      if (!listed && kind !== 'lang') note(`${name}: your profile has no ${kind === 'exp' ? 'work history' : 'school'} list, only the current one is used (upload your resume again in options, or add entries under "Work experience & education")`);
       for (let tries = 0; gs.length < items.length && tries < items.length + 2; tries++) {
         const b = addButton(kind);
-        if (!b) break;
+        if (!b) {
+          note(`${name}: ${items.length} in your profile, ${gs.length} on the page, and no "Add" button found for this section`);
+          break;
+        }
         const before = gs.length;
+        b.scrollIntoView({ block: 'center' });
         b.click();
         added++;
-        await sleep(900);
-        gs = groups(kind, JC.fields.scan());
-        if (gs.length <= before) {
-          await sleep(900);
+        // Workday can take a few seconds to render a new block.
+        for (let w = 0; w < 10 && gs.length <= before; w++) {
+          await sleep(500);
           gs = groups(kind, JC.fields.scan());
-          if (gs.length <= before) break;
+        }
+        if (gs.length <= before) {
+          note(`${name}: clicked "${clean(b.innerText)}" but no new block appeared`);
+          break;
         }
       }
+      if (items.length) note(`${name}: ${items.length} in your profile, ${gs.length} block${gs.length === 1 ? '' : 's'} on the page`);
       for (let i = 0; i < Math.min(items.length, gs.length); i++) {
         // "Currently work here" first: it hides the end date on many forms.
         const order = gs[i].fields.slice().sort((a, b) => (a.part === 'current' ? -1 : 0) - (b.part === 'current' ? -1 : 0));
@@ -313,8 +324,9 @@
 
   /** Workday-style skills picker: add skills one search at a time, remembering the picker's names. */
   async function fillSkills(profile, ctx) {
-    const box = JC.fields.scan().find((f) => f.combobox && f.type !== 'listbox' && (/\bskills?\b/i.test(f.label || '') || /(^|[-_])skills?([-_]|$)/i.test(f.el.id || '')) && !/\b(language|years)\b/i.test(f.label || ''));
+    const box = JC.fields.scan().find(isSkillsBox);
     if (!box) return [];
+    const note = (step, extra) => JC.recorder && JC.recorder.note && JC.recorder.note(Object.assign({ step }, extra || {}));
     let memory = {};
     try {
       memory = (await chrome.storage.local.get('skillMemory')).skillMemory || {};
@@ -322,7 +334,10 @@
     memory.names = memory.names || {}; // "python" -> "Python (Programming Language)"
     memory.userSkills = memory.userSkills || [];
     const list = skillPlan(profile, ctx, memory);
-    if (!list.length) return [];
+    if (!list.length) {
+      note('skills: your profile has no skills (add them under Work → Key skills in options)');
+      return [{ label: box.label || 'Skills', selector: JC.fields.describe(box).selector, section: 'skills', failed: 'no skills in your profile' }];
+    }
     const container = box.el.closest('[data-automation-id^="formField"]') || box.el.parentElement;
     const pills = () => [...(container ? container.querySelectorAll('[data-automation-id="selectedItem"], [data-automation-id="selectedItemList"] li') : [])].map((e) => clean(e.innerText));
     const before = pills();
@@ -349,8 +364,14 @@
     try {
       await chrome.storage.local.set({ skillMemory: memory });
     } catch (_) {}
-    return added.length ? [{ label: box.label || 'Skills', selector: JC.fields.describe(box).selector, section: 'skills', added }] : [];
+    note(`skills: added ${added.length} of ${list.length} (${added.join(', ') || 'none matched the picker'})`);
+    return [{ label: box.label || 'Skills', selector: JC.fields.describe(box).selector, section: 'skills', added, failed: added.length ? undefined : `none of ${list.slice(0, 5).join(', ')} matched the picker's options` }];
   }
 
-  JC.sections = { skillPlan, kindOf, headings, groups, partOf, addButton, fill, fillSkills, dateValue };
+  /** A type-ahead skills picker (Workday "Type to Add Skills" and similar). */
+  function isSkillsBox(f) {
+    return !!(f && f.combobox && f.type !== 'listbox' && (/\bskills?\b/i.test(f.label || '') || /(^|[-_])skills?([-_]|$)/i.test((f.el && f.el.id) || '')) && !/\b(language|years|rate|level)\b/i.test(f.label || ''));
+  }
+
+  JC.sections = { isSkillsBox, skillPlan, kindOf, headings, groups, partOf, addButton, fill, fillSkills, dateValue };
 })(typeof globalThis !== 'undefined' ? globalThis : self);

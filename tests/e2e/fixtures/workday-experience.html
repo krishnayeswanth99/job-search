@@ -42,7 +42,9 @@
       <input id="${id}-dateSectionMonth-input" role="spinbutton" aria-label="Month" data-automation-id="dateSectionMonth-input">
       <input id="${id}-dateSectionYear-input" role="spinbutton" aria-label="Year" data-automation-id="dateSectionYear-input"></div>`;
   }
-  document.getElementById('we-add').addEventListener('click', () => {
+  // Like a slow Workday: blocks after the first take 2.5 s to appear.
+  document.getElementById('we-add').addEventListener('click', () => setTimeout(addWork, document.querySelectorAll('#we-list > div').length ? 2500 : 0));
+  function addWork() {
     const id = 'workExperience-' + (n += 7);
     const d = document.createElement('div');
     d.innerHTML = `<h4>Work Experience ${document.querySelectorAll('#we-list > div').length + 1}</h4>
@@ -55,7 +57,7 @@
     document.getElementById('we-list').appendChild(d);
     d.querySelectorAll('[role="spinbutton"]').forEach(spin);
     document.getElementById('we-add').textContent = 'Add Another';
-  });
+  }
   const DEGREES = ['Select One', 'GED', 'High School', 'Associates', 'Bachelors', 'Masters', 'Doctorate'];
   // Languages (Workday): language, native box, and five proficiency dropdowns.
   function listbox(d, btn, items) {

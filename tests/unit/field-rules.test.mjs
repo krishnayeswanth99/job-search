@@ -289,3 +289,8 @@ test('languages and Workday-style degree / level wording', () => {
   assert.equal(lv[pick(lv, JC.rules.levelCandidates('native'))].text, '5 - Fluent');
   assert.equal(lv[pick(lv, JC.rules.levelCandidates('intermediate'))].text, '3 - Intermediate');
 });
+
+test('"how did you first hear" and long portfolio-link questions', () => {
+  assert.equal(key({ label: 'How did you first hear about this position at Casap?' }), 'howDidYouHear');
+  assert.equal(key({ label: 'Link to website, portfolio, code repository, etc. Please include passcode if needed.' }), 'portfolio');
+});

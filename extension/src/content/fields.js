@@ -76,14 +76,15 @@
     }
     // Labels that are just text above the field, not linked to it (Gem, many custom forms):
     // the nearest short text before the field's wrapper.
-    if (!tries.length) {
+    // Only placeholder text so far ("Select One Required" on Workday questions)? Look above too.
+    const real = (t) => t && !/^(select one|select|choose one|choose|please select|search|required|optional|\*)?(\s+(required|optional))?\s*\*?$/i.test(t.trim());
+    if (!tries.some(real)) {
       const t = precedingText(el);
-      if (t) tries.push(t);
+      if (t) tries.unshift(t);
     }
     if (el.placeholder) tries.push(clean(el.placeholder));
-    const best = tries
-      .map((t) => t.replace(/\s+(select one|select|choose one)(\s+required)?\s*$/i, '').replace(/\s*\*\s*$/, '').trim())
-      .find((t) => t && t.length <= 300);
+    const cleaned = tries.map((t) => t.replace(/(^|\s+)(select one|select|choose one)(\s+required)?\s*$/i, '').replace(/\s*\*\s*$/, '').trim());
+    const best = cleaned.find((t) => real(t) && t.length <= 300) || cleaned.find((t) => t && t.length <= 300);
     return best || '';
   }
 

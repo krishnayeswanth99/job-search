@@ -372,6 +372,7 @@ try {
       const r = await bridge(p, () => window.jobCopilot.autofill());
       const v = await p.evaluate(() => ({ pill: document.getElementById('pills').textContent, q1: q1y.checked, q2: q2y.checked || q2n.checked, cc: cc.options[cc.selectedIndex].text, q3no: q3n.checked }));
       assert.equal(v.cc, 'United States of America (+1)'); // +1, no +1 option for the profile's country: the main +1 country
+      assert.equal(await p.evaluate(() => wq1.textContent), 'Yes'); // question text above a "Select One Required" button
       assert.equal(v.q3no, true);
       assert.equal(v.pill, 'LinkedIn', JSON.stringify(r.needsInput));
       assert.equal(v.q1, true, JSON.stringify(r));

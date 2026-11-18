@@ -215,7 +215,7 @@
 
     // Work experience / education blocks are filled per entry by JC.sections (below).
     const hs = JC.sections ? JC.sections.headings() : [];
-    const inSection = (f) => JC.sections && f.el && f.type !== 'file' && !!JC.sections.kindOf(f.el, hs);
+    const inSection = (f) => JC.sections && f.el && f.type !== 'file' && (!!JC.sections.kindOf(f.el, hs) || JC.sections.isSkillsBox(f));
     for (const f of fields) {
       if (f.type === 'file' && fileDone.has(f.ref)) continue;
       if (inSection(f)) continue;
@@ -325,6 +325,8 @@
     if (JC.sections && opts.sections !== false) {
       try {
         const sec = await JC.sections.fill(profile, { jobDesc: opts.jobDesc, resumeText: opts.resumeText });
+        for (const x of sec.filled.filter((y) => y.failed)) needsInput.push({ label: x.label, selector: x.selector, type: 'text', reason: 'skills picker: ' + x.failed });
+        sec.filled = sec.filled.filter((y) => !y.failed && (!y.added || y.added.length));
         const done = new Set(sec.filled.map((x) => x.selector));
         for (const x of sec.filled) filled.push({ label: `${x.section}${x.entry ? ' ' + x.entry : ''}: ${x.label}`, selector: x.selector, source: 'profile', profileKey: x.section, value: x.added ? x.added.join(', ') : x.value });
         for (let k = needsInput.length - 1; k >= 0; k--) if (done.has(needsInput[k].selector)) needsInput.splice(k, 1);
@@ -372,7 +374,9 @@
       // work-history blocks): the on-device AI checks each against your data and flags doubtful ones.
       verify: filled
         .filter((f) => f.selector && f.type !== 'file' && !CONSTANT_KEYS.has(f.profileKey) && !EEO_KEYS.has(f.profileKey))
-        .filter((f) => f.source !== 'profile' || f.chosen || (f.options && f.options.length) || /^(work experience|education|language)$/.test(f.profileKey || ''))
+        // Work history / schools / languages are copied from your own lists: nothing to double-check.
+        .filter((f) => !/^(work experience|education|language|skills)$/.test(f.profileKey || ''))
+        .filter((f) => f.source !== 'profile' || f.chosen || (f.options && f.options.length))
         .map((f) => ({ selector: f.selector, label: f.label, type: f.type, options: (f.options || []).slice(0, 25), value: String(f.chosen || f.value || '').slice(0, 400), source: f.source }))
         .filter((f) => f.value)
         .slice(0, 25),

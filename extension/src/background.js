@@ -7,7 +7,7 @@
  */
 importScripts('shared/config.js', 'shared/profile-schema.js', 'shared/field-rules.js', 'shared/ask-prompt.js');
 
-const FRAME_CMDS = new Set(['startApplication', 'nextStep', 'ping', 'detect', 'extractJobs', 'loadMoreJobs', 'resolveApplyLinks', 'stopResolve', 'extractJob', 'scanForm', 'autofill', 'fillField', 'attachFile', 'followApply', 'reviewFix', 'showField']);
+const FRAME_CMDS = new Set(['startApplication', 'nextStep', 'ping', 'detect', 'extractJobs', 'loadMoreJobs', 'resolveApplyLinks', 'stopResolve', 'extractJob', 'scanForm', 'autofill', 'fillField', 'attachFile', 'followApply', 'reviewFix', 'showField', 'flagFields']);
 
 // ---------------------------------------------------- tabs opened by Apply buttons
 // Job boards often open the employer's site in a new tab. Remember child tabs per
@@ -323,6 +323,14 @@ async function maybeContinue(tabId, r) {
     const latest = (await chrome.storage.session.get(key).catch(() => ({})))[key];
     if (latest) r = Object.assign({}, r, { needsInput: latest.needsInput });
   }
+  // Answers the on-device AI thinks contradict your data: you look first.
+  await Promise.race([aiQueue.catch(() => {}), new Promise((res) => setTimeout(res, 30000))]);
+  const fk = 'fill:' + tabId;
+  const flags = (((await chrome.storage.session.get(fk).catch(() => ({})))[fk] || {}).flags) || {};
+  if (Object.values(flags).includes('wrong')) {
+    debugAdd(tabId, { type: 'extension-step', detail: { step: 'on-device AI thinks an answer here may be wrong: check it, then click Continue yourself' } });
+    return;
+  }
   const blocking = (r.needsInput || []).filter((f) => f.required);
   if (blocking.length) {
     debugAdd(tabId, { type: 'extension-step', detail: { step: 'waiting for you before Save and Continue', required: blocking.map((f) => (f.label || '').slice(0, 60)).slice(0, 10) } });
@@ -422,6 +430,7 @@ chrome.tabs.onUpdated.addListener((tabId, info, tab) => {
 const flashedTabs = new Map(); // openerTabId -> [{ url, openedAt, closedAt }]
 chrome.tabs.onRemoved.addListener((tabId) => {
   chrome.storage.session.remove('fill:' + tabId).catch(() => {});
+  verified.delete(tabId);
   // Apply one by one: closing the employer tab without submitting skips that job.
   queuesReady.then(() => {
     for (const [feedTabId, q] of queues) {
@@ -524,7 +533,7 @@ function merge(cmd, frames) {
       return { ok: true, application: frames.some((f) => f.application), count: fields.length, fields };
     }
     case 'autofill': {
-      const out = { ok: errors.length < frames.length, filledCount: 0, filled: [], skipped: [], needsInput: [], corrected: [], review: [], errors };
+      const out = { ok: errors.length < frames.length, filledCount: 0, filled: [], skipped: [], needsInput: [], corrected: [], review: [], verify: [], errors };
       for (const f of frames) {
         if (!f.ok) continue;
         out.filledCount += f.filledCount || 0;
@@ -535,6 +544,7 @@ function merge(cmd, frames) {
         out.skipped.push(...(f.skipped || []).map(tag));
         out.needsInput.push(...(f.needsInput || []).map(tag));
         out.review.push(...(f.review || []).map(tag));
+        out.verify.push(...(f.verify || []));
       }
       if (!out.ok) out.error = errors[0] && errors[0].error;
       out.reminder = 'Nothing was submitted. Review the form, answer needsInput items, then ask the user before clicking Submit.';
@@ -630,6 +640,44 @@ function aiCheck(tabId, review) {
   return aiQueue;
 }
 
+// Every answer put in (resume, saved, AI, choices, work history): the on-device AI says ok / wrong /
+// unsure against your data. Doubtful ones are outlined on the page and marked in the side panel;
+// nothing is changed. Each answer is checked once per tab.
+const verified = new Map(); // tabId -> Set("selector|value")
+function aiVerify(tabId, items) {
+  aiQueue = aiQueue.then(async () => {
+    const { settings, profile, resumeText, __testNanoReply } = await chrome.storage.local.get(['settings', 'profile', 'resumeText', '__testNanoReply']);
+    if ((settings && settings.aiCheck === false) || !profile) return;
+    const seen = verified.get(tabId) || new Set();
+    verified.set(tabId, seen);
+    const fresh = items.filter((it) => !seen.has(it.selector + '|' + it.value));
+    if (!fresh.length) return;
+    fresh.forEach((it) => seen.add(it.selector + '|' + it.value));
+    const t0 = Date.now();
+    let res;
+    try {
+      await ensureOffscreen();
+      res = await chrome.runtime.sendMessage({ target: 'offscreen', type: 'jc:nano-verify', items: fresh, profile: self.JC.normalizeProfile(profile), resumeText, testReply: __testNanoReply });
+    } catch (e) {
+      res = { ok: false, error: String(e.message || e) };
+    }
+    if (!res || !res.ok) {
+      debugAdd(tabId, { type: 'extension-step', detail: { step: 'on-device answer check skipped', reason: ((res && res.error) || 'no reply').slice(0, 200) } });
+      return;
+    }
+    debugAdd(tabId, { type: 'extension-step', detail: { step: `on-device AI checked ${res.checked} answer${res.checked === 1 ? '' : 's'}`, ms: Date.now() - t0, doubtful: res.flags.map((f) => `${f.label.slice(0, 60)}: ${f.verdict}`) } });
+    if (!res.flags.length) return;
+    await runInFrames(tabId, 'flagFields', { flags: res.flags, _origin: 'ai-check' }).catch(() => []);
+    const key = 'fill:' + tabId;
+    const cur = (await chrome.storage.session.get(key).catch(() => ({})))[key];
+    if (cur) {
+      cur.flags = Object.assign({}, cur.flags || {}, Object.fromEntries(res.flags.map((f) => [f.selector, f.verdict])));
+      await chrome.storage.session.set({ [key]: cur }).catch(() => {});
+    }
+  });
+  return aiQueue;
+}
+
 // Unanswered questions after autofill: drafted by the on-device AI from the profile and resume only.
 // Sensitive ones (EEO, signatures, salary, criminal history, IDs) are never answered automatically.
 const aiAnswerPending = new Map(); // tabId -> Promise<{ answered }>
@@ -660,7 +708,7 @@ async function aiAnswer(tabId, needsInput) {
 }
 
 async function runCommand(tabId, cmd, payload, origin) {
-  if (!FRAME_CMDS.has(cmd) || cmd === 'reviewFix') return { ok: false, error: `unknown command: ${cmd}` };
+  if (!FRAME_CMDS.has(cmd) || cmd === 'reviewFix' || cmd === 'flagFields') return { ok: false, error: `unknown command: ${cmd}` };
   // Never trust an origin claimed by the page; it is set here from the sender.
   payload = Object.assign({}, payload, { _origin: origin });
   delete payload.files;
@@ -685,10 +733,13 @@ async function runCommand(tabId, cmd, payload, origin) {
     const tab = await chrome.tabs.get(tabId).catch(() => ({}));
     debugAdd(tabId, { type: 'autofill', url: tab.url, from: origin, ok: out.ok, error: out.error, filled: out.filledCount, needsInput: (out.needsInput || []).map((f) => `${(f.label || '').slice(0, 80)} (${f.reason})`).slice(0, 30), corrected: (out.corrected || []).map((c) => c.label), parseWaitMs: out.parseWaitMs });
     if (out.review && out.review.length) aiCheck(tabId, out.review); // runs on its own, after the reply
+    if (out.verify && out.verify.length) aiVerify(tabId, out.verify);
     delete out.review;
+    delete out.verify;
     // Questions left open: the on-device AI drafts answers by itself (not for its own pass).
     if (!payload.aiPass && out.ok && origin !== 'bridge') aiAnswerPending.set(tabId, aiAnswer(tabId, out.needsInput || []));
     // The side panel shows what was filled with what (values stay inside the extension).
+    const prevFlags = ((await chrome.storage.session.get('fill:' + tabId).catch(() => ({})))['fill:' + tabId] || {}).flags || {};
     await chrome.storage.session
       .set({
         ['fill:' + tabId]: {
@@ -697,6 +748,11 @@ async function runCommand(tabId, cmd, payload, origin) {
           filled: (out.filled || []).slice(0, 120),
           needsInput: (out.needsInput || []).slice(0, 60).map((f) => ({ label: f.label, reason: f.reason, selector: f.selector, required: f.required, suggested: f.suggested && String(f.suggested).slice(0, 120) })),
           corrected: out.corrected || [],
+          // Keep earlier flags only for fields still in this fill (a new page or step starts clean).
+          flags: (() => {
+            const keep = new Set((out.filled || []).map((f) => f.selector));
+            return Object.fromEntries(Object.entries(prevFlags).filter(([sel]) => keep.has(sel)));
+          })(),
         },
       })
       .catch(() => {});

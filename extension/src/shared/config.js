@@ -7,7 +7,7 @@
 (function (root) {
   const JC = (root.JC = root.JC || {});
 
-  JC.VERSION = '0.30.0';
+  JC.VERSION = '0.31.0';
   JC.BRIDGE_CHANNEL = 'job-copilot';
 
   /**

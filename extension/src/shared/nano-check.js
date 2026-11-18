@@ -88,6 +88,62 @@
     return out;
   }
 
-  JC.nanoCheck = { bio, buildPrompt, schema, parse };
+  // ------------------------------------------------ verify every answer put in
+  // The model reads each question with the answer that was filled and says "ok", "wrong" (it
+  // contradicts the applicant's data) or "unsure" (the data doesn't say). It never writes answers:
+  // doubtful ones are only outlined for the user.
+
+  function buildVerifyPrompt({ items, profile, resumeText }) {
+    const fields = (items || []).slice(0, 25).map((it, i) => ({
+      id: 'a' + (i + 1),
+      selector: it.selector,
+      label: String(it.label || '').slice(0, 200),
+      type: it.type,
+      options: (it.options || []).slice(0, 15),
+      value: String(it.value || '').slice(0, 300),
+      source: it.source,
+    }));
+    const data = bio(profile);
+    const exp = ((profile && profile.experience) || []).slice(0, 6).map((e) => `${e.title || '?'} at ${e.company || '?'} (${e.start || '?'} to ${e.current ? 'present' : e.end || '?'})`);
+    const edu = ((profile && profile.educationHistory) || []).slice(0, 4).map((e) => `${e.degree || ''} ${e.fieldOfStudy || ''}, ${e.school || ''} ${e.end ? '(' + e.end.slice(0, 4) + ')' : ''}`.trim());
+    const resume = resumeText && JC.ask && JC.ask.relevantResume ? JC.ask.relevantResume(resumeText, fields.map((f) => ({ label: f.label })), 2500) : '';
+    const lines = [
+      "You double-check a job application filled in for the applicant. For each question below, compare the answer that was filled in with the applicant's data.",
+      'Reply "ok" when the data supports the answer (or it is a reasonable reading of it), "wrong" when the data contradicts it or it answers a different question, and "unsure" when the data does not say.',
+      'Judge only against the data given. Do not judge style or wording.',
+      '',
+      "APPLICANT'S DATA",
+      ...data.map((d) => `${d.label}: ${d.value}`),
+      ...(exp.length ? ['Work history: ' + exp.join('; ')] : []),
+      ...(edu.length ? ['Education: ' + edu.join('; ')] : []),
+      ...(resume ? ['Resume (relevant lines):', resume] : []),
+      '',
+      'FILLED ANSWERS',
+      ...fields.map((f) => `${f.id}: "${f.label}"${f.options.length ? ` (options: ${f.options.join(' | ')})` : ''} -> "${f.value}"`),
+      '',
+      'Reply with JSON: {"verdicts": {"a1": "ok" | "wrong" | "unsure", ...}}',
+    ];
+    return { prompt: lines.join('\n'), fields };
+  }
+
+  function verifySchema(fields) {
+    const props = {};
+    for (const f of fields) props[f.id] = { type: 'string', enum: ['ok', 'wrong', 'unsure'] };
+    return { type: 'object', properties: { verdicts: { type: 'object', properties: props, required: fields.map((f) => f.id), additionalProperties: false } }, required: ['verdicts'], additionalProperties: false };
+  }
+
+  /** -> [{ selector, label, verdict: 'wrong' | 'unsure', value, source }] */
+  function parseVerify(reply, fields) {
+    let j = reply;
+    if (typeof reply === 'string') {
+      const m = reply.match(/\{[\s\S]*\}/);
+      if (!m) throw new Error('reply was not JSON');
+      j = JSON.parse(m[0]);
+    }
+    const v = (j && (j.verdicts || j)) || {};
+    return fields.filter((f) => v[f.id] === 'wrong' || v[f.id] === 'unsure').map((f) => ({ selector: f.selector, label: f.label, verdict: v[f.id], value: f.value, source: f.source }));
+  }
+
+  JC.nanoCheck = { bio, buildPrompt, schema, parse, buildVerifyPrompt, verifySchema, parseVerify };
   if (typeof module !== 'undefined' && module.exports) module.exports = JC.nanoCheck;
 })(typeof globalThis !== 'undefined' ? globalThis : self);

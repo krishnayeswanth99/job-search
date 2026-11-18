@@ -35,3 +35,18 @@ test('the model can only name profile fields or none, and only disagreements com
   assert.equal(fixes[0].to, 'none');
   assert.equal(fixes[0].weak, true);
 });
+
+test('answer check: the model only says ok / wrong / unsure; doubtful ones come back', () => {
+  const items = [
+    { selector: '#a', label: 'Have you built production software in Python or Java?', type: 'radio', options: ['Yes', 'No'], value: 'Yes', source: 'resume' },
+    { selector: '#b', label: 'Are you willing to relocate?', type: 'select', options: ['Yes', 'No'], value: 'Yes', source: 'saved-answer' },
+  ];
+  const { prompt, fields } = N.buildVerifyPrompt({ items, profile });
+  assert.match(prompt, /a1: "Have you built production software in Python or Java\?" \(options: Yes \| No\) -> "Yes"/);
+  assert.ok(!prompt.includes('Female'));
+  assert.deepEqual([...N.verifySchema(fields).properties.verdicts.properties.a2.enum], ['ok', 'wrong', 'unsure']);
+  const flags = N.parseVerify('{"verdicts": {"a1": "ok", "a2": "unsure"}}', fields);
+  assert.equal(flags.length, 1);
+  assert.equal(flags[0].selector, '#b');
+  assert.equal(flags[0].verdict, 'unsure');
+});

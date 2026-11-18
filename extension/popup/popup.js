@@ -104,7 +104,10 @@ async function renderLive() {
   if (data) {
     $('live-when').textContent = new Date(data.at).toLocaleTimeString();
     const need = data.needsInput || [];
-    $('live-summary').textContent = `${data.filled.length} filled · ${need.length} left for you${data.corrected && data.corrected.length ? ` · corrected ${data.corrected.length} the site got wrong` : ''}`;
+    const fl = Object.values(data.flags || {});
+    const nWrong = fl.filter((v) => v === 'wrong').length;
+    const nUnsure = fl.filter((v) => v === 'unsure').length;
+    $('live-summary').textContent = `${data.filled.length} filled · ${need.length} left for you${nWrong ? ` · ${nWrong} the AI thinks are wrong` : ''}${nUnsure ? ` · ${nUnsure} it couldn't confirm` : ''}${data.corrected && data.corrected.length ? ` · corrected ${data.corrected.length} the site got wrong` : ''}`;
     $('live-filled-count').textContent = `(${data.filled.length})`;
     const showBtn = (selector) => (selector ? el('button', { class: 'small', onclick: () => send('showField', { selector }) }, 'Show') : el('span'));
     $('live-needs').replaceChildren(
@@ -120,8 +123,9 @@ async function renderLive() {
     $('live-filled').replaceChildren(
       ...data.filled.map((f) => {
         const [tag, cls] = SOURCE_TAG[f.source] || [f.source || 'filled', ''];
-        return el('div', { class: 'live-row' },
-          el('div', { class: 'live-q' }, f.label || '(unlabelled)'),
+        const flag = (data.flags || {})[f.selector];
+        return el('div', { class: 'live-row' + (flag ? ' flagged ' + flag : '') },
+          el('div', { class: 'live-q' }, f.label || '(unlabelled)', flag ? el('span', { class: 'flag ' + flag }, flag === 'wrong' ? ' ✗ AI thinks this is wrong' : ' ? AI could not confirm') : null),
           el('span', { class: `tag ${cls}` }, tag),
           el('div', { class: 'live-a' + (f.value ? '' : ' empty') }, f.value || '(filled)'),
           f.selector ? el('div', {}, showBtn(f.selector)) : null

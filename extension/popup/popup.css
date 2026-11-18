@@ -94,3 +94,7 @@ body.panel { width: auto; min-width: 300px; }
 .tag.ai { color: #7c3aed; border-color: #7c3aed; }
 .tag.you { color: var(--warn-fg); background: var(--warn-bg); border-color: transparent; }
 .live-needs-head { margin-top: 6px; font-weight: 600; }
+.flag { font-weight: 600; font-size: 11px; }
+.flag.wrong { color: #dc2626; }
+.flag.unsure { color: #d97706; }
+.live-row.flagged.wrong { background: rgba(220, 38, 38, 0.06); }

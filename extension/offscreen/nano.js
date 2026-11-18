@@ -93,7 +93,38 @@ async function answer({ questions, job, profile, resumeText, testReply }) {
   return { ok: true, overrides, askMe, problems };
 }
 
+async function verify({ items, profile, resumeText, testReply }) {
+  const { prompt, fields } = JC.nanoCheck.buildVerifyPrompt({ items, profile, resumeText });
+  if (!fields.length) return { ok: true, flags: [], checked: 0 };
+  // End-to-end tests: "VERDICTS:{\"part of a label\": \"wrong\"}".
+  if (typeof testReply === 'string' && testReply.startsWith('VERDICTS:')) {
+    const by = JSON.parse(testReply.slice(9));
+    const verdicts = {};
+    for (const f of fields) verdicts[f.id] = Object.entries(by).find(([k]) => f.label.toLowerCase().includes(k.toLowerCase()))?.[1] || 'ok';
+    return { ok: true, flags: JC.nanoCheck.parseVerify({ verdicts }, fields), checked: fields.length };
+  }
+  const s = await getSession(testReply);
+  const c = s.clone ? await s.clone() : s;
+  try {
+    let reply;
+    try {
+      reply = await c.prompt(prompt, { responseConstraint: JC.nanoCheck.verifySchema(fields) });
+    } catch (_) {
+      reply = await c.prompt(prompt + '\n\nReply with only the JSON object.');
+    }
+    return { ok: true, flags: JC.nanoCheck.parseVerify(reply, fields), checked: fields.length };
+  } finally {
+    if (c !== s && c.destroy) c.destroy();
+  }
+}
+
 chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
+  if (msg && msg.target === 'offscreen' && msg.type === 'jc:nano-verify') {
+    verify(msg)
+      .then(reply)
+      .catch((e) => reply({ ok: false, error: String((e && e.message) || e) }));
+    return true;
+  }
   if (msg && msg.target === 'offscreen' && msg.type === 'jc:nano-answer') {
     answer(msg)
       .then(reply)

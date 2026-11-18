@@ -364,10 +364,19 @@
       // Fields to double-check (labels, types and option texts only, never values). Matches made
       // from attributes or learned labels come first: they are the likeliest to be wrong.
       review: review.sort((a, b) => b.weak - a.weak).slice(0, 15),
+      // Every other answer put in (from the resume, saved answers, the AI, dropdown choices,
+      // work-history blocks): the on-device AI checks each against your data and flags doubtful ones.
+      verify: filled
+        .filter((f) => f.selector && f.type !== 'file' && !CONSTANT_KEYS.has(f.profileKey) && !EEO_KEYS.has(f.profileKey))
+        .filter((f) => f.source !== 'profile' || f.chosen || (f.options && f.options.length) || /^(work experience|education)$/.test(f.profileKey || ''))
+        .map((f) => ({ selector: f.selector, label: f.label, type: f.type, options: (f.options || []).slice(0, 25), value: String(f.chosen || f.value || '').slice(0, 400), source: f.source }))
+        .filter((f) => f.value)
+        .slice(0, 25),
     };
   }
 
   // Keys whose value doesn't come from the applicant's data (nothing for a model to check).
+  const EEO_KEYS = new Set(['gender', 'race', 'hispanicLatino', 'veteran', 'disability', 'sexualOrientation', 'pronouns', 'consent']);
   const CONSTANT_KEYS = new Set(['resumeSource', 'phoneType', 'timeZone', 'todayDate', 'todayMonth', 'todayDay', 'todayYear', 'howDidYouHear', 'howDidYouHearDetail']);
   function reviewItem(f, d) {
     return { ref: d.ref, selector: d.selector, label: d.label, type: d.type, options: d.options, maxLength: d.maxLength, profileKey: f.key, weak: !!(f.learned || f.via === 'attribute') };

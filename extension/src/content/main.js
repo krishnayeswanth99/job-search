@@ -137,6 +137,27 @@
           const run = () => JC.autofill.applyReview(payload.fixes, profile);
           return Object.assign({ ok: true, frame: location.href }, JC.learn ? await JC.learn.ours(run) : run());
         }
+        case 'flagFields': {
+          // The on-device answer check: outline answers it thinks are wrong (red) or can't confirm (amber).
+          if (payload._origin !== 'ai-check') return { ok: false, frame: location.href, error: 'not allowed' };
+          let n = 0;
+          for (const fl of payload.flags || []) {
+            const el = fl.selector && document.querySelector(fl.selector);
+            if (!el) continue;
+            const t = el.type === 'radio' || el.type === 'checkbox' ? el.closest('fieldset, [role="radiogroup"], .field') || el : el;
+            t.style.outline = fl.verdict === 'wrong' ? '2px solid #dc2626' : '2px dashed #d97706';
+            t.style.outlineOffset = '2px';
+            t.title = fl.verdict === 'wrong' ? "Job Copilot: the on-device AI thinks this answer doesn't match your profile or resume. Please check it." : "Job Copilot: the on-device AI couldn't confirm this answer from your profile or resume. Please check it.";
+            const clear = () => {
+              t.style.outline = '';
+              t.title = '';
+            };
+            el.addEventListener('input', clear, { once: true });
+            el.addEventListener('change', clear, { once: true });
+            n++;
+          }
+          return { ok: true, frame: location.href, flagged: n };
+        }
         case 'startApplication':
           if (!isTop) return null;
           return Object.assign({ frame: location.href }, await JC.nav.startApplication());

@@ -37,6 +37,7 @@ const ROUTES = {
   'https://uab.taleo.net/careersection/application.jss?lang=en&reqNo=330172': fx('taleo-application.html'),
   'https://uab.taleo.net/careersection/application.jss?lang=en&reqNo=330173': fx('taleo-resume.html'),
   'https://acme.wd5.myworkdayjobs.com/en-US/careers/job/New-York-NY/ML-Engineer_123/apply/questions': fx('workday-prompt.html'),
+  'https://acme.wd5.myworkdayjobs.com/en-US/careers/job/New-York-NY/ML-Engineer_123/apply/questions?v=2': fx('workday-prompt.html'),
   'https://careers.acme-robotics.example/jobs/data-scientist': fx('employer-apply-modal.html'),
   'https://careers.acme-robotics.example/apply/multi-step': fx('multi-step.html'),
   'https://careers.acme-robotics.example/apply/ai-questions': fx('ai-questions.html'),
@@ -482,6 +483,31 @@ try {
       assert.ok(fill.filled.some((f) => f.source === 'ai' && /San Mateo/.test(f.value)), JSON.stringify(fill.filled));
     } finally {
       await ext.evaluate(() => chrome.storage.local.remove('__testNanoReply'));
+    }
+  });
+
+  await check('on-device answer check: an answer it calls wrong is outlined and marked for the side panel, nothing changed', async () => {
+    const saved = await ext.evaluate(async () => chrome.storage.local.get(['profile', 'resumeText']));
+    await ext.evaluate(async (s) => chrome.storage.local.set({ resumeText: 'Ada Lovelace\nSoftware engineer. Built analytics services in Python on AWS.\n' + 'Shipped dashboards. '.repeat(30), __testNanoReply: 'VERDICTS:' + JSON.stringify({ 'python or java': 'wrong' }) }), saved);
+    try {
+      const url = 'https://acme.wd5.myworkdayjobs.com/en-US/careers/job/New-York-NY/ML-Engineer_123/apply/questions?v=2';
+      const p = await open(url);
+      await bridge(p, () => window.jobCopilot.autofill());
+      const tid = await ext.evaluate(async (url) => (await chrome.tabs.query({ url })).at(0)?.id, url);
+      const flags = await ext.evaluate(async (k) => {
+        for (let i = 0; i < 40; i++) {
+          const f = ((await chrome.storage.session.get(k))[k] || {}).flags || {};
+          if (Object.keys(f).length) return f;
+          await new Promise((r) => setTimeout(r, 250));
+        }
+        return {};
+      }, 'fill:' + tid);
+      assert.deepEqual(Object.values(flags), ['wrong'], JSON.stringify(flags));
+      const v = await p.evaluate(() => ({ yes: q1y.checked, outline: q1y.closest('fieldset').style.outline }));
+      assert.equal(v.yes, true); // not changed
+      assert.match(v.outline, /220, 38, 38|#dc2626/);
+    } finally {
+      await ext.evaluate(async (s) => { await chrome.storage.local.remove('__testNanoReply'); await chrome.storage.local.set({ resumeText: s.resumeText || '' }); }, saved);
     }
   });
 

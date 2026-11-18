@@ -1,0 +1,25 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Taleo application</title></head>
+<body>
+<div id="view">
+  <h2>Sign In</h2>
+  <label for="u">User Name</label><input id="u" name="username">
+  <label for="pw">Password</label><input id="pw" type="password">
+  <button type="button" id="google">Sign in with Google</button>
+</div>
+<script>
+  // Like Taleo after Google sign-in: the same page swaps the login for the application form.
+  function showForm() {
+    document.getElementById('view').innerHTML = `
+      <h2>General Profile</h2>
+      <form id="et-ef-content-ftf-gp">
+        <label for="fn">First Name</label><input id="fn" name="cs_candidate_personal_info_FirstName">
+        <label for="ln">Last Name</label><input id="ln" name="cs_candidate_personal_info_LastName">
+        <label for="em">Email Address</label><input id="em" name="cs_candidate_personal_info_EmailAddress">
+        <label for="ph">Primary Number</label><input id="ph" name="cs_candidate_personal_info_HomePhone">
+      </form>`;
+  }
+  if (new URLSearchParams(location.search).get('signedin')) showForm();
+  document.getElementById('google').addEventListener('click', showForm);
+</script>
+</body></html>

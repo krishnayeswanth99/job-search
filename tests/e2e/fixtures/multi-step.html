@@ -1,0 +1,25 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Apply - step 1</title></head>
+<body>
+<div id="page">
+  <h2>My Information</h2>
+  <form>
+    <label for="fn">First Name *</label><input id="fn" name="firstName" required>
+    <label for="ln">Last Name *</label><input id="ln" name="lastName" required>
+    <label for="em">Email *</label><input id="em" type="email" name="email" required>
+    <label for="ph">Phone</label><input id="ph" name="phone">
+  </form>
+  <button type="button" id="next">Save and Continue</button>
+</div>
+<script>
+  window.__submitted = false;
+  document.getElementById('next').addEventListener('click', () => {
+    if (!document.getElementById('fn').value) return;
+    window.__step1 = { fn: fn.value, em: em.value };
+    document.getElementById('page').innerHTML = `<h2>Review</h2>
+      <form><label for="city">City</label><input id="city" name="city"><label for="cty">Country</label><input id="cty" name="country"></form>
+      <button type="button" id="submit">Submit</button>`;
+    document.getElementById('submit').addEventListener('click', () => (window.__submitted = true));
+  });
+</script>
+</body></html>

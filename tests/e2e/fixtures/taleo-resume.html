@@ -1,0 +1,25 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Resume Selection</title></head>
+<body>
+<form>
+  <fieldset>
+    <legend>Resume Upload Selection</legend>
+    <label><input type="radio" name="resumeParsing" id="r-li" value="linkedin"> Use my LinkedIn profile</label>
+    <label><input type="radio" name="resumeParsing" id="r-up" value="upload"> Upload a resume</label>
+    <label><input type="radio" name="resumeParsing" id="r-no" value="none" checked> No thanks, I will fill out the online submission manually</label>
+  </fieldset>
+  <div id="where"></div>
+  <div id="box"></div>
+</form>
+<script>
+  // Like Taleo: "Upload a resume" reveals where from; "My computer" reveals the file box.
+  document.getElementById('r-up').addEventListener('change', () => {
+    document.getElementById('where').innerHTML = `<fieldset><legend>Select the resume file to upload</legend>
+      <label><input type="radio" name="src" id="s-dbx" value="dropbox"> Dropbox</label>
+      <label><input type="radio" name="src" id="s-pc" value="pc"> My computer</label></fieldset>`;
+    document.getElementById('s-pc').addEventListener('change', () => {
+      document.getElementById('box').innerHTML = '<label for="file">Resume</label><input type="file" id="file" name="resumeFile">';
+    });
+  });
+</script>
+</body></html>

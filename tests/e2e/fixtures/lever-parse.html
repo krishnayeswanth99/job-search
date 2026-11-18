@@ -1,0 +1,24 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Acme - Backend Engineer - Apply</title></head><body>
+<form id="application-form">
+  <label><div class="application-label">Resume/CV ✱</div><div class="application-field"><input type="file" name="resume" id="cv"></div></label>
+  <label><div class="application-label">First name ✱</div><div class="application-field"><input name="firstName" id="fn"></div></label>
+  <label><div class="application-label">Last name ✱</div><div class="application-field"><input name="lastName" id="ln"></div></label>
+  <label><div class="application-label">Email ✱</div><div class="application-field"><input type="email" name="email" id="em"></div></label>
+  <label><div class="application-label">Phone</div><div class="application-field"><input name="phone" id="ph"></div></label>
+  <label><div class="application-label">LinkedIn URL</div><div class="application-field"><input name="urls[LinkedIn]" id="li"></div></label>
+  <label><div class="application-label">What are you most proud of?</div><div class="application-field"><textarea name="cards[q1]" id="proud"></textarea></div></label>
+  <button type="submit">Submit application</button>
+</form>
+<script>
+  // Like Lever/iCIMS: after a resume upload, the site parses it and fills the form (with its own mistakes),
+  // and a second, late pass changes the email again a few seconds later.
+  const set = (id, v) => { const el = document.getElementById(id); el.value = v; el.dispatchEvent(new Event('input', { bubbles: true })); };
+  document.getElementById('cv').addEventListener('change', () => {
+    setTimeout(() => {
+      set('fn', 'ADA'); set('ln', 'Lovelace-Byron'); set('em', 'ada@example.com'); set('ph', '555-0199');
+      set('li', 'linkedin.com/in/ada/'); set('proud', 'Parsed from resume: the analytical engine');
+    }, 900);
+    setTimeout(() => set('em', 'ada.old@parsed.example'), 4500);
+  });
+</script>
+</body></html>

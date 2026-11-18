@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Job Copilot settings</title>
+    <link rel="stylesheet" href="../popup/popup.css" />
+    <link rel="stylesheet" href="options.css" />
+  </head>
+  <body>
+    <main>
+      <header>
+        <img src="../icons/icon48.png" alt="" width="32" height="32" />
+        <h1>Job Copilot</h1>
+        <span id="save-state" class="muted"></span>
+      </header>
+
+      <nav>
+        <a href="#files">Resume</a>
+        <a href="#profile">Profile</a>
+        <a href="#answers">Saved answers</a>
+        <a href="#jobs">Saved jobs</a>
+        <a href="#claude">Claude API</a>
+        <a href="#settings">Claude bridge</a>
+      </nav>
+
+      <section id="files" class="card">
+        <h2>Resume &amp; cover letter</h2>
+        <p class="muted">
+          Upload your resume and Job Copilot reads your details from it (name, contact, links, current role, education,
+          skills) so you can review and edit them before saving. The file is stored only in this browser and attached
+          automatically to resume upload fields when you autofill. It is read here, unless you choose
+          <strong>Read with Claude</strong> (set up under <a href="#claude">Claude (optional)</a>), which sends it to Anthropic's API.
+        </p>
+        <div class="file-row">
+          <strong>Resume</strong> <span id="resume-name" class="muted">none</span>
+          <label class="file-btn primary-btn">Upload resume<input id="resume-file" type="file" accept=".pdf,.docx,.txt,.md" hidden /></label>
+          <button id="resume-reparse" class="small">Read details again</button>
+          <button id="resume-claude" class="small">Read with Claude</button>
+          <button id="resume-clear" class="small">Remove</button>
+        </div>
+        <div id="resume-review" class="review" hidden></div>
+        <div class="file-row">
+          <strong>Cover letter</strong> <span id="cover-name" class="muted">none</span>
+          <label class="file-btn">Choose file<input id="cover-file" type="file" accept=".pdf,.doc,.docx,.txt" hidden /></label>
+          <button id="cover-clear" class="small">Remove</button>
+        </div>
+      </section>
+
+      <section id="import" class="card">
+        <h2>Import / export</h2>
+        <p class="muted">
+          The Claude <code>setup</code> skill writes <code>~/.job-search/profile.json</code>. Import it here so autofill uses the same data
+          Claude uses. Exports use the same format.
+        </p>
+        <div class="buttons">
+          <label class="file-btn">Import profile.json<input id="import-file" type="file" accept="application/json,.json" hidden /></label>
+          <button id="export-profile">Export profile.json</button>
+        </div>
+      </section>
+
+      <section id="profile" class="card">
+        <h2>Profile</h2>
+        <form id="profile-form"></form>
+        <label class="block">How did you hear about us? (default answer)<input id="howDidYouHear" /></label>
+        <label class="block">Short professional summary<textarea id="summary" rows="3"></textarea></label>
+      </section>
+
+      <section id="history" class="card">
+        <h2>Work experience &amp; education</h2>
+        <p class="muted">
+          For applications with repeatable sections (Workday's "My Experience", "Add another"): one entry per job and school,
+          newest first. Filled from your resume when you upload it; edit or add entries here. Months are YYYY-MM.
+        </p>
+        <h3>Work experience</h3>
+        <div id="experience-list"></div>
+        <button id="add-experience">Add job</button>
+        <h3>Education</h3>
+        <div id="education-list"></div>
+        <button id="add-education">Add school</button>
+      </section>
+
+      <section id="answers" class="card">
+        <h2>Saved answers</h2>
+        <p class="muted">
+          Answers to recurring custom questions. Ones you type here are matched by similar wording. When you answer a new
+          question on an application and click Submit or Next, Job Copilot remembers it (marked "remembered") and reuses
+          it only for the same question. Answers that mention a specific company are reused only for that company.
+        </p>
+        <div id="answers-list"></div>
+        <button id="add-answer">Add answer</button>
+      </section>
+
+
+      <section id="jobs" class="card">
+        <h2>Saved jobs</h2>
+        <div class="buttons">
+          <button id="export-jobs-json">Export JSON</button>
+          <button id="export-jobs-csv">Export CSV</button>
+          <button id="clear-jobs">Clear</button>
+        </div>
+        <div id="jobs-list"></div>
+      </section>
+
+      <section id="claude" class="card">
+        <h2>Claude (optional)</h2>
+        <p class="muted">
+          Add your own Anthropic API key to let Claude read your resume. It handles two-column and designed resumes much
+          better than the built-in reader. When you use it, the resume file is sent to Anthropic's API with your key and
+          billed to your account (with Haiku, a resume typically costs well under one US cent). The key is stored only in
+          this browser and is used only from this settings page. Get a key at
+          <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">console.anthropic.com</a>.
+        </p>
+        <label class="block">Anthropic API key<input id="claude-key" type="password" autocomplete="off" spellcheck="false" /></label>
+        <div class="buttons">
+          <button id="claude-save">Save key</button>
+          <button id="claude-remove" class="small" hidden>Remove key</button>
+          <span id="claude-status" class="muted"></span>
+        </div>
+        <label class="block">Model<select id="claude-model"></select></label>
+        <label class="check"><input type="checkbox" id="claude-auto" /> Use Claude automatically when I upload a resume</label>
+      </section>
+
+      <section id="settings" class="card">
+        <h2>Claude bridge</h2>
+        <p class="muted">
+          Claude in Chrome can call <code>window.jobCopilot</code> on pages you visit to detect jobs, read postings and autofill. Read-only
+          commands work everywhere. Autofill with your profile and file attachment only work on trusted job sites.
+        </p>
+        <label class="check"><input type="checkbox" id="bridgeEnabled" /> Enable the Claude bridge</label>
+        <label class="check"><input type="checkbox" id="bridgeAutofill" /> Allow Claude to trigger autofill on trusted sites</label>
+        <label class="check"><input type="checkbox" id="showBadge" /> Show job count badge on the toolbar icon</label>
+        <label class="check"><input type="checkbox" id="rememberAnswers" /> Remember my answers to new application questions and reuse them</label>
+        <label class="check"><input type="checkbox" id="learnFromOtherAutofill" /> Learn field labels from other autofills (Simplify, the site's resume reader…): only which profile field a label means, never the values</label>
+        <div id="learned-list" class="muted small"></div>
+        <label class="check"><input type="checkbox" id="autoNext" /> Multi-page applications: after a page is filled and nothing required is left for me, click Next / Save and Continue (never Submit: the last page is left for me to review and submit)</label>
+        <label class="check"><input type="checkbox" id="aiCheck" /> After autofill, let Chrome's on-device AI (Gemini Nano, nothing leaves this computer) check that each field got the right profile field, and fix or outline the ones that didn't</label>
+        <label class="check"><input type="checkbox" id="profileWins" /> My profile is the source of truth: upload the resume first, let the site read it, then correct fields the site got wrong (and keep them corrected while I review)</label>
+        <label class="check"><input type="checkbox" id="autoContinue" /> When I click Apply on a job board (Jobright…), continue past its pop-up ("Apply Without Customizing") and open the employer's application</label>
+        <label class="check"><input type="checkbox" id="autoFillOpened" /> Autofill the employer's application form when it opens from a job board (never submits)</label>
+        <label class="check"><input type="checkbox" id="answerAppliedPrompt" /> After an employer site confirms my application, answer the job board's "Did you apply?" with Yes</label>
+        <label class="check"><input type="checkbox" id="realClicks" /> Use real mouse clicks on job boards (for sites like Jobright that ignore automated clicks)</label>
+        <p class="muted small">Real clicks use Chrome's debugging interface: Chrome shows a "Job Copilot started debugging this
+          browser" bar while clicks are sent. Only used for Apply buttons and their pop-ups, and only when this is on.</p>
+        <label class="block">Extra trusted sites (one domain per line, e.g. <code>careers.example.com</code>)<textarea id="trustedDomains" rows="4"></textarea></label>
+        <details>
+          <summary>Built-in trusted sites</summary>
+          <p id="default-domains" class="muted"></p>
+        </details>
+      </section>
+    </main>
+    <script src="../src/shared/config.js"></script>
+    <script src="../src/shared/profile-schema.js"></script>
+    <script src="../src/shared/resume-parser.js"></script>
+    <script src="../src/shared/docx-text.js"></script>
+    <script src="../src/shared/claude-resume.js"></script>
+    <script src="options.js"></script>
+    <script type="module" src="resume-import.js"></script>
+  </body>
+</html>

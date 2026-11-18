@@ -1,0 +1,22 @@
+JANE DOE
+San Francisco, CA 94105 | (415) 555-0134 | jane.doe@gmail.com | linkedin.com/in/janedoe | github.com/janedoe | janedoe.dev
+
+SUMMARY
+Backend engineer with 7 years building distributed systems in Go and Python. Led payments infrastructure at scale.
+
+EXPERIENCE
+Senior Software Engineer — Stripe · San Francisco, CA    Mar 2021 – Present
+• Led the migration of the ledger service to Go, cutting p99 latency by 40%.
+• Mentored 4 engineers.
+Software Engineer, Dropbox    Jun 2017 – Feb 2021
+• Built sync engine features used by 10M users.
+Software Engineering Intern | Google | May 2016 - Aug 2016
+• Shipped an internal dashboard.
+
+EDUCATION
+University of California, Berkeley
+B.S. in Computer Science, 2017 · GPA: 3.8/4.0
+
+SKILLS
+Languages: Go, Python, SQL, TypeScript
+Infrastructure: Kubernetes, AWS, Terraform, Kafka

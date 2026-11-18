@@ -1,0 +1,11 @@
+{
+  "name": "job-copilot",
+  "owner": { "name": "krishnayeswanth99" },
+  "plugins": [
+    {
+      "name": "job-copilot",
+      "source": "./",
+      "description": "Job search, resume tailoring and application autofill skills for Claude in Chrome."
+    }
+  ]
+}

@@ -1,0 +1,30 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Job Recommendations | Jobright AI</title>
+<style>#list{height:600px;overflow-y:auto} .card{height:150px;border:1px solid #ccc;margin:4px}</style>
+<script src="https://jobright.ai/__fixtures/jobright-flow.js"></script></head><body>
+<h2>Recommended</h2>
+<div id="list"></div>
+<script>
+  // Infinite scroll: 8 cards per batch, up to 40; keeps only the last 16 cards in the DOM (virtualised).
+  // Card structure as recorded on jobright.ai: div#<24-hex job id> > div.index_job-card-main__… > actions > Apply button.
+  const list = document.getElementById('list');
+  let n = 0;
+  const hex = (i) => (i.toString(16).padStart(4, '0') + 'a1b2c3d4e5f6a7b8c9d0').slice(0, 24);
+  function batch() {
+    for (let k = 0; k < 8 && n < 40; k++, n++) {
+      const d = document.createElement('div');
+      const id = hex(n);
+      const i = n;
+      d.id = id;
+      d.className = 'card';
+      d.innerHTML = `<div class="index_job-card-main__zhEkE"><div class="index_job-title__a">Software Engineer ${n}</div><div class="index_company-name__b">Company ${n}</div>` +
+        `<div class="index_job-location__c">Remote · United States</div><div class="index_job-salary__d">$${100 + n}K/yr - $${150 + n}K/yr</div><div class="index_publish-time__e">${n} hours ago</div>` +
+        `<div class="index_actions__PaMtP"><div class="index_actions-group__KgIIy ant-flex"><button type="button" class="ant-btn ant-btn-round ant-btn-primary index_apply-button__zqgiV"><span>Apply with Autofill</span></button></div></div></div>`;
+      d.querySelector('button').onclick = (e) => { e.stopPropagation(); jrApply(i, id); };
+      list.appendChild(d);
+    }
+    while (list.children.length > 16) list.firstElementChild.remove();
+  }
+  batch();
+  list.addEventListener('scroll', () => { if (list.scrollTop + list.clientHeight > list.scrollHeight - 150) setTimeout(batch, 200); });
+</script>
+</body></html>

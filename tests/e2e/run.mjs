@@ -1,0 +1,1114 @@
+// End-to-end test: loads the unpacked extension into Chromium and exercises it
+// against fixture pages served at real portal hostnames (via request routing).
+//   node tests/e2e/run.mjs            (headless)
+//   HEADED=1 node tests/e2e/run.mjs   (watch it)
+import { createRequire } from 'node:module';
+import { readFileSync, mkdtempSync, rmSync } from 'node:fs';
+import { createServer } from 'node:http';
+import os from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import assert from 'node:assert/strict';
+
+// createRequire also honours NODE_PATH / globally installed playwright.
+const { chromium } = createRequire(import.meta.url)('playwright');
+
+const here = path.dirname(fileURLToPath(import.meta.url));
+const extPath = path.resolve(here, '../../extension');
+const fx = (f) => readFileSync(path.join(here, 'fixtures', f), 'utf8');
+
+const ROUTES = {
+  'https://job-boards.greenhouse.io/acme/jobs/123': fx('greenhouse-job.html'),
+  'https://job-boards.greenhouse.io/embed/job_app?for=acme&token=123': fx('greenhouse-job.html'),
+  'https://jobs.lever.co/acme': fx('lever-list.html'),
+  'https://www.linkedin.com/jobs/search/?keywords=engineer': fx('linkedin-search.html'),
+  'https://acme.wd5.myworkdayjobs.com/en-US/careers/login': fx('workday-login.html'),
+  'https://evil.example.com/apply': fx('untrusted-form.html'),
+  'https://www.acme-robotics.com/careers': fx('company-embed.html'),
+  'https://job-boards.greenhouse.io/globex/jobs/77': fx('greenhouse-job.html'),
+  'https://job-boards.greenhouse.io/acme/jobs/124': fx('greenhouse-job.html'),
+  'https://job-boards.greenhouse.io/initech/jobs/5': fx('greenhouse-job.html'),
+  'https://jobs.lever.co/parsetest/22222222-3333-4444-5555-666666666666/apply': fx('lever-parse.html'),
+  'https://jobs.lever.co/learntest/apply-1': fx('learn-form.html'),
+  'https://acme.wd5.myworkdayjobs.com/en-US/careers/job/New-York-NY/ML-Engineer_123': fx('workday-job.html'),
+  'https://acme.wd5.myworkdayjobs.com/en-US/careers/job/New-York-NY/ML-Engineer_123/apply/selfIdentify': fx('workday-selfid.html'),
+  'https://acme.wd5.myworkdayjobs.com/en-US/careers/job/New-York-NY/ML-Engineer_123/apply/myInformation': fx('workday-info.html'),
+  'https://uab.taleo.net/careersection/application.jss?lang=en&reqNo=330171&signedin=1&isOnLogoutPage=true&iss=https://accounts.google.com&scope=email+https://www.googleapis.com/auth/userinfo.email+openid': fx('taleo-application.html'),
+  'https://uab.taleo.net/careersection/application.jss?lang=en&reqNo=330172': fx('taleo-application.html'),
+  'https://uab.taleo.net/careersection/application.jss?lang=en&reqNo=330173': fx('taleo-resume.html'),
+  'https://acme.wd5.myworkdayjobs.com/en-US/careers/job/New-York-NY/ML-Engineer_123/apply/questions': fx('workday-prompt.html'),
+  'https://careers.acme-robotics.example/jobs/data-scientist': fx('employer-apply-modal.html'),
+  'https://careers.acme-robotics.example/apply/multi-step': fx('multi-step.html'),
+  'https://www.ziprecruiter.com/jobs/v2/test-1click': fx('ziprecruiter-1click.html'),
+  'https://acme.wd5.myworkdayjobs.com/en-US/careers/job/New-York-NY/ML-Engineer_123/apply/myExperience': fx('workday-experience.html'),
+  'https://careers.acme-robotics.example/jobs/data-scientist?v=2': fx('employer-apply-modal.html'),
+  'https://job-boards.greenhouse.io/acme/jobs/ai-check': '<html><head><meta charset="utf-8"></head><body><form><label for="seg">Segundo nombre</label><input id="seg" name="legalName.fullName"><label for="em">Email</label><input id="em" name="email"></form></body></html>',
+  'https://jobs.lever.co/learntest/apply-2': fx('learn-form.html'),
+  'https://careers-acme.icims.com/jobs/1234/data-scientist/candidate': fx('icims-like.html'),
+  'https://www.linkedin.com/jobs/view/4000000009/': fx('linkedin-external.html'),
+  'https://job-boards.greenhouse.io/acme/jobs/123?gh_src=linkedin': fx('greenhouse-job.html'),
+  'https://www.indeed.com/applystart?jk=abc&url=https%3A%2F%2Fjob-boards.greenhouse.io%2Facme%2Fjobs%2F123': fx('indeed-applystart.html'),
+  'https://jobright.ai/jobs/info/abc123': fx('jobright-job.html'),
+  'https://jobright.ai/jobs/info/def456': fx('jobright-modal.html'),
+  'https://jobright.ai/jobs/recommend': fx('jobright-feed.html'),
+  'https://jobright.ai/jobs/recommend?v=2': fx('jobright-feed.html'),
+  'https://jobright.ai/jobs/recommend?v=3': fx('jobright-feed.html'),
+  'https://jobright.ai/jobs/recommend?v=4': fx('jobright-feed.html'),
+  'https://jobright.ai/jobs/recommend?v=5': fx('jobright-feed.html'),
+  'https://jobright.ai/jobs/recommend?v=6': fx('jobright-feed.html'),
+  'https://jobright.ai/jobs/info/real01': fx('jobright-real-job.html'),
+  'https://jobright.ai/jobs/info/real01?nt=1': fx('jobright-real-job.html'),
+  'https://jobright.ai/jobs/info/fab001': fx('jobright-flash.html'),
+  'https://jobright.ai/jobs/info/fab001?rec=1': fx('jobright-flash.html'),
+  'https://jobs.lever.co/acme/11111111-1111-1111-1111-111111111111/apply': '<html><body><form id="application-form"><label>Full name<input name="name"></label><label>Email<input name="email" type="email"></label><label>Phone<input name="phone"></label><label>Resume/CV<input type="file" name="resume"></label></form></body></html>',
+};
+
+const PROFILE = {
+  personal: { firstName: 'Ada', lastName: 'Lovelace', email: 'ada@example.com', phone: '+1 555 0100', city: 'London', country: 'United Kingdom' },
+  links: { linkedin: 'https://www.linkedin.com/in/ada' },
+  authorization: { authorizedToWork: 'Yes', requiresSponsorship: 'No' },
+  work: { desiredSalary: '$175,000', desiredHourlyRate: '85' },
+  answers: [{ question: 'Why do you want to work at Acme?', answer: 'I love robots.' }],
+};
+
+// Tiny local file server for attachFile({ url }).
+const server = createServer((req, res) => {
+  if (req.url === '/tailored-resume.pdf') {
+    res.writeHead(200, { 'content-type': 'application/pdf' });
+    return res.end('%PDF-1.4 tailored');
+  }
+  res.writeHead(404).end();
+});
+await new Promise((r) => server.listen(0, '127.0.0.1', r));
+const filePort = server.address().port;
+
+const userDataDir = mkdtempSync(path.join(os.tmpdir(), 'jc-e2e-'));
+const context = await chromium.launchPersistentContext(userDataDir, {
+  channel: 'chromium',
+  headless: !process.env.HEADED,
+  args: [`--disable-extensions-except=${extPath}`, `--load-extension=${extPath}`],
+});
+
+let passed = 0;
+let failed = 0;
+async function check(name, fn) {
+  // ONLY="part of a check name" runs just the matching checks (the setup before them still runs).
+  if (process.env.ONLY && !name.includes(process.env.ONLY)) return;
+  try {
+    await fn();
+    passed++;
+    console.log(`  ok   ${name}`);
+  } catch (e) {
+    failed++;
+    console.log(`  FAIL ${name}\n       ${String(e.message).split('\n').join('\n       ')}`);
+  }
+}
+
+try {
+  await context.route('**/*', (route) => {
+    const url = route.request().url();
+    if (!/^https?:/.test(url) || url.startsWith('http://127.0.0.1')) return route.continue();
+    if (url === 'https://jobright.ai/__fixtures/jobright-flow.js') return route.fulfill({ status: 200, contentType: 'application/javascript', body: fx('jobright-flow.js') });
+    if (/^https:\/\/job-boards\.greenhouse\.io\/embed\/job_app\?for=kodiak&token=\d+/.test(url)) return route.fulfill({ status: 200, contentType: 'text/html', body: fx('greenhouse-apply-confirm.html') });
+    const body = ROUTES[url];
+    if (body) return route.fulfill({ status: 200, contentType: 'text/html', body });
+    // Jobright-style job pages behind the feed fixture: the employer link is in embedded data,
+    // or a redirect link, or missing; job 6 answers with a security check.
+    const jr = url.match(/^https:\/\/jobright\.ai\/jobs\/info\/([0-9a-f]{24})$/);
+    if (jr) {
+      const n = parseInt(jr[1].slice(0, 4), 16);
+      const page =
+        n === 6
+          ? '<html><head><title>Security check | Jobright</title></head><body>One quick security check</body></html>'
+          : n % 3 === 0
+            ? `<html><body><h1>Software Engineer ${n}</h1><script id="__NEXT_DATA__" type="application/json">{"props":{"pageProps":{"job":{"originalUrl":"https:\\u002F\\u002Fjobs.lever.co\\u002Facme\\u002F${n}"}}}}</script></body></html>`
+            : n % 3 === 1
+              ? `<html><body><h1>Software Engineer ${n}</h1><a href="https://jobright.ai/redirect?url=https%3A%2F%2Fjob-boards.greenhouse.io%2Facme%2Fjobs%2F${n}">Apply</a></body></html>`
+              : `<html><body><h1>Software Engineer ${n}</h1><button>Apply</button></body></html>`;
+      return route.fulfill({ status: 200, contentType: 'text/html', body: page });
+    }
+    return route.fulfill({ status: 404, body: '' });
+  });
+
+  let [sw] = context.serviceWorkers();
+  if (!sw) sw = await context.waitForEvent('serviceworker');
+  const extId = new URL(sw.url()).host;
+
+  // Seed profile + a stored resume through an extension page.
+  const ext = await context.newPage();
+  await ext.goto(`chrome-extension://${extId}/options/options.html`);
+  await ext.evaluate(async (profile) => {
+    await chrome.storage.local.set({
+      profile: globalThis.JC.normalizeProfile(profile),
+      resume: { name: 'ada-resume.pdf', type: 'application/pdf', dataBase64: btoa('%PDF-1.4 base') },
+    });
+  }, PROFILE);
+
+  // Runs a command the way the popup does (origin = popup).
+  const popupCmd = async (page, cmd, payload) => {
+    const tabId = await ext.evaluate(async (url) => (await chrome.tabs.query({ url })).at(0)?.id, page.url());
+    return ext.evaluate(({ tabId, cmd, payload }) => chrome.runtime.sendMessage({ type: 'jc:popup', tabId, cmd, payload }), { tabId, cmd, payload });
+  };
+  const bridge = (page, expr) => page.evaluate(expr);
+  const open = async (url) => {
+    const p = await context.newPage();
+    await p.goto(url);
+    await p.waitForFunction(() => window.jobCopilot && window.jobCopilot.installed, null, { timeout: 10000 });
+    return p;
+  };
+
+  console.log('Job Copilot e2e');
+
+  const gh = await open('https://job-boards.greenhouse.io/acme/jobs/123');
+  await check('bridge: detect greenhouse application', async () => {
+    const d = await bridge(gh, () => window.jobCopilot.detect());
+    assert.equal(d.portal, 'greenhouse');
+    assert.equal(d.pageType, 'application');
+    assert.equal(d.login.required, false);
+  });
+  await check('bridge: extractJob merges DOM + JSON-LD', async () => {
+    const r = await bridge(gh, () => window.jobCopilot.extractJob());
+    assert.equal(r.job.title, 'Senior Software Engineer');
+    assert.equal(r.job.company, 'Acme Robotics');
+    assert.match(r.job.salary, /180000/);
+    assert.match(r.job.description, /Kubernetes/);
+    assert.equal(r.job.apply.text, 'Submit Application');
+  });
+  await check('bridge: scanForm lists fields with selectors, no profile values', async () => {
+    const r = await bridge(gh, () => window.jobCopilot.scanForm());
+    assert.ok(r.application);
+    const byLabel = Object.fromEntries(r.fields.map((f) => [f.label, f]));
+    assert.equal(byLabel['First Name'].profileKey, 'firstName');
+    assert.equal(byLabel['Resume/CV'].type, 'file');
+    assert.ok(byLabel['Veteran Status'].options.length === 3);
+    assert.ok(!JSON.stringify(r).includes('ada@example.com'));
+  });
+  await check('bridge: autofill fills profile fields, saved answers, resume; leaves custom + consent', async () => {
+    const r = await bridge(gh, () => window.jobCopilot.autofill());
+    assert.equal(r.ok, true, r.error);
+    const vals = await gh.evaluate(() => ({
+      fn: first_name.value, ln: last_name.value, em: email.value, li: q1.value, auth: q2.selectedOptions[0].text, spon: q3.selectedOptions[0].text,
+      why: q4.value, robot: q5.value, gender: gender.selectedOptions[0].text, vet: document.querySelector('input[name=veteran]:checked')?.value,
+      consent: consent.checked, resume: resume.files[0]?.name, events: window.__events, submitted: !!window.__submitted,
+    }));
+    assert.deepEqual(
+      { fn: vals.fn, ln: vals.ln, em: vals.em, li: vals.li, auth: vals.auth, spon: vals.spon, why: vals.why, gender: vals.gender, vet: vals.vet, resume: vals.resume },
+      { fn: 'Ada', ln: 'Lovelace', em: 'ada@example.com', li: 'https://www.linkedin.com/in/ada', auth: 'Yes', spon: 'No', why: 'I love robots.', gender: 'Decline To Self Identify', vet: '3', resume: 'ada-resume.pdf' }
+    );
+    assert.equal(vals.robot, '');
+    assert.equal(vals.consent, false);
+    assert.equal(vals.submitted, false);
+    assert.ok(vals.events > 5, 'input events dispatched');
+    const needs = r.needsInput.map((f) => f.label);
+    assert.ok(needs.includes('What is your favorite robot?'), JSON.stringify(needs));
+    assert.ok(needs.some((l) => /privacy policy/.test(l)));
+  });
+  await check('autofill: annual vs hourly pay, ranges, ambiguous pay left for the user', async () => {
+    const v = await gh.evaluate(() => ({ sal: sal.value, rate: rate.value, band: payband.selectedOptions[0].text, pay: pay.value, cur: cur.value }));
+    assert.deepEqual(v, { sal: '175000', rate: '85', band: '$150,001 - $200,000', pay: '', cur: '' });
+    const r = await bridge(gh, () => window.jobCopilot.last);
+    const amb = r.needsInput.find((f) => f.label === 'What is your desired pay?');
+    assert.ok(amb, 'ambiguous pay reported');
+    assert.equal(amb.payPeriod, 'unknown');
+    assert.match(amb.reason, /hourly or annual/);
+  });
+  await check('profile is the source of truth: resume first, site parsing corrected, late overwrite restored, user edits respected', async () => {
+    const p = await open('https://jobs.lever.co/parsetest/22222222-3333-4444-5555-666666666666/apply');
+    const r = await bridge(p, () => window.jobCopilot.autofill());
+    assert.equal(r.ok, true, r.error);
+    assert.ok(r.parseWaitMs >= 800, 'waited for the site to parse the resume');
+    const v = await p.evaluate(() => ({ fn: fn.value, ln: ln.value, ph: ph.value, li: li.value, proud: proud.value }));
+    assert.equal(v.fn, 'ADA', 'same name in other case: left as the site wrote it');
+    assert.equal(v.ln, 'Lovelace', 'different last name: profile wins');
+    assert.equal(v.ph, '+1 555 0100', 'different phone: profile wins');
+    assert.equal(v.li, 'linkedin.com/in/ada/', 'same link in another format: left alone');
+    assert.match(v.proud, /analytical engine/, "the site's answer to a custom question is kept");
+    assert.deepEqual(r.corrected.map((c) => c.label).sort(), ['Last name ✱', 'Phone'].sort());
+    // The site changes the email again later: the guard puts the profile email back.
+    await p.waitForTimeout(4500);
+    assert.equal(await p.evaluate(() => em.value), 'ada@example.com');
+    // You edit a field yourself: the guard leaves it alone from then on.
+    await p.fill('#ln', 'Byron');
+    await p.evaluate(() => { ln.value = 'Changed by site'; });
+    await p.waitForTimeout(1500);
+    assert.equal(await p.evaluate(() => ln.value), 'Changed by site');
+  });
+
+  await check('learn from another autofill: label -> profile field learned (no values), sensitive labels never, reused next time', async () => {
+    const before = await ext.evaluate(async () => Object.keys((await chrome.storage.local.get('learnedLabels')).learnedLabels || {}).length);
+    const p = await open('https://jobs.lever.co/learntest/apply-1');
+    // Another extension fills two fields (script events, not the user's typing).
+    await p.evaluate(() => {
+      const fill = (id, v) => { const el = document.getElementById(id); el.value = v; el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); };
+      fill('cn', '+1 555 0100');
+      fill('dob', '1815-12-10');
+    });
+    await p.waitForTimeout(600);
+    const learned = await ext.evaluate(async () => (await chrome.storage.local.get('learnedLabels')).learnedLabels || {});
+    assert.equal(learned['contact no'] && learned['contact no'].key, 'phone', JSON.stringify(learned));
+    assert.ok(!Object.keys(learned).some((k) => /birth/.test(k)), 'date of birth never learned');
+    assert.ok(!JSON.stringify(learned).includes('555'), 'values are never stored');
+    // Next form: Job Copilot fills "Contact No." itself, and its own filling teaches nothing new.
+    const q = await open('https://jobs.lever.co/learntest/apply-2');
+    await bridge(q, () => window.jobCopilot.autofill({}));
+    assert.equal(await q.evaluate(() => cn.value), '+1 555 0100');
+    assert.equal(await q.evaluate(() => dob.value), '');
+    const after = await ext.evaluate(async () => Object.keys((await chrome.storage.local.get('learnedLabels')).learnedLabels || {}).length);
+    assert.equal(after, before + 1);
+  });
+
+  await check('Workday: employer Apply -> "Apply Manually" -> form; button dropdowns (Phone Device Type, Country) filled', async () => {
+    const p = await open('https://acme.wd5.myworkdayjobs.com/en-US/careers/job/New-York-NY/ML-Engineer_123');
+    assert.equal((await bridge(p, () => window.jobCopilot.detect())).pageType, 'job');
+    const s1 = await bridge(p, () => window.jobCopilot.startApplication());
+    assert.equal(s1.ok, true, JSON.stringify(s1));
+    assert.equal(s1.chose, 'Apply Manually');
+    await p.waitForSelector('#fn');
+    const scan = await bridge(p, () => window.jobCopilot.scanForm());
+    const dev = scan.fields.find((f) => f.label === 'Phone Device Type');
+    assert.ok(dev && dev.profileKey === 'phoneType' && dev.combobox, JSON.stringify(scan.fields.map((f) => [f.label, f.type, f.profileKey])));
+    const r = await bridge(p, () => window.jobCopilot.autofill());
+    const v = await p.evaluate(() => ({ fn: fn.value, dev: document.getElementById('phone-device-type').textContent, country: document.getElementById('country').textContent }));
+    assert.ok(v.fn.length > 0);
+    assert.equal(v.dev, 'Mobile');
+    assert.equal(v.country, 'United Kingdom');
+    assert.ok(!r.needsInput.some((f) => /device type|country/i.test(f.label)), JSON.stringify(r.needsInput));
+  });
+
+  await check('Workday Self Identify: signature date gets today (typed into spin boxes), prompt pill kept, no restore loop', async () => {
+    const p = await open('https://acme.wd5.myworkdayjobs.com/en-US/careers/job/New-York-NY/ML-Engineer_123/apply/selfIdentify');
+    const scan = await bridge(p, () => window.jobCopilot.scanForm());
+    const keys = Object.fromEntries(scan.fields.map((f) => [f.label, f.profileKey || null]));
+    assert.equal(keys.Month, 'todayMonth', JSON.stringify(keys));
+    assert.equal(keys.Year, 'todayYear', JSON.stringify(keys));
+    await bridge(p, () => window.jobCopilot.autofill());
+    const d = new Date();
+    const v = await p.evaluate(() => [...document.querySelectorAll('[role="spinbutton"]')].map((e) => e.value));
+    assert.deepEqual(v, [String(d.getMonth() + 1).padStart(2, '0'), String(d.getDate()).padStart(2, '0'), String(d.getFullYear())]);
+    assert.equal(await p.evaluate(() => cpc.value), '');
+    await p.waitForTimeout(2500);
+    const log = await ext.evaluate(async () => new Promise((r) => chrome.runtime.sendMessage({ type: 'jc:debug-get' }, r)));
+    const restores = ((log && log.log) || []).filter((e) => e.detail && /restored profile value/.test(e.detail.step || '') && /Country Phone Code|Month|Day|Year/.test(e.detail.field || ''));
+    assert.equal(restores.length, 0, JSON.stringify(restores.slice(0, 3)));
+  });
+
+  await check('Workday My Information: two-level "How did you hear" picker, middle name not given the full name', async () => {
+    const saved = await ext.evaluate(async () => (await chrome.storage.local.get('profile')).profile);
+    await ext.evaluate(async (p) => chrome.storage.local.set({ profile: Object.assign({}, p, { howDidYouHear: 'LinkedIn' }) }), saved);
+    try {
+      const p = await open('https://acme.wd5.myworkdayjobs.com/en-US/careers/job/New-York-NY/ML-Engineer_123/apply/myInformation');
+      const r = await bridge(p, () => window.jobCopilot.autofill());
+      if (process.env.DEBUG) console.log(JSON.stringify(r.filled), JSON.stringify(await ext.evaluate(async () => new Promise((r) => chrome.runtime.sendMessage({ type: 'jc:debug-get' }, r)).then((l) => (l.log || []).slice(-12)))));
+      const v = await p.evaluate(() => ({ src: src.textContent, first: document.getElementById('name--legalName--firstName').value, middle: document.getElementById('name--legalName--middleName').value, suffix: document.getElementById('name--legalName--suffix').value }));
+      assert.equal(v.src, 'LinkedIn', JSON.stringify(r.needsInput));
+      assert.equal(v.first, 'Ada');
+      assert.equal(v.middle, '');
+      assert.equal(v.suffix, '');
+    } finally {
+      await ext.evaluate(async (p) => chrome.storage.local.set({ profile: p }), saved);
+    }
+  });
+
+  await check('on-device check: a field it says no profile field fits is cleared and outlined', async () => {
+    await ext.evaluate(() => chrome.storage.local.set({ __testNanoReply: '{"checks": {"f1": "none"}}' }));
+    try {
+      const p = await open('https://job-boards.greenhouse.io/acme/jobs/ai-check');
+      await bridge(p, () => window.jobCopilot.autofill());
+      await p.waitForFunction(() => document.getElementById('seg').value === '' && document.getElementById('seg').hasAttribute('data-jc-needs-input'), null, { timeout: 8000 });
+      assert.equal(await p.evaluate(() => em.value), 'ada@example.com');
+      const log = await ext.evaluate(async () => new Promise((r) => chrome.runtime.sendMessage({ type: 'jc:debug-get' }, r)));
+      const step = ((log && log.log) || []).find((e) => e.detail && e.detail.step === 'on-device check applied');
+      assert.ok(step && step.detail.changed.length === 1, JSON.stringify(step));
+    } finally {
+      await ext.evaluate(() => chrome.storage.local.remove('__testNanoReply'));
+    }
+  });
+
+  await check('Taleo after Google sign-in: auth words in the query string are not a login page', async () => {
+    const p = await open('https://uab.taleo.net/careersection/application.jss?lang=en&reqNo=330171&signedin=1&isOnLogoutPage=true&iss=https://accounts.google.com&scope=email+https://www.googleapis.com/auth/userinfo.email+openid');
+    const d = await bridge(p, () => window.jobCopilot.detect());
+    assert.equal(d.login.required, false, JSON.stringify(d.login));
+    assert.equal(d.pageType, 'application');
+  });
+
+  await check('application tab: a form that appears in place after sign-in is autofilled', async () => {
+    const url = 'https://uab.taleo.net/careersection/application.jss?lang=en&reqNo=330172';
+    const p = await open(url);
+    assert.equal((await bridge(p, () => window.jobCopilot.detect())).login.required, true);
+    await ext.evaluate(async (url) => {
+      const [t] = await chrome.tabs.query({ url });
+      await chrome.storage.session.set({ ['applying:' + t.id]: { at: Date.now(), key: 'test-taleo', title: 'Data Scientist' } });
+    }, url);
+    await p.click('#google');
+    await p.waitForFunction(() => document.getElementById('fn') && document.getElementById('fn').value === 'Ada', null, { timeout: 20000 });
+    assert.equal(await p.evaluate(() => em.value), 'ada@example.com');
+  });
+
+  await check('Taleo resume selection: picks "Upload a resume", then "My computer", then attaches the resume', async () => {
+    const p = await open('https://uab.taleo.net/careersection/application.jss?lang=en&reqNo=330173');
+    const r = await bridge(p, () => window.jobCopilot.autofill());
+    const v = await p.evaluate(() => ({ up: document.getElementById('r-up').checked, pc: !!document.getElementById('s-pc') && document.getElementById('s-pc').checked, file: document.getElementById('file') ? document.getElementById('file').files.length : -1 }));
+    assert.deepEqual(v, { up: true, pc: true, file: 1 }, JSON.stringify(r));
+    assert.ok(!r.needsInput.some((f) => /resume/i.test(f.label)), JSON.stringify(r.needsInput));
+  });
+
+  await check('Workday prompt search (Enter) finds "LinkedIn"; experience yes/no answered from the resume only with evidence', async () => {
+    const saved = await ext.evaluate(async () => (await chrome.storage.local.get(['profile', 'resumeText'])));
+    await ext.evaluate(async (s) => chrome.storage.local.set({ profile: Object.assign({}, s.profile, { howDidYouHear: 'LinkedIn' }), resumeText: 'Ada Lovelace\nSoftware engineer at Acme Robotics. Built analytics services in Python on AWS.\n' + 'Shipped dashboards and data pipelines. '.repeat(15) }), saved);
+    try {
+      const p = await open('https://acme.wd5.myworkdayjobs.com/en-US/careers/job/New-York-NY/ML-Engineer_123/apply/questions');
+      const r = await bridge(p, () => window.jobCopilot.autofill());
+      const v = await p.evaluate(() => ({ pill: document.getElementById('pills').textContent, q1: q1y.checked, q2: q2y.checked || q2n.checked, cc: cc.options[cc.selectedIndex].text, q3no: q3n.checked }));
+      assert.equal(v.cc, 'United States of America (+1)'); // +1, no +1 option for the profile's country: the main +1 country
+      assert.equal(v.q3no, true);
+      assert.equal(v.pill, 'LinkedIn', JSON.stringify(r.needsInput));
+      assert.equal(v.q1, true, JSON.stringify(r));
+      assert.equal(v.q2, false);
+    } finally {
+      await ext.evaluate(async (s) => chrome.storage.local.set({ profile: s.profile, resumeText: s.resumeText || '' }), saved);
+    }
+  });
+
+  await check('employer page: Apply -> pop-up "Apply manually" (not LinkedIn) -> "Continue as guest" -> form', async () => {
+    const p = await open('https://careers.acme-robotics.example/jobs/data-scientist');
+    const r = await bridge(p, () => window.jobCopilot.followApply());
+    assert.equal(r.ok, true, JSON.stringify(r));
+    assert.equal(r.form, true, JSON.stringify(r.steps));
+    assert.equal(await p.evaluate(() => !!window.__linkedin), false);
+    assert.ok(await p.evaluate(() => !!document.getElementById('fn')));
+  });
+
+  await check('your own Apply click on an employer page: start choices taken, then the form is autofilled', async () => {
+    const p = await open('https://careers.acme-robotics.example/jobs/data-scientist?v=2');
+    await p.click('#apply');
+    await p.waitForFunction(() => document.getElementById('fn') && document.getElementById('fn').value === 'Ada', null, { timeout: 25000 });
+    assert.equal(await p.evaluate(() => em.value), 'ada@example.com');
+    assert.equal(await p.evaluate(() => !!window.__linkedin), false);
+  });
+
+  await check('application tab: fills a page, clicks "Save and Continue", fills the next page, never clicks Submit', async () => {
+    const url = 'https://careers.acme-robotics.example/apply/multi-step';
+    const p = await open(url);
+    await ext.evaluate(async (url) => {
+      const [t] = await chrome.tabs.query({ url });
+      await chrome.storage.session.set({ ['applying:' + t.id]: { at: Date.now(), key: 'test-multi', title: 'Data Scientist' } });
+      chrome.tabs.reload(t.id);
+    }, url);
+    await p.waitForFunction(() => window.__step1 && document.getElementById('city') && document.getElementById('city').value === 'London', null, { timeout: 30000 });
+    assert.equal(await p.evaluate(() => window.__step1.fn), 'Ada');
+    await p.waitForTimeout(6000);
+    assert.equal(await p.evaluate(() => window.__submitted), false);
+    assert.equal(await p.evaluate(() => document.getElementById('submit').style.outline.includes('solid')), true);
+  });
+
+  await check('Workday My Experience: adds and fills a block per job and school, dates typed, degree picked, skills added', async () => {
+    const saved = await ext.evaluate(async () => (await chrome.storage.local.get('profile')).profile);
+    const prof = Object.assign({}, saved, {
+      work: Object.assign({}, saved.work, { skills: 'Python, SQL, Rust' }),
+      experience: [
+        { title: 'Senior Data Scientist', company: 'Acme Robotics', location: 'London', start: '2022-03', end: '', current: true, description: '• Built forecasting models.' },
+        { title: 'Data Analyst', company: 'Beta Corp', location: 'Leeds', start: '2019-07', end: '2022-02', current: false, description: '• Dashboards.' },
+      ],
+      educationHistory: [{ school: 'University of Oxford', degree: 'M.S.', fieldOfStudy: 'Statistics', start: '2017-09', end: '2019-06', gpa: '' }],
+    });
+    await ext.evaluate(async (p) => chrome.storage.local.set({ profile: p }), prof);
+    try {
+      const p = await open('https://acme.wd5.myworkdayjobs.com/en-US/careers/job/New-York-NY/ML-Engineer_123/apply/myExperience');
+      const r = await bridge(p, () => window.jobCopilot.autofill());
+      const v = await p.evaluate(() => {
+        const q = (s) => [...document.querySelectorAll(s)].map((e) => (e.type === 'checkbox' ? e.checked : e.value || e.textContent));
+        return {
+          titles: q('[id$="--jobTitle"]'),
+          companies: q('[id$="--companyName"]'),
+          current: q('[id$="--currentlyWorkHere"]'),
+          startMonth: q('[id$="--startDate-dateSectionMonth-input"]'),
+          startYear: q('[id$="--startDate-dateSectionYear-input"]'),
+          endYear: q('[id$="--endDate-dateSectionYear-input"]'),
+          desc: q('[id$="--roleDescription"]'),
+          schools: q('[id$="--schoolName"]'),
+          degrees: q('[id$="--degree"]'),
+          fields: q('[id$="--fieldOfStudy"]'),
+          skills: q('#skill-pills li'),
+          web: document.getElementById('web').value,
+        };
+      });
+      const msg = JSON.stringify({ v, needsInput: r.needsInput });
+      assert.deepEqual(v.titles, ['Senior Data Scientist', 'Data Analyst'], msg);
+      assert.deepEqual(v.companies, ['Acme Robotics', 'Beta Corp'], msg);
+      assert.deepEqual(v.current, [true, false], msg);
+      assert.deepEqual(v.startMonth, ['03', '07'], msg);
+      assert.deepEqual(v.startYear, ['2022', '2019'], msg);
+      assert.deepEqual(v.endYear, ['', '2022'], msg);
+      assert.match(v.desc[0], /forecasting/);
+      assert.deepEqual(v.schools, ['University of Oxford'], msg);
+      assert.deepEqual(v.degrees, ["Master's Degree"], msg);
+      assert.deepEqual(v.fields, ['Statistics'], msg);
+      assert.deepEqual(v.skills, ['Python (Programming Language)', 'SQL'], msg);
+      assert.equal(v.web, '');
+    } finally {
+      await ext.evaluate(async (p) => chrome.storage.local.set({ profile: p }), saved);
+    }
+  });
+
+  await check('ZipRecruiter 1-Click Apply: you click it, the pop-up is filled (not the header search), no exit prompt, Continue left to you', async () => {
+    const p = await open('https://www.ziprecruiter.com/jobs/v2/test-1click');
+    await p.click('#oneclick');
+    await p.waitForFunction(() => document.getElementById('s3') && document.getElementById('s3').textContent === 'Yes' && document.getElementById('s4').textContent !== 'Select', null, { timeout: 25000 });
+    const v = await p.evaluate(() => ({ spon: s4.textContent, li: s1.value, search: hs.value, searchFlag: hs.hasAttribute('data-jc-needs-input'), exit: window.__exit }));
+    assert.deepEqual(v, { spon: 'No', li: 'https://www.linkedin.com/in/ada', search: '', searchFlag: false, exit: false });
+    await p.waitForTimeout(7000);
+    assert.equal(await p.evaluate(() => window.__submitted), false);
+  });
+
+  await check('bridge: fillField answers a custom question', async () => {
+    const r = await bridge(gh, () => window.jobCopilot.fillField({ label: 'What is your favorite robot?', value: 'Curiosity rover' }));
+    assert.equal(r.ok, true, r.error);
+    assert.equal(await gh.evaluate(() => q5.value), 'Curiosity rover');
+  });
+  await check('answer memory: new answers remembered on Submit, reused next time (company-specific only for that company)', async () => {
+    await gh.fill('#q6', 'Your robots are the best.');
+    await gh.click('#submit');
+    await gh.waitForTimeout(800);
+    const answers = await ext.evaluate(async () => (await chrome.storage.local.get('profile')).profile.answers);
+    const robot = answers.find((a) => a.question === 'What is your favorite robot?');
+    const excite = answers.find((a) => a.question === 'What excites you about joining us?');
+    assert.deepEqual([robot && robot.answer, robot && robot.scope, robot && robot.source], ['Curiosity rover', 'any', 'remembered']);
+    assert.deepEqual([excite && excite.scope, excite && excite.company], ['company', 'acme']);
+    assert.ok(!answers.some((a) => /email|phone|first name|salary|gender|veteran/i.test(a.question)), JSON.stringify(answers.map((a) => a.question)));
+    assert.equal(answers.filter((a) => a.question === 'Why do you want to work at Acme?').length, 1, 'manual answer not duplicated');
+
+    const other = await open('https://job-boards.greenhouse.io/globex/jobs/77');
+    await bridge(other, () => window.jobCopilot.autofill());
+    assert.deepEqual(await other.evaluate(() => [q5.value, q6.value]), ['Curiosity rover', '']);
+    const again = await open('https://job-boards.greenhouse.io/acme/jobs/124');
+    await bridge(again, () => window.jobCopilot.autofill());
+    assert.deepEqual(await again.evaluate(() => [q5.value, q6.value]), ['Curiosity rover', 'Your robots are the best.']);
+  });
+  await check('bridge: attachFile from localhost replaces resume', async () => {
+    const r = await gh.evaluate((port) => window.jobCopilot.attachFile({ kind: 'resume', url: `http://127.0.0.1:${port}/tailored-resume.pdf` }), filePort);
+    assert.equal(r.ok, true, r.error);
+    assert.equal(await gh.evaluate(() => resume.files[0].name), 'tailored-resume.pdf');
+  });
+  await check('bridge: attachFile refuses non-local URLs', async () => {
+    const r = await bridge(gh, () => window.jobCopilot.attachFile({ kind: 'resume', url: 'https://attacker.example/x.pdf' }));
+    assert.equal(r.ok, false);
+  });
+  await check('bridge: last result mirrored for non-awaiting tools', async () => {
+    await bridge(gh, () => {
+      window.jobCopilot.ping();
+    });
+    await gh.waitForFunction(() => window.jobCopilot.last && window.jobCopilot.last.version);
+  });
+
+  const lever = await open('https://jobs.lever.co/acme');
+  await check('lever: extract listings', async () => {
+    const r = await bridge(lever, () => window.jobCopilot.extractJobs());
+    assert.equal(r.count, 3);
+    assert.deepEqual(r.jobs.map((j) => j.title), ['Backend Engineer', 'Data Scientist', 'Product Designer']);
+    assert.equal(r.jobs[0].location, 'Remote - US');
+    assert.equal(r.jobs[0].remote, true);
+  });
+
+  const li = await open('https://www.linkedin.com/jobs/search/?keywords=engineer');
+  await check('linkedin: extract cards + open job panel', async () => {
+    const r = await bridge(li, () => window.jobCopilot.extractJobs());
+    assert.equal(r.count, 2);
+    assert.equal(r.jobs[0].title, 'Machine Learning Engineer');
+    assert.equal(r.jobs[0].company, 'Globex');
+    assert.equal(r.jobs[0].easyApply, true);
+    assert.equal(r.jobs[0].url, 'https://www.linkedin.com/jobs/view/4000000001/');
+    const j = await bridge(li, () => window.jobCopilot.extractJob());
+    assert.equal(j.job.title, 'Machine Learning Engineer');
+    assert.equal(j.job.easyApply, true);
+  });
+
+  const wd = await open('https://acme.wd5.myworkdayjobs.com/en-US/careers/login');
+  await check('workday: login wall detected', async () => {
+    const d = await bridge(wd, () => window.jobCopilot.detect());
+    assert.equal(d.login.required, true);
+    assert.equal(d.login.kind, 'signin');
+    assert.ok(d.login.providers.includes('google'));
+  });
+
+  const evil = await open('https://evil.example.com/apply');
+  await check('untrusted site: bridge autofill refused', async () => {
+    const r = await bridge(evil, () => window.jobCopilot.autofill());
+    assert.equal(r.ok, false);
+    assert.match(r.error, /not a trusted job site/);
+    assert.equal(await evil.evaluate(() => fn.value), '');
+  });
+  await check('untrusted site: forged _origin in payload is ignored', async () => {
+    const r = await bridge(evil, () => window.jobCopilot.autofill({ _origin: 'popup' }));
+    assert.equal(r.ok, false);
+  });
+  await check('untrusted site: popup autofill (user click) works', async () => {
+    const r = await popupCmd(evil, 'autofill');
+    assert.equal(r.ok, true, r.error);
+    assert.equal(await evil.evaluate(() => fn.value + ' ' + em.value), 'Ada ada@example.com');
+  });
+
+  const embed = await open('https://www.acme-robotics.com/careers');
+  await check('iframe embed: detect + autofill reach the Greenhouse frame', async () => {
+    await embed.waitForTimeout(500);
+    const d = await bridge(embed, () => window.jobCopilot.detect());
+    assert.equal(d.pageType, 'application');
+    assert.match(d.applicationFrame, /greenhouse/);
+    const r = await bridge(embed, () => window.jobCopilot.autofill());
+    assert.equal(r.ok, true, r.error);
+    assert.ok(r.filledCount >= 8, `filled ${r.filledCount} ${JSON.stringify(r.errors)} skipped=${JSON.stringify(r.skipped.slice(0, 4))}`);
+    const frame = embed.frames().find((f) => f.url().includes('greenhouse'));
+    assert.equal(await frame.evaluate(() => first_name.value), 'Ada');
+  });
+
+  // ---- resume upload -> parse -> review -> edit -> save (options page)
+  const resumeTxt = readFileSync(path.join(here, '../fixtures/resumes/classic-us.txt'), 'utf8');
+  const resumeHtml = '<html><body style="font:12px Arial;width:7in">' + resumeTxt.split('\n').map((l) => {
+    const [a, b] = l.split(/\s{4,}/);
+    const esc = (t) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;');
+    return b ? `<div style="display:flex;justify-content:space-between"><span>${esc(a)}</span><span>${esc(b)}</span></div>` : `<div>${esc(l) || '&nbsp;'}</div>`;
+  }).join('') + '</body></html>';
+  const pdfBrowser = await chromium.launch();
+  const pdfPage = await pdfBrowser.newPage();
+  await pdfPage.setContent(resumeHtml);
+  const resumePdf = await pdfPage.pdf({ format: 'Letter' });
+  await pdfBrowser.close();
+
+  const readReview = (page) => page.$$eval('.review-row', (rows) => Object.fromEntries(rows.map((r) => [r.querySelector('.review-label').firstChild.textContent.trim(), { value: (r.querySelector('input:not([type=checkbox]), textarea') || {}).value ?? (r.querySelector('ul') || {}).innerText, checked: r.querySelector('input[type=checkbox]').checked }])));
+
+  await check('options: uploading a PDF resume suggests profile fields for review', async () => {
+    const errors = [];
+    const opt = await context.newPage();
+    opt.on('pageerror', (e) => errors.push(e.message));
+    opt.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
+    await opt.goto(`chrome-extension://${extId}/options/options.html`);
+    await opt.evaluate(async () => {
+      const p = globalThis.JC.emptyProfile();
+      p.personal.firstName = 'Janet'; // user-entered value must not be overwritten by default
+      await chrome.storage.local.set({ profile: p });
+    });
+    await opt.reload();
+    await opt.setInputFiles('#resume-file', { name: 'jane-doe.pdf', mimeType: 'application/pdf', buffer: resumePdf });
+    await opt.waitForSelector('.review-row', { timeout: 15000 });
+    const rv = await readReview(opt);
+    assert.ok(!/\bnull\b/.test(await opt.textContent('#resume-review')), 'no stray "null" text');
+    assert.deepEqual(rv['Email'], { value: 'jane.doe@gmail.com', checked: true });
+    assert.deepEqual(rv['First name'], { value: 'Jane', checked: false });
+    assert.equal(rv['Current / most recent title'].value, 'Senior Software Engineer');
+    assert.equal(rv['Current / most recent company'].value, 'Stripe');
+    assert.equal(rv['LinkedIn URL'].value, 'https://www.linkedin.com/in/janedoe');
+    assert.equal(rv['Degree (e.g. Bachelor of Science)'].value, 'B.S.');
+    assert.match(rv['Key skills (comma-separated)'].value, /Kubernetes/);
+    assert.equal(rv['Work experience (3)'].checked, true);
+    assert.match(rv['Work experience (3)'].value, /Senior Software Engineer at Stripe/);
+
+    // Edit a suggestion, then save.
+    const titleRow = opt.locator('.review-row', { hasText: 'Current / most recent title' });
+    await titleRow.locator('input:not([type=checkbox])').fill('Staff Software Engineer');
+    await opt.getByRole('button', { name: 'Save selected to profile' }).click();
+    await opt.waitForSelector('.review .ok');
+    const saved = await opt.evaluate(async () => (await chrome.storage.local.get(['profile', 'resume'])));
+    assert.equal(saved.profile.work.currentTitle, 'Staff Software Engineer');
+    assert.equal(saved.profile.personal.email, 'jane.doe@gmail.com');
+    assert.equal(saved.profile.personal.firstName, 'Janet');
+    assert.equal(saved.profile.experience.length, 3);
+    assert.equal(saved.profile.experience[1].company, 'Dropbox');
+    assert.equal(saved.profile.educationHistory[0].fieldOfStudy, 'Computer Science');
+    assert.equal(await opt.locator('#experience-list .history-entry').count(), 3);
+    assert.equal(saved.resume.name, 'jane-doe.pdf');
+    // The editable profile form shows the saved values.
+    assert.equal(await opt.inputValue('input[data-section="work"][data-key="currentTitle"]'), 'Staff Software Engineer');
+    assert.deepEqual(errors, []);
+  });
+
+  await check('options: DOCX resume is read too', async () => {
+    const opt = await context.newPage();
+    await opt.goto(`chrome-extension://${extId}/options/options.html`);
+    await opt.setInputFiles('#resume-file', path.join(here, '../fixtures/resumes/classic-us.docx'));
+    await opt.waitForSelector('.review-row', { timeout: 15000 });
+    const rv = await readReview(opt);
+    assert.equal(rv['Email'].value, 'jane.doe@gmail.com');
+    assert.equal(rv['Current / most recent company'].value, 'Stripe');
+  });
+
+  // ---- "Read with Claude": the Claude API is mocked; we check what is sent and how replies/errors are handled.
+  const claudeCalls = [];
+  let claudeReply = null;
+  await context.route('https://api.anthropic.com/**', async (route) => {
+    const req = route.request();
+    claudeCalls.push({ url: req.url(), headers: await req.allHeaders(), body: req.postDataJSON() });
+    const cors = { 'access-control-allow-origin': '*', 'access-control-allow-headers': '*' };
+    if (req.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: cors });
+    return route.fulfill(Object.assign({ contentType: 'application/json', headers: Object.assign({ 'request-id': 'req_test' }, cors) }, claudeReply));
+  });
+  const claudeJson = {
+    personal: { firstName: 'Jane', lastName: 'Doe', email: 'jane.doe@gmail.com', phone: '(415) 555-0134', phoneCountryCode: '', address1: '', city: 'San Francisco', state: 'CA', postalCode: '94105', country: 'United States' },
+    links: { linkedin: 'https://www.linkedin.com/in/janedoe', github: 'https://github.com/janedoe', portfolio: '', website: 'https://janedoe.dev', twitter: '' },
+    work: { currentTitle: 'Senior Software Engineer', currentCompany: 'Stripe', yearsExperience: '7', skills: 'Go, Python, Kubernetes' },
+    education: { school: 'University of California, Berkeley', degree: 'B.S.', fieldOfStudy: 'Computer Science', graduationYear: '2017', gpa: '3.8/4.0' },
+    summary: 'Backend engineer with 7 years building distributed systems.',
+    notes: ['Years of experience exclude the 2016 internship.'],
+  };
+  const okReply = (json) => ({ status: 200, body: JSON.stringify({ id: 'msg_test', type: 'message', role: 'assistant', model: 'claude-haiku-5-5', content: [{ type: 'text', text: JSON.stringify(json) }], stop_reason: 'end_turn', stop_sequence: null, usage: { input_tokens: 1200, output_tokens: 300 } }) });
+  const setClaude = (v) => ext.evaluate((v) => chrome.storage.local.set({ claudeApi: v }), v);
+
+  await check('Claude: reads the PDF via the API and shows results for review', async () => {
+    await setClaude({ apiKey: 'sk-ant-test-0000', model: 'claude-haiku-5-5', autoRead: false });
+    claudeReply = okReply(claudeJson);
+    claudeCalls.length = 0;
+    const opt = await context.newPage();
+    const errors = [];
+    opt.on('pageerror', (e) => errors.push(e.message));
+    await opt.goto(`chrome-extension://${extId}/options/options.html`);
+    await opt.setInputFiles('#resume-file', { name: 'jane-doe.pdf', mimeType: 'application/pdf', buffer: resumePdf });
+    await opt.waitForSelector('.review-row');
+    assert.equal(claudeCalls.length, 0, 'autoRead off: nothing sent on upload');
+    await opt.click('#resume-claude');
+    await opt.waitForSelector('.review h3:has-text("read by Claude Haiku 5.5")', { timeout: 15000 });
+    const call = claudeCalls.find((c) => c.body);
+    assert.ok(call, 'request sent');
+    assert.match(call.url, /\/v1\/messages$/);
+    // SDK 1.x (API version 2026-10-21) sends the key as a bearer token; older versions used x-api-key.
+    assert.ok(call.headers['authorization'] === 'Bearer sk-ant-test-0000' || call.headers['x-api-key'] === 'sk-ant-test-0000', 'API key sent');
+    assert.equal(call.headers['anthropic-dangerous-direct-browser-access'], 'true');
+    assert.equal(call.body.model, 'claude-haiku-5-5');
+    assert.equal(call.body.output_config.format.type, 'json_schema');
+    assert.equal(call.body.output_config.effort, 'low');
+    assert.equal(call.body.messages[0].content[0].type, 'document');
+    assert.equal(call.body.messages[0].content[0].source.media_type, 'application/pdf');
+    assert.ok(!('fallbacks' in call.body), 'Haiku: no fallbacks param');
+    const rv = await readReview(opt);
+    assert.equal(rv['Years of experience'].value, '7');
+    assert.equal(rv['School / university'].value, 'University of California, Berkeley');
+    assert.match(await opt.textContent('#resume-review'), /exclude the 2016 internship/);
+    assert.match(await opt.textContent('#resume-review'), /from Claude/);
+    assert.deepEqual(errors, []);
+  });
+
+  await check('Claude: auto-read on upload, Sonnet sends server-side fallback', async () => {
+    await setClaude({ apiKey: 'sk-ant-test-0000', model: 'claude-sonnet-5-5', autoRead: true });
+    claudeReply = okReply(claudeJson);
+    claudeCalls.length = 0;
+    const opt = await context.newPage();
+    await opt.goto(`chrome-extension://${extId}/options/options.html`);
+    await opt.setInputFiles('#resume-file', path.join(here, '../fixtures/resumes/classic-us.docx'));
+    await opt.waitForSelector('.review h3:has-text("read by Claude Sonnet 5.5")', { timeout: 15000 });
+    const call = claudeCalls.find((c) => c.body);
+    assert.equal(call.body.model, 'claude-sonnet-5-5');
+    assert.equal(call.body.fallbacks, 'default');
+    assert.match(call.headers['anthropic-beta'] || '', /server-side-fallback-2026-07-01/);
+    assert.equal(call.body.messages[0].content[0].type, 'text', 'DOCX goes as extracted text');
+    assert.match(call.body.messages[0].content[0].text, /<resume>\nJANE DOE/);
+  });
+
+  await check('Claude: bad key falls back to the built-in reader with a clear message', async () => {
+    await setClaude({ apiKey: 'sk-ant-bad', model: 'claude-haiku-5-5', autoRead: true });
+    claudeReply = { status: 401, body: JSON.stringify({ type: 'error', error: { type: 'authentication_error', message: 'invalid x-api-key' } }) };
+    const opt = await context.newPage();
+    await opt.goto(`chrome-extension://${extId}/options/options.html`);
+    await opt.setInputFiles('#resume-file', { name: 'jane-doe.pdf', mimeType: 'application/pdf', buffer: resumePdf });
+    await opt.waitForSelector('.review-row', { timeout: 20000 });
+    const txt = await opt.textContent('#resume-review');
+    assert.match(txt, /API key was rejected/);
+    assert.match(txt, /built-in reader/);
+    assert.equal((await readReview(opt))['Email'].value, 'jane.doe@gmail.com');
+    await setClaude({ apiKey: '', model: 'claude-haiku-5-5', autoRead: false });
+  });
+
+  // ---- From job boards / aggregators to the real application
+  await check('LinkedIn external Apply: detected, click opens new tab, reported in openedTabs', async () => {
+    await ext.evaluate(async () => {
+      const { settings } = await chrome.storage.local.get('settings');
+      await chrome.storage.local.set({ settings: Object.assign({}, settings, { bridgeEnabled: true }) });
+    });
+    const p = await open('https://www.linkedin.com/jobs/view/4000000009/');
+    const d = await bridge(p, () => window.jobCopilot.detect());
+    assert.equal(d.apply.kind, 'external');
+    assert.equal(d.apply.newTab, true);
+    // By hand: the click opens a new tab, which detect() reports.
+    const [child] = await Promise.all([context.waitForEvent('page'), p.click(d.apply.selector)]);
+    await child.waitForLoadState('domcontentloaded');
+    await p.waitForTimeout(300);
+    const d2 = await bridge(p, () => window.jobCopilot.detect());
+    assert.ok(d2.openedTabs && d2.openedTabs.some((t) => /greenhouse\.io\/acme\/jobs\/123/.test(t.url)), JSON.stringify(d2.openedTabs));
+    // followApply: the scripted button's window.open is caught, so it reaches the ATS in the same tab.
+    const f = await bridge(p, () => window.jobCopilot.followApply());
+    assert.equal(f.ok, true, JSON.stringify(f));
+    assert.equal(f.to, 'https://job-boards.greenhouse.io/acme/jobs/123?gh_src=linkedin');
+    await p.waitForURL('https://job-boards.greenhouse.io/acme/jobs/123?gh_src=linkedin');
+  });
+
+  await check('Indeed redirect + "leaving Indeed" screen: followApply lands on the ATS form', async () => {
+    const p = await open('https://www.indeed.com/applystart?jk=abc&url=https%3A%2F%2Fjob-boards.greenhouse.io%2Facme%2Fjobs%2F123');
+    const d = await bridge(p, () => window.jobCopilot.detect());
+    assert.equal(d.pageType, 'redirect');
+    assert.equal(d.redirect.target, 'https://job-boards.greenhouse.io/acme/jobs/123');
+    assert.equal(d.interstitial.button, 'Continue');
+    const f = await bridge(p, () => window.jobCopilot.followApply());
+    assert.equal(f.ok, true);
+    await p.waitForURL('https://job-boards.greenhouse.io/acme/jobs/123');
+    await p.waitForFunction(() => window.jobCopilot && window.jobCopilot.installed);
+    assert.equal((await bridge(p, () => window.jobCopilot.detect())).pageType, 'application');
+  });
+
+  await check('Jobright-style aggregator: unwraps redirect link, same-tab follow, "Did you apply?" prompt', async () => {
+    const p = await open('https://jobright.ai/jobs/info/abc123');
+    const d = await bridge(p, () => window.jobCopilot.detect());
+    assert.equal(d.portal, 'jobright');
+    assert.equal(d.apply.kind, 'external');
+    assert.equal(d.apply.target, 'https://jobs.lever.co/acme/11111111-1111-1111-1111-111111111111/apply');
+    assert.equal(d.appliedPrompt.yes, 'Yes, I applied');
+    assert.equal(d.appliedPrompt.no, 'No, not yet');
+    // Dismiss the prompt the honest way (not applied yet), then follow.
+    await p.click(d.appliedPrompt.noSelector);
+    await p.evaluate(() => document.getElementById('did').remove());
+    const f = await bridge(p, () => window.jobCopilot.followApply());
+    assert.equal(f.ok, true);
+    await p.waitForURL('**/jobs.lever.co/acme/**/apply');
+    await p.waitForFunction(() => window.jobCopilot && window.jobCopilot.installed);
+    assert.equal((await bridge(p, () => window.jobCopilot.detect())).pageType, 'application');
+  });
+
+  await check('Jobright "customize your resume?" pop-up: picks "Apply without customizing", lands on the ATS', async () => {
+    const p = await open('https://jobright.ai/jobs/info/def456');
+    const d = await bridge(p, () => window.jobCopilot.detect());
+    assert.equal(d.apply.text, 'Apply', 'plain Apply preferred over the site\'s autofill button');
+    assert.equal(d.apply.kind, 'external');
+    // The scripted button's destination is found in the page itself, so Apply can go straight there.
+    assert.equal(d.apply.target, 'https://jobs.lever.co/acme/11111111-1111-1111-1111-111111111111/apply');
+    // The pop-up path still works when it does open.
+    await p.click(d.apply.selector);
+    const d2 = await bridge(p, () => window.jobCopilot.detect());
+    assert.equal(d2.interstitial.kind, 'upsell');
+    assert.equal(d2.interstitial.button, 'Apply without customizing');
+    assert.equal(d2.interstitial.href, 'https://jobs.lever.co/acme/11111111-1111-1111-1111-111111111111/apply');
+    const f = await bridge(p, () => window.jobCopilot.followApply());
+    assert.equal(f.ok, true);
+    await p.waitForURL('**/jobs.lever.co/acme/**/apply');
+    await p.waitForFunction(() => window.jobCopilot && window.jobCopilot.installed);
+    assert.equal((await bridge(p, () => window.jobCopilot.detect())).pageType, 'application');
+  });
+
+  await check('Jobright-style infinite feed: link-less cards read, jobs kept after they scroll away, loadMoreJobs', async () => {
+    const p = await open('https://jobright.ai/jobs/recommend');
+    const first = await bridge(p, () => window.jobCopilot.extractJobs());
+    assert.equal(first.count, 8);
+    const j0 = first.jobs[0];
+    assert.deepEqual([j0.title, j0.company, j0.location, j0.salary], ['Software Engineer 0', 'Company 0', 'Remote · United States', '$100K/yr - $150K/yr']);
+    assert.match(j0.url, /^https:\/\/jobright\.ai\/jobs\/info\/[0-9a-f]{24}$/);
+    assert.ok(j0.selector);
+    // The user scrolls by hand: new cards load, old ones leave the page, but stay remembered.
+    for (let i = 0; i < 2; i++) {
+      await p.evaluate(() => { const l = document.getElementById('list'); l.scrollTop = l.scrollHeight; });
+      await p.waitForTimeout(700);
+    }
+    const second = await bridge(p, () => window.jobCopilot.extractJobs());
+    assert.equal(second.count, 24, 'remembers cards that left the page');
+    assert.equal(await p.evaluate(() => document.getElementById('list').children.length), 16);
+    // Claude / popup: scroll automatically until no more jobs load.
+    const more = await bridge(p, () => window.jobCopilot.loadMoreJobs({ rounds: 10 }));
+    assert.equal(more.count, 40);
+    assert.equal(more.added, 16);
+  });
+
+  await check('Jobright feed: resolveApplyLinks finds the employer link per job, stops at a security check', async () => {
+    const p = await open('https://jobright.ai/jobs/recommend');
+    await bridge(p, () => window.jobCopilot.extractJobs());
+    const r = await bridge(p, () => window.jobCopilot.resolveApplyLinks({ limit: 6, delayMs: 0 }));
+    assert.equal(r.ok, true, r.error);
+    assert.deepEqual([r.resolved, r.failed, r.blocked], [4, 2, false]);
+    const [j0, j1, j2] = r.jobs;
+    assert.deepEqual([j0.applyUrl, j0.applyHost, j0.applyVia], ['https://jobs.lever.co/acme/0', 'jobs.lever.co', 'page-data']);
+    assert.deepEqual([j1.applyUrl, j1.applyVia], ['https://job-boards.greenhouse.io/acme/jobs/1', 'page-link']);
+    assert.ok(!j2.applyUrl && j2.applyError);
+    // Next batch: job 6 answers with a security check, so it stops there instead of pushing on.
+    const r2 = await bridge(p, () => window.jobCopilot.resolveApplyLinks({ limit: 6, delayMs: 0 }));
+    assert.equal(r2.blocked, true);
+    assert.equal(r2.resolved, 0);
+    assert.match(r2.note, /security check/);
+  });
+
+  await check('Jobright Apply that flashes a tab, then shows a pop-up: followApply waits and reaches the employer form', async () => {
+    // By hand: the flashed tab is remembered (its address is the real link).
+    const p = await open('https://jobright.ai/jobs/info/fab001');
+    await p.click('#plain');
+    await p.waitForTimeout(1500);
+    const d = await bridge(p, () => window.jobCopilot.detect());
+    assert.ok(d.flashedTabs && d.flashedTabs.some((t) => t.url === 'https://job-boards.greenhouse.io/acme/jobs/123'), JSON.stringify(d.flashedTabs));
+    assert.equal(d.interstitial.href, 'https://job-boards.greenhouse.io/acme/jobs/123', 'employer link in the pop-up, any wording');
+    // Claude / popup button: one call clicks Apply, waits for the pop-up and follows its link.
+    const q = await open('https://jobright.ai/jobs/info/fab001');
+    const f = await bridge(q, () => window.jobCopilot.followApply());
+    assert.equal(f.ok, true, JSON.stringify(f));
+    await q.waitForURL('https://job-boards.greenhouse.io/acme/jobs/123');
+    await q.waitForFunction(() => window.jobCopilot && window.jobCopilot.installed);
+    assert.equal((await bridge(q, () => window.jobCopilot.detect())).pageType, 'application');
+  });
+
+  await check('Jobright real flow (from recording): followApply clicks through the pop-ups and catches the employer address', async () => {
+    const p = await open('https://jobright.ai/jobs/info/real01');
+    const f = await bridge(p, () => window.jobCopilot.followApply());
+    assert.equal(f.ok, true, JSON.stringify(f));
+    assert.equal(f.to, 'https://job-boards.greenhouse.io/embed/job_app?for=kodiak&token=4511215009&jr_id=6afcbc072ac165125e4cbf9e');
+    await p.waitForURL(/job-boards\.greenhouse\.io\/embed\/job_app\?for=kodiak&token=4511215009/);
+    await p.waitForFunction(() => window.jobCopilot && window.jobCopilot.installed);
+    assert.equal((await bridge(p, () => window.jobCopilot.detect())).pageType, 'application');
+  });
+
+  await check('Jobright real flow: newTab keeps Jobright open and opens the employer form next to it; upsell never chosen', async () => {
+    const p = await open('https://jobright.ai/jobs/info/real01?nt=1');
+    const [tab, f] = await Promise.all([context.waitForEvent('page'), bridge(p, () => window.jobCopilot.followApply({ newTab: true }))]);
+    assert.equal(f.action, 'opened-tab');
+    await tab.waitForLoadState('domcontentloaded');
+    assert.match(tab.url(), /token=4511215009/);
+    assert.match(p.url(), /jobright\.ai\/jobs\/info\/real01/);
+    assert.equal(await p.evaluate(() => !!window.__fixResume), false, '"Fix My Resume Now" never clicked');
+    assert.equal(await p.evaluate(() => typeof window.open === 'function' && !String(window.open).includes('fakeWindow')), true, 'window.open restored');
+  });
+
+  await check('Jobright feed: resolveApplyLinks({ viaApply }) goes through every card one after another, scrolling for more', async () => {
+    const p = await open('https://jobright.ai/jobs/recommend?v=2');
+    const jobs = await bridge(p, () => window.jobCopilot.extractJobs());
+    assert.equal(jobs.jobs[0].jobId, '0000a1b2c3d4e5f6a7b8c9d0');
+    assert.equal(jobs.count, 8, 'only 8 cards loaded at first');
+    const r = await bridge(p, () => window.jobCopilot.resolveApplyLinks({ viaApply: true, limit: 12, delayMs: 0 }));
+    assert.equal(r.resolved, 12, JSON.stringify(r.log && r.log.filter((x) => x.result === 'not found').slice(0, 2)));
+    // Jobs resolved by an earlier test are already saved and skipped; everything this run touched was resolved.
+    assert.equal(r.log.length, 12);
+    assert.ok(r.log.every((x) => x.result !== 'not found'));
+    assert.equal(r.jobs.find((j) => j.jobId === '0007a1b2c3d4e5f6a7b8c9d0').applyVia, 'apply-button');
+    const j11 = r.jobs.find((j) => j.jobId === '000ba1b2c3d4e5f6a7b8c9d0');
+    assert.equal(j11.applyUrl, 'https://job-boards.greenhouse.io/embed/job_app?for=kodiak&token=4511215011&jr_id=000ba1b2c3d4e5f6a7b8c9d0', 'reached a card that needed scrolling');
+    assert.ok(r.log[0].steps.some((x) => /caught employer address/.test(x.step)), JSON.stringify(r.log[0].steps));
+    await p.waitForTimeout(800);
+    assert.equal(await p.evaluate(() => document.querySelectorAll('.ant-modal-root').length), 0, 'pop-ups closed');
+    assert.equal(await p.evaluate(() => window.__answered), null, '"Did you apply?" left unanswered');
+    assert.equal(await p.evaluate(() => !!window.__fixResume), false);
+    // Saved permanently: a fresh load of the feed shows the links again.
+    const saved = await ext.evaluate(async () => (await chrome.storage.local.get('applyLinks')).applyLinks);
+    assert.equal(saved['https://jobright.ai/jobs/info/0007a1b2c3d4e5f6a7b8c9d0'].applyHost, 'job-boards.greenhouse.io');
+    const again = await open('https://jobright.ai/jobs/recommend?v=4');
+    await again.waitForTimeout(300);
+    const j7 = (await bridge(again, () => window.jobCopilot.extractJobs())).jobs.find((j) => j.jobId === '0007a1b2c3d4e5f6a7b8c9d0');
+    assert.match(j7.applyUrl, /token=4511215007/);
+  });
+
+  const setSetting = (patch) => ext.evaluate(async (patch) => {
+    const { settings } = await chrome.storage.local.get('settings');
+    await chrome.storage.local.set({ settings: Object.assign({}, settings, patch) });
+  }, patch);
+
+  await check('Jobright by hand: the link a tab opens after your own clicks is saved for that job', async () => {
+    await setSetting({ autoContinue: false, autoFillOpened: false }); // purely manual here
+    const p = await open('https://jobright.ai/jobs/recommend?v=3');
+    const card = '[id="0003a1b2c3d4e5f6a7b8c9d0"] button';
+    await p.click(card); // your click on Apply with Autofill
+    await p.waitForSelector('.index_cancelButton__hvybW');
+    const [tab] = await Promise.all([context.waitForEvent('page'), p.click('.index_cancelButton__hvybW')]); // Apply Without Customizing
+    await tab.waitForLoadState('domcontentloaded');
+    await p.waitForTimeout(800);
+    const j = (await bridge(p, () => window.jobCopilot.extractJobs())).jobs.find((x) => x.jobId === '0003a1b2c3d4e5f6a7b8c9d0');
+    assert.equal(j.applyUrl, 'https://job-boards.greenhouse.io/embed/job_app?for=kodiak&token=4511215003&jr_id=0003a1b2c3d4e5f6a7b8c9d0');
+    assert.equal(j.applyVia, 'your-click');
+    assert.ok(!j.appliedAt, 'not applied yet: only the form was opened');
+    // Jobright's "Did you apply?" is up meanwhile; it must stay unanswered until a confirmation.
+    await p.waitForSelector('text=Did you apply ?');
+    await p.waitForTimeout(500);
+    assert.equal(await p.evaluate(() => window.__answered), null);
+    // Submit on the employer's form: the confirmation marks the job applied and answers Jobright with Yes.
+    await tab.waitForFunction(() => window.jobCopilot && window.jobCopilot.installed);
+    await tab.click('#submit');
+    await tab.waitForSelector('text=Thank you for applying');
+    const td = await bridge(tab, () => window.jobCopilot.detect());
+    assert.match(td.submitted && td.submitted.text, /thank you for applying/i);
+    await p.waitForFunction(() => window.__answered === 'yes', null, { timeout: 8000 });
+    const j2 = (await bridge(p, () => window.jobCopilot.extractJobs())).jobs.find((x) => x.jobId === '0003a1b2c3d4e5f6a7b8c9d0');
+    assert.ok(j2.appliedAt, 'job marked applied');
+    const apps = await ext.evaluate(async () => (await chrome.storage.local.get('applications')).applications);
+    assert.ok(apps.some((a) => a.key === 'https://jobright.ai/jobs/info/0003a1b2c3d4e5f6a7b8c9d0' && /thank you for applying/i.test(a.confirmation)));
+    await tab.close();
+    await setSetting({ autoContinue: true, autoFillOpened: true });
+  });
+
+  await check('Jobright assist: you click Apply, it takes "Apply Without Customizing", opens the employer form and autofills it', async () => {
+    const p = await open('https://jobright.ai/jobs/recommend?v=5');
+    const before = new Set(context.pages());
+    await p.click('[id="0004a1b2c3d4e5f6a7b8c9d0"] button');
+    // Jobright's own pop-up check opens (and closes) a blank tab first; wait for the employer form tab.
+    let tab = null;
+    for (let i = 0; i < 60 && !tab; i++) {
+      tab = context.pages().find((pg) => !before.has(pg) && /job-boards\.greenhouse\.io\//.test(pg.url()));
+      if (!tab) await p.waitForTimeout(250);
+    }
+    assert.ok(tab, 'employer form opened in a new tab');
+    // Tabs opened by the extension skip the test's request routing on their first load (they'd hit the
+    // real site); load the same address again through the routing, within the autofill retry window.
+    await tab.goto('https://job-boards.greenhouse.io/embed/job_app?for=kodiak&token=4511215004&jr_id=0004a1b2c3d4e5f6a7b8c9d0');
+    await tab.waitForFunction(() => document.getElementById('email') && document.getElementById('email').value !== '', null, { timeout: 15000 });
+    assert.equal(await p.evaluate(() => !!window.__fixResume), false, 'never chose "Fix My Resume Now"');
+    assert.equal(await p.evaluate(() => window.__answered), null, '"Did you apply?" not answered before a submission');
+    const j = (await bridge(p, () => window.jobCopilot.extractJobs())).jobs.find((x) => x.jobId === '0004a1b2c3d4e5f6a7b8c9d0');
+    assert.match(j.applyUrl, /token=4511215004/);
+    await tab.close();
+  });
+
+  await check('applied: an application page without a submit is never marked; confirmation text alone (no submit, no confirmation URL) is not enough', async () => {
+    const p = await open('https://job-boards.greenhouse.io/embed/job_app?for=kodiak&token=4511215099');
+    await p.evaluate(() => { document.body.insertAdjacentHTML('beforeend', '<p>Thank you for applying in the past! Apply again below.</p>'); });
+    await p.waitForTimeout(2000);
+    const d = await bridge(p, () => window.jobCopilot.detect());
+    assert.ok(!d.submitted, JSON.stringify(d.submitted));
+    const apps = await ext.evaluate(async () => (await chrome.storage.local.get('applications')).applications || []);
+    assert.ok(!apps.some((a) => /token=4511215099/.test(a.applyUrl)));
+  });
+
+  await check('Apply one by one: opens each job\'s employer form in turn; submit -> next, close tab -> skip -> next', async () => {
+    const p = await open('https://jobright.ai/jobs/recommend?v=6');
+    const tabId = await ext.evaluate(async (url) => (await chrome.tabs.query({ url })).at(0)?.id, p.url());
+    const waitForAppTab = async (seen) => {
+      for (let i = 0; i < 80; i++) {
+        const t = context.pages().find((pg) => !seen.has(pg) && /job-boards\.greenhouse\.io\//.test(pg.url()));
+        if (t) return t;
+        await p.waitForTimeout(250);
+      }
+      return null;
+    };
+    const state = () => ext.evaluate((id) => chrome.runtime.sendMessage({ type: 'jc:queue-state', tabId: id }), tabId);
+    let seen = new Set(context.pages());
+    await ext.evaluate((id) => chrome.runtime.sendMessage({ type: 'jc:queue-start', tabId: id }), tabId);
+    const t1 = await waitForAppTab(seen);
+    assert.ok(t1, 'first job opened');
+    const s1 = await state();
+    assert.equal(s1.current.title, 'Software Engineer 0');
+    // (extension-opened tabs skip the test routing on first load: load the fixture form, then submit)
+    await t1.goto('https://job-boards.greenhouse.io/embed/job_app?for=kodiak&token=4511215000&jr_id=0000a1b2c3d4e5f6a7b8c9d0');
+    seen = new Set(context.pages());
+    await t1.waitForFunction(() => window.jobCopilot && window.jobCopilot.installed);
+    await t1.click('#submit');
+    const t2 = await waitForAppTab(seen); // after the confirmation: tab closes, next job opens
+    assert.ok(t2, 'second job opened after the confirmed submission');
+    assert.equal(t1.isClosed(), true, 'applied tab closed');
+    const s2 = await state();
+    assert.equal(s2.applied, 1);
+    assert.equal(s2.current.title, 'Software Engineer 1');
+    assert.equal(await p.evaluate(() => window.__answered), 'yes', 'Jobright told "Yes, I applied!" for the submitted job');
+    // Closing the tab skips the job and moves on.
+    seen = new Set(context.pages());
+    await t2.close();
+    const t3 = await waitForAppTab(seen);
+    assert.ok(t3, 'third job opened after skipping');
+    const s3 = await state();
+    assert.deepEqual([s3.applied, s3.skipped, s3.current.title], [1, 1, 'Software Engineer 2']);
+    await ext.evaluate((id) => chrome.runtime.sendMessage({ type: 'jc:queue-stop', tabId: id }), tabId);
+    assert.equal((await state()).active, false);
+    await t3.close();
+  });
+
+  await check('ask Claude/ChatGPT bridge: unanswered questions outlined, prompt built, pasted reply fills the right fields', async () => {
+    const g = await open('https://job-boards.greenhouse.io/initech/jobs/5');
+    await bridge(g, () => window.jobCopilot.autofill());
+    // "What excites you about joining us?" was remembered for Acme only, so it's open here, and outlined.
+    assert.equal(await g.evaluate(() => q6.value), '');
+    assert.match(await g.evaluate(() => q6.style.outline), /124, 58, 237|#7c3aed/);
+    const tabId = await ext.evaluate(async (url) => (await chrome.tabs.query({ url })).at(0)?.id, g.url());
+    const pop = await context.newPage();
+    await pop.goto(`chrome-extension://${extId}/popup/popup.html`);
+    const out = await pop.evaluate(async (tabId) => {
+      const send = (cmd, payload) => chrome.runtime.sendMessage({ type: 'jc:popup', tabId, cmd, payload: payload || {} });
+      const qs = JC.ask.questionsFrom((await send('scanForm')).fields);
+      const q6 = qs.find((q) => /excites you/.test(q.label));
+      const prompt = JC.ask.buildPrompt({ questions: qs, job: (await send('extractJob')).job, profile: (await chrome.storage.local.get('profile')).profile });
+      const reply = '```json\n' + JSON.stringify({ answers: { [q6.id]: 'Your robots help people.', [qs[0].id === q6.id ? 'x' : qs[0].id]: 'ASK_ME' } }) + '\n```';
+      const parsed = JC.ask.parseReply(reply, qs);
+      const r = await send('autofill', { overrides: parsed.overrides });
+      return { n: qs.length, hasQ6: !!q6, promptHasQ6: prompt.includes(q6.id), askMe: parsed.askMe.length, filled: r.filledCount };
+    }, tabId);
+    assert.ok(out.hasQ6 && out.promptHasQ6, JSON.stringify(out));
+    assert.equal(await g.evaluate(() => q6.value), 'Your robots help people.');
+    assert.equal(await g.evaluate(() => q6.style.outline), '', 'outline cleared once answered');
+    await pop.close();
+  });
+
+  await check('iCIMS-style form: custom dropdown chosen by clicking, phone "Type" -> Mobile, former-employee ID left alone', async () => {
+    const p = await open('https://careers-acme.icims.com/jobs/1234/data-scientist/candidate');
+    const r = await bridge(p, () => window.jobCopilot.autofill());
+    assert.equal(r.ok, true, r.error);
+    const v = await p.evaluate(() => ({ fn: fn.value, pt: pt.selectedOptions[0].text, hear: hear.value, eid: eid.value, listOpen: !document.getElementById('hear-list').hidden }));
+    assert.equal(v.pt, 'Mobile');
+    assert.equal(v.hear, 'Job Board', 'no LinkedIn option: falls back to the Job Board category');
+    assert.equal(v.eid, '');
+    const extra = await p.evaluate(() => ({ spec: spec.value, tz: tz.selectedIndex }));
+    assert.ok(extra.spec.length > 0, '"Please specify" after the source gets the specific site');
+    assert.ok(extra.tz > 0, 'time zone chosen from the browser time zone');
+    assert.equal(v.listOpen, false, 'dropdown closed after choosing');
+    assert.ok(v.fn.length > 0);
+    const labels = r.needsInput.map((f) => f.label);
+    assert.ok(!labels.some((l) => /employee id|hear about|^type$/i.test(l)), JSON.stringify(labels));
+    // The Next button is below the clipped area: "Next step" clicks it anyway; on the last step it only points at Submit.
+    const n1 = await bridge(p, () => window.jobCopilot.nextStep());
+    assert.equal(n1.clicked, 'Next');
+    await p.waitForSelector('#step2');
+    const n2 = await bridge(p, () => window.jobCopilot.nextStep());
+    assert.equal(n2.ok, false);
+    assert.equal(n2.submit, 'Submit');
+    assert.match(await p.evaluate(() => sub.style.outline), /solid/);
+  });
+
+  await check('recorder: logs clicks, window.open, flashed tab and the pop-up with its links', async () => {
+    const p = await open('https://jobright.ai/jobs/info/fab001?rec=1');
+    const tabId = await ext.evaluate(async (url) => (await chrome.tabs.query({ url })).at(0)?.id, p.url());
+    assert.equal((await ext.evaluate((id) => chrome.runtime.sendMessage({ type: 'jc:rec-start', tabId: id }), tabId)).ok, true);
+    await p.waitForTimeout(300);
+    await p.click('#plain');
+    await p.waitForTimeout(2000);
+    const r = await ext.evaluate((id) => chrome.runtime.sendMessage({ type: 'jc:rec-stop', tabId: id }), tabId);
+    assert.equal(r.ok, true, r.error);
+    const ev = r.report.events;
+    const types = ev.map((e) => e.type);
+    const click = ev.find((e) => e.type === 'click');
+    assert.equal(click.target.text, 'Apply');
+    assert.equal(click.trusted, true);
+    assert.ok(ev.some((e) => e.type === 'window-open' && e.url === 'https://job-boards.greenhouse.io/acme/jobs/123'), JSON.stringify(types));
+    assert.ok(types.includes('tab-opened') && types.includes('tab-closed'), JSON.stringify(types));
+    const overlay = ev.find((e) => e.type === 'overlay' && (e.overlay.links || []).some((l) => l.href === 'https://job-boards.greenhouse.io/acme/jobs/123'));
+    assert.ok(overlay, 'pop-up with the employer link recorded');
+    // Stopped: further clicks are not recorded.
+    await p.click('#auto');
+    const q = await ext.evaluate((id) => chrome.runtime.sendMessage({ type: 'jc:rec-query', tabId: id }), tabId);
+    assert.equal(q.on, false);
+  });
+
+  await check('debug log (always on): extension steps and autofill results captured without starting a recording; no form values', async () => {
+    const r = await ext.evaluate(() => chrome.runtime.sendMessage({ type: 'jc:debug-get' }));
+    const types = new Set(r.log.map((e) => e.type));
+    assert.ok(types.has('extension-step') && types.has('autofill'), JSON.stringify([...types]));
+    assert.ok(r.log.some((e) => e.type === 'extension-step' && e.detail && /caught employer address|opening the employer application/.test(JSON.stringify(e.detail))));
+    const text = JSON.stringify(r.log);
+    assert.ok(!text.includes('ada@example.com') && !text.includes('Lovelace'), 'no profile values in the log');
+  });
+
+  await check('bridge disabled: commands refused', async () => {
+    await ext.evaluate(async () => {
+      const { settings } = await chrome.storage.local.get('settings');
+      await chrome.storage.local.set({ settings: Object.assign({}, settings, { bridgeEnabled: false }) });
+    });
+    const r = await bridge(lever, () => window.jobCopilot.extractJobs());
+    assert.equal(r.ok, false);
+    assert.match(r.error, /disabled/);
+  });
+
+  await check('popup renders without errors', async () => {
+    const errors = [];
+    const p = await context.newPage();
+    p.on('pageerror', (e) => errors.push(e.message));
+    await p.goto(`chrome-extension://${extId}/popup/popup.html`);
+    await p.waitForTimeout(500);
+    assert.deepEqual(errors, []);
+  });
+} finally {
+  await context.close();
+  server.close();
+  rmSync(userDataDir, { recursive: true, force: true });
+}
+
+console.log(`\n${passed} passed, ${failed} failed`);
+process.exit(failed ? 1 : 0);

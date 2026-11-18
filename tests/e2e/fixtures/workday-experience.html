@@ -1,0 +1,89 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>My Experience</title>
+<style>ul{list-style:none;padding:0;margin:0;border:1px solid #ccc}li{padding:3px}</style></head>
+<body>
+<h2>My Experience</h2>
+<div role="group" aria-labelledby="we-h">
+  <h3 id="we-h">Work Experience</h3>
+  <div id="we-list"></div>
+  <button type="button" data-automation-id="add-button" id="we-add">Add</button>
+</div>
+<div role="group" aria-labelledby="ed-h">
+  <h3 id="ed-h">Education</h3>
+  <div id="ed-list"></div>
+  <button type="button" data-automation-id="add-button" id="ed-add">Add</button>
+</div>
+<div role="group">
+  <h3>Skills</h3>
+  <div data-automation-id="formField-skills">
+    <label for="skills--skills">Type to Add Skills</label>
+    <div data-automation-id="multiselectInputContainer"><input id="skills--skills" data-uxi-widget-type="selectinput" placeholder="Search"></div>
+    <ul data-automation-id="selectedItemList" id="skill-pills"></ul>
+    <div id="skill-pop"></div>
+  </div>
+</div>
+<h3>Websites</h3>
+<label for="web">URL</label><input id="web" name="websiteUrl">
+<script>
+  let n = 50;
+  // Like Workday: date boxes only take typed digits.
+  function spin(el) {
+    let keyed = false;
+    el.addEventListener('keydown', (e) => (keyed = /^\d$/.test(e.key)));
+    el.addEventListener('input', () => { if (!keyed || /\D/.test(el.value)) el.value = ''; keyed = false; });
+  }
+  function date(id, label) {
+    return `<div data-automation-id="formField-${id.split('--')[1]}"><label>${label}</label>
+      <input id="${id}-dateSectionMonth-input" role="spinbutton" aria-label="Month" data-automation-id="dateSectionMonth-input">
+      <input id="${id}-dateSectionYear-input" role="spinbutton" aria-label="Year" data-automation-id="dateSectionYear-input"></div>`;
+  }
+  document.getElementById('we-add').addEventListener('click', () => {
+    const id = 'workExperience-' + (n += 7);
+    const d = document.createElement('div');
+    d.innerHTML = `<h4>Work Experience ${document.querySelectorAll('#we-list > div').length + 1}</h4>
+      <div data-automation-id="formField-jobTitle"><label for="${id}--jobTitle">Job Title</label><input id="${id}--jobTitle" name="jobTitle"></div>
+      <div data-automation-id="formField-companyName"><label for="${id}--companyName">Company</label><input id="${id}--companyName" name="companyName"></div>
+      <div data-automation-id="formField-location"><label for="${id}--location">Location</label><input id="${id}--location" name="location"></div>
+      <div data-automation-id="formField-currentlyWorkHere"><label for="${id}--currentlyWorkHere">I currently work here</label><input type="checkbox" id="${id}--currentlyWorkHere" name="currentlyWorkHere"></div>
+      ${date(id + '--startDate', 'From')}${date(id + '--endDate', 'To')}
+      <div data-automation-id="formField-roleDescription"><label for="${id}--roleDescription">Role Description</label><textarea id="${id}--roleDescription"></textarea></div>`;
+    document.getElementById('we-list').appendChild(d);
+    d.querySelectorAll('[role="spinbutton"]').forEach(spin);
+    document.getElementById('we-add').textContent = 'Add Another';
+  });
+  const DEGREES = ['Select One', 'High School Diploma', "Associate's Degree", "Bachelor's Degree", "Master's Degree", 'Doctorate'];
+  document.getElementById('ed-add').addEventListener('click', () => {
+    const id = 'education-' + (n += 3);
+    const d = document.createElement('div');
+    d.innerHTML = `<h4>Education ${document.querySelectorAll('#ed-list > div').length + 1}</h4>
+      <div data-automation-id="formField-schoolName"><label for="${id}--schoolName">School or University</label><input id="${id}--schoolName" name="schoolName"></div>
+      <div data-automation-id="formField-degree"><label id="${id}-dl">Degree</label><button type="button" aria-haspopup="listbox" id="${id}--degree" aria-labelledby="${id}-dl">Select One</button><div class="pop"></div></div>
+      <div data-automation-id="formField-fieldOfStudy"><label for="${id}--fieldOfStudy">Field of Study</label><input id="${id}--fieldOfStudy" name="fieldOfStudy"></div>`;
+    document.getElementById('ed-list').appendChild(d);
+    const btn = d.querySelector('button');
+    btn.addEventListener('click', () => {
+      const pop = d.querySelector('.pop');
+      pop.innerHTML = '<ul role="listbox">' + DEGREES.map((t) => `<li role="option">${t}</li>`).join('') + '</ul>';
+      pop.querySelectorAll('li').forEach((li) => li.addEventListener('click', () => { btn.textContent = li.textContent; pop.innerHTML = ''; }));
+    });
+    document.getElementById('ed-add').textContent = 'Add Another';
+  });
+  // Skills: Enter searches; a pick adds a pill.
+  const SKILLS = ['Python (Programming Language)', 'PyTorch', 'SQL', 'SQLCLR', 'Kubernetes'];
+  const sk = document.getElementById('skills--skills');
+  const pop = document.getElementById('skill-pop');
+  sk.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    const q = sk.value.toLowerCase();
+    pop.innerHTML = '';
+    for (const t of SKILLS.filter((s) => s.toLowerCase().includes(q))) {
+      const o = document.createElement('div');
+      o.setAttribute('data-automation-id', 'promptOption');
+      o.setAttribute('role', 'option');
+      o.textContent = t;
+      o.addEventListener('click', () => { document.getElementById('skill-pills').insertAdjacentHTML('beforeend', `<li data-automation-id="selectedItem">${t}</li>`); sk.value = ''; pop.innerHTML = ''; });
+      pop.appendChild(o);
+    }
+  });
+</script>
+</body></html>

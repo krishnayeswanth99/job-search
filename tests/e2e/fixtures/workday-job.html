@@ -1,0 +1,49 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Machine Learning Engineer II - Acme Careers</title>
+<style>[role=listbox]{position:absolute;background:#fff;border:1px solid #999;list-style:none;margin:0;padding:0}[role=option]{padding:4px 8px;cursor:pointer}</style></head><body>
+<div id="app">
+  <h2 data-automation-id="jobPostingHeader">Machine Learning Engineer II</h2>
+  <div data-automation-id="locations"><dd>New York, NY</dd></div>
+  <div data-automation-id="jobPostingDescription">Build ML systems. Python, PyTorch.</div>
+  <a data-automation-id="adventureButton" role="button" href="#" id="apply">Apply</a>
+</div>
+<script>
+  // Workday-like: Apply opens "Start Your Application" with choices; "Apply Manually" shows the
+  // My Information step, whose dropdowns are buttons that open a listbox.
+  const app = document.getElementById('app');
+  function listbox(id, label, options) {
+    return `<div data-automation-id="formField-${id}"><label id="${id}-label">${label}</label>
+      <button type="button" id="${id}" aria-haspopup="listbox" aria-label="${label} Select One Required">Select One</button></div>`;
+  }
+  function openList(btn, options) {
+    document.querySelectorAll('[role=listbox]').forEach((l) => l.remove());
+    const ul = document.createElement('ul');
+    ul.setAttribute('role', 'listbox');
+    ul.innerHTML = options.map((o) => `<li role="option"><div>${o}</div></li>`).join('');
+    ul.addEventListener('click', (e) => { const li = e.target.closest('[role=option]'); if (!li) return; btn.textContent = li.textContent; ul.remove(); });
+    btn.after(ul);
+  }
+  document.getElementById('apply').addEventListener('click', (e) => {
+    e.preventDefault();
+    const d = document.createElement('div');
+    d.setAttribute('role', 'dialog');
+    d.setAttribute('aria-modal', 'true');
+    d.innerHTML = '<h2>Start Your Application</h2><a role="button" href="#" id="auto">Autofill with Resume</a> <a role="button" href="#" id="manual">Apply Manually</a>';
+    document.body.appendChild(d);
+    d.querySelector('#manual').addEventListener('click', (ev) => {
+      ev.preventDefault();
+      d.remove();
+      history.pushState({}, '', location.pathname.replace(/\/job\/.*$/, '/job/ML-Engineer_123/apply/applyManually'));
+      app.innerHTML = `<h2>My Information</h2>
+        <div data-automation-id="formField-legalNameSection_firstName"><label for="fn">Given Name(s)</label><input id="fn" data-automation-id="legalNameSection_firstName"></div>
+        <div data-automation-id="formField-legalNameSection_lastName"><label for="ln">Family Name</label><input id="ln" data-automation-id="legalNameSection_lastName"></div>
+        <div data-automation-id="formField-email"><label for="em">Email Address</label><input id="em" data-automation-id="email"></div>
+        <div data-automation-id="formField-phone-number"><label for="ph">Phone Number</label><input id="ph" data-automation-id="phone-number"></div>
+        ${listbox('phone-device-type', 'Phone Device Type')}
+        ${listbox('country', 'Country')}
+        <button data-automation-id="bottom-navigation-next-button">Save and Continue</button>`;
+      document.getElementById('phone-device-type').addEventListener('click', (ev2) => openList(ev2.currentTarget, ['Landline', 'Mobile', 'Fax']));
+      document.getElementById('country').addEventListener('click', (ev2) => openList(ev2.currentTarget, ['India', 'United Kingdom', 'United States of America']));
+    });
+  });
+</script>
+</body></html>

@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Job Copilot</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <header>
+      <img src="../icons/icon32.png" alt="" width="20" height="20" />
+      <h1>Job Copilot</h1>
+      <a id="open-options" href="#" title="Profile & settings">Settings</a>
+    </header>
+
+    <section id="status" class="card">
+      <div class="row"><span class="muted">Site</span><strong id="portal">…</strong></div>
+      <div class="row"><span class="muted">Page</span><strong id="page-type">…</strong></div>
+      <div id="login-banner" class="banner warn" hidden></div>
+      <div id="profile-banner" class="banner info" hidden>
+        No profile yet. <a href="#" data-open-options>Add your profile</a> to enable autofill.
+      </div>
+    </section>
+
+    <section class="actions">
+      <button id="btn-queue" hidden>Apply one by one</button>
+      <div id="queue-box" class="card" hidden>
+        <div id="queue-status" class="small-text"></div>
+        <div class="buttons-row"><button id="btn-q-skip" class="small">Skip this job</button> <button id="btn-q-stop" class="small">Stop</button></div>
+      </div>
+      <button id="btn-follow" hidden>Go to application</button>
+      <button id="btn-autofill" class="primary">Autofill this application</button>
+      <button id="btn-next" hidden>Next step (Next / Continue; never Submit)</button>
+      <button id="btn-jobs">Find jobs on this tab</button>
+      <button id="btn-job">Read this job posting</button>
+    </section>
+
+    <section id="ask" class="card" hidden>
+      <div class="row"><strong>Questions left</strong><span id="ask-count" class="muted"></span></div>
+      <p class="muted small-text">Get answers from Claude or ChatGPT (works with Claude Pro / ChatGPT Plus, no API): copy the prompt, paste it in a chat, then paste the reply below.</p>
+      <button id="btn-ask-local" class="small" hidden>Answer with on-device AI (free, private)</button>
+      <div id="ask-local-note" class="muted small-text"></div>
+      <div class="buttons-row">
+        <button id="btn-ask-copy" class="small">Copy prompt</button>
+        <button id="btn-ask-claude" class="small">Open Claude</button>
+        <button id="btn-ask-gpt" class="small">Open ChatGPT</button>
+      </div>
+      <textarea id="ask-reply" rows="3" placeholder="Paste the reply here ({&quot;answers&quot;: …})"></textarea>
+      <button id="btn-ask-fill" class="small primary">Fill answers</button>
+      <div id="ask-status" class="small-text"></div>
+    </section>
+
+    <section id="result" class="card" hidden>
+      <div class="result-head">
+        <strong id="result-title"></strong>
+        <div class="result-tools">
+          <button id="btn-copy" class="small">Copy for Claude</button>
+          <button id="btn-more" class="small" hidden>Scroll for more</button>
+          <button id="btn-links" class="small" hidden>Find apply links</button>
+          <button id="btn-stop" class="small" hidden>Stop</button>
+          <button id="btn-save-all" class="small" hidden>Save all</button>
+        </div>
+      </div>
+      <div id="result-body"></div>
+    </section>
+
+    <section id="rec" class="card rec">
+      <div class="row"><strong>Something not working on this site?</strong></div>
+      <p class="muted small-text">Record what you click (pop-ups, tabs, links) and send the report. Typed values are never recorded.</p>
+      <button id="btn-rec">Record what I do</button>
+      <div id="rec-status" class="muted small-text"></div>
+      <a id="rec-save" class="small-text" href="#" hidden>Save report as file</a>
+      <div class="buttons-row"><button id="btn-debug" class="small">Copy debug log</button><span id="debug-status" class="muted small-text"></span></div>
+    </section>
+
+    <footer>
+      <span id="saved-count" class="muted"></span>
+      <span class="muted">Never submits for you.</span>
+    </footer>
+
+    <script src="../src/shared/config.js"></script>
+    <script src="../src/shared/ask-prompt.js"></script>
+    <script src="popup.js"></script>
+  </body>
+</html>

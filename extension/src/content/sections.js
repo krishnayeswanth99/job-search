@@ -20,10 +20,12 @@
     // form-wide prefix like Greenhouse's "job_application[first_name]" doesn't count.
     ['exp', /^(work[-_ ]?experiences?|experiences?|employments?|employment[-_ ]?history|work[-_ ]?history|jobs?|positions?|previous[-_ ]?employers?)(?:[-_.]|\[)?\d+(?:\]|[-_.]|$)/i],
     ['edu', /^(educations?|education[-_ ]?history|schools?|academics?)(?:[-_.]|\[)?\d+(?:\]|[-_.]|$)/i],
+    ['lang', /^(languages?|language[-_ ]?skills?)(?:[-_.]|\[)?\d+(?:\]|[-_.]|$)/i],
   ];
   const KIND_HEADING = [
     ['exp', /^(work experience|experience|professional experience|employment( history)?|work history|previous employment|employment details|job history|positions? held)\b/i],
     ['edu', /^(education|educational (background|history)|academic (background|history|qualifications)|schools?|degrees?|qualifications)\b/i],
+    ['lang', /^(languages?( spoken| skills| proficiency)?)\b/i],
   ];
   const HEADING_SEL = 'h1, h2, h3, h4, h5, legend, [role="heading"], [data-automation-id$="Heading" i], [data-automation-id$="-section" i] > div:first-child';
 
@@ -67,6 +69,11 @@
       ['location', /\blocation\b|\bcity\b|\bwhere\b/],
       ['start', /\b(start|from|began|begin)\b/],
       ['end', /\b(end|to|until|finish)\b/],
+    ],
+    lang: [
+      ['native', /\bnative\b|\bmother tongue\b|\bfirst language\b/],
+      ['level', /\b(comprehension|overall|reading|speaking|writing|listening|proficiency|fluency|level)\b/],
+      ['language', /\blanguage\b/],
     ],
     edu: [
       ['fieldOfStudy', /\bfield of study\b|\bmajor\b|\bdiscipline\b|\barea of study\b|\bspeciali[sz]ation\b|\bconcentration\b/],
@@ -133,7 +140,7 @@
     return out;
   }
 
-  const ADD_RE = /^(\+\s*)?add( another| more| new)?( (work )?experience| (a )?(job|position|employer|employment|role)| education| (a )?(school|degree|qualification))?\s*\+?$/i;
+  const ADD_RE = /^(\+\s*)?add( another| more| new)?( (work )?experience| (a )?(job|position|employer|employment|role)| education| (a )?(school|degree|qualification)| (a )?language)?\s*\+?$/i;
 
   /** The "Add" button of a section kind: its text names the kind, or the last heading before it does. */
   function addButton(kind) {
@@ -147,6 +154,10 @@
       }
       if (/education|school|degree|qualification/.test(t)) {
         if (kind === 'edu') return b;
+        continue;
+      }
+      if (/language/.test(t)) {
+        if (kind === 'lang') return b;
         continue;
       }
       if (kindOf(b, hs) === kind) return b;
@@ -179,6 +190,11 @@
   }
 
   function valueFor(kind, item, part, f, datePart) {
+    if (kind === 'lang') {
+      if (part === 'native') return item.native ? 'yes' : 'no';
+      if (part === 'level') return item.level || null;
+      return item.language || null;
+    }
     if (part === 'start') return dateValue(item.start, f, datePart);
     if (part === 'end') return kind === 'exp' && item.current ? null : dateValue(item.end, f, datePart);
     if (part === 'current') return item.current ? 'yes' : 'no';
@@ -188,6 +204,7 @@
 
   /** The profile's entries, newest first; without a list, the current job/school from the profile. */
   function itemsFor(kind, profile) {
+    if (kind === 'lang') return JC.rules.parseLanguages((profile.work || {}).languages);
     if (kind === 'exp') {
       if (profile.experience && profile.experience.length) return profile.experience;
       const w = profile.work || {};
@@ -207,7 +224,8 @@
       return true;
     }
     if (f.hasValue) return false; // keep what's there
-    const choices = x.part === 'degree' ? JC.rules.degreeCandidates(value) : [value];
+    const choices = x.part === 'degree' ? JC.rules.degreeCandidates(value) : x.part === 'level' && kind === 'lang' ? JC.rules.levelCandidates(value) : [value];
+    if (!choices.length) return false;
     if (f.combobox || f.type === 'listbox') {
       const r = await A.fillCombobox(f.el, choices, null);
       return r.ok;
@@ -227,7 +245,7 @@
     const filled = [];
     const needsInput = [];
     let added = 0;
-    for (const kind of ['exp', 'edu']) {
+    for (const kind of ['exp', 'edu', 'lang']) {
       const items = itemsFor(kind, profile).slice(0, 8);
       if (!items.length) continue;
       let gs = groups(kind, JC.fields.scan());
@@ -260,8 +278,9 @@
             ok = false;
           }
           const d = JC.fields.describe(x.f);
-          if (ok) filled.push({ label: d.label, selector: d.selector, section: kind === 'exp' ? 'work experience' : 'education', entry: i + 1, part: x.part, value: x.part === 'current' ? (v === 'yes' ? 'Yes' : 'No') : v });
-          else if (!x.f.hasValue) needsInput.push(Object.assign(d, { reason: `${kind === 'exp' ? 'work experience' : 'education'} ${i + 1}: could not fill ${x.part}`, suggested: v }));
+          const secName = { exp: 'work experience', edu: 'education', lang: 'language' }[kind];
+          if (ok) filled.push({ label: d.label, selector: d.selector, section: secName, entry: i + 1, part: x.part, value: x.part === 'current' ? (v === 'yes' ? 'Yes' : 'No') : v });
+          else if (!x.f.hasValue) needsInput.push(Object.assign(d, { reason: `${secName} ${i + 1}: could not fill ${x.part}`, suggested: v }));
         }
       }
     }

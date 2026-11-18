@@ -41,6 +41,7 @@ const ROUTES = {
   'https://careers.acme-robotics.example/jobs/data-scientist': fx('employer-apply-modal.html'),
   'https://careers.acme-robotics.example/apply/multi-step': fx('multi-step.html'),
   'https://jobs.gem.com/acme/test-job': fx('gem-form.html'),
+  'https://job-boards.greenhouse.io/acme/jobs/dropdowns': fx('misc-dropdowns.html'),
   'https://careers.acme-robotics.example/apply/ai-questions': fx('ai-questions.html'),
   'https://www.ziprecruiter.com/jobs/v2/test-1click': fx('ziprecruiter-1click.html'),
   'https://acme.wd5.myworkdayjobs.com/en-US/careers/job/New-York-NY/ML-Engineer_123/apply/myExperience': fx('workday-experience.html'),
@@ -320,10 +321,15 @@ try {
       await bridge(p, () => window.jobCopilot.autofill());
       await p.waitForFunction(() => document.getElementById('seg').value === '' && document.getElementById('seg').hasAttribute('data-jc-needs-input'), null, { timeout: 8000 });
       assert.equal(await p.evaluate(() => em.value), 'ada@example.com');
-      const log = await ext.evaluate(async () => new Promise((r) => chrome.runtime.sendMessage({ type: 'jc:debug-get' }, r)));
       const tid = await ext.evaluate(async (url) => (await chrome.tabs.query({ url })).at(0)?.id, p.url());
-      const step = ((log && log.log) || []).find((e) => e.tabId === tid && e.detail && e.detail.step === 'on-device check applied');
-      assert.ok(step && step.detail.changed.length === 1, JSON.stringify(step));
+      let log = null;
+      for (let i = 0; i < 20; i++) {
+        log = await ext.evaluate(async () => new Promise((r) => chrome.runtime.sendMessage({ type: 'jc:debug-get' }, r)));
+        if ((log.log || []).some((e) => e.tabId === tid && e.detail && e.detail.step === 'on-device check applied')) break;
+        await p.waitForTimeout(250);
+      }
+      const steps = ((log && log.log) || []).filter((e) => e.tabId === tid && e.detail && e.detail.step === 'on-device check applied');
+      assert.ok(steps.some((st) => st.detail.changed.length === 1), JSON.stringify(steps));
     } finally {
       await ext.evaluate(() => chrome.storage.local.remove('__testNanoReply'));
     }
@@ -409,7 +415,7 @@ try {
   await check('Workday My Experience: adds and fills a block per job and school, dates typed, degree picked, skills added', async () => {
     const saved = await ext.evaluate(async () => (await chrome.storage.local.get('profile')).profile);
     const prof = Object.assign({}, saved, {
-      work: Object.assign({}, saved.work, { skills: 'Python, SQL, Rust' }),
+      work: Object.assign({}, saved.work, { skills: 'Python, SQL, Rust', languages: 'English (native), Spanish (intermediate)' }),
       experience: [
         { title: 'Senior Data Scientist', company: 'Acme Robotics', location: 'London', start: '2022-03', end: '', current: true, description: '• Built forecasting models.' },
         { title: 'Data Analyst', company: 'Beta Corp', location: 'Leeds', start: '2019-07', end: '2022-02', current: false, description: '• Dashboards.' },
@@ -434,6 +440,9 @@ try {
           degrees: q('[id$="--degree"]'),
           fields: q('[id$="--fieldOfStudy"]'),
           skills: q('#skill-pills li'),
+          langs: q('[id$="--language"]'),
+          native: q('[id$="--native"]'),
+          levels: [...document.querySelectorAll('.lang')].map((d) => [...d.querySelectorAll('button')].slice(1).map((b) => b.textContent)),
           web: document.getElementById('web').value,
         };
       });
@@ -446,7 +455,10 @@ try {
       assert.deepEqual(v.endYear, ['', '2022'], msg);
       assert.match(v.desc[0], /forecasting/);
       assert.deepEqual(v.schools, ['University of Oxford'], msg);
-      assert.deepEqual(v.degrees, ["Master's Degree"], msg);
+      assert.deepEqual(v.degrees, ['Masters'], msg);
+      assert.deepEqual(v.langs, ['English', 'Spanish'], msg);
+      assert.deepEqual(v.native, [true, false], msg);
+      assert.deepEqual(v.levels, [Array(5).fill('5 - Fluent'), Array(5).fill('3 - Intermediate')], msg);
       assert.deepEqual(v.fields, ['Statistics'], msg);
       assert.deepEqual(v.skills, ['Python (Programming Language)', 'SQL'], msg);
       assert.equal(v.web, '');
@@ -530,6 +542,21 @@ try {
     });
     assert.deepEqual(v, { fn: 'Ada', ln: 'Lovelace', em: 'ada@example.com', ph: '+1 555 0100', li: 'https://www.linkedin.com/in/ada', cv: 1, yes: true, submitted: false }, JSON.stringify(r.needsInput));
     assert.ok(r.needsInput.some((f) => /motivated/i.test(f.label)));
+  });
+
+  await check('dropdowns: type-to-search location ignores another open menu; long virtual list is scrolled; "Upload a file" under Resume/CV', async () => {
+    const saved = await ext.evaluate(async () => (await chrome.storage.local.get('profile')).profile);
+    await ext.evaluate(async (p) => chrome.storage.local.set({ profile: Object.assign({}, p, { education: Object.assign({}, p.education, { degree: 'M.S.' }) }) }), saved);
+    try {
+      const p = await open('https://job-boards.greenhouse.io/acme/jobs/dropdowns');
+      const r = await bridge(p, () => window.jobCopilot.autofill());
+      const v = await p.evaluate(() => ({ loc: loc.value, deg: deg.textContent, up: up.files.length }));
+      if (process.env.DEBUG) console.log(await p.evaluate(() => JSON.stringify(window.__locLog)));
+      assert.deepEqual(v, { loc: 'London, England, United Kingdom', deg: "Master's Degree", up: 1 }, JSON.stringify(v) + JSON.stringify(r.needsInput.map((f) => f.label + ": " + f.reason)));
+      assert.ok(!r.needsInput.some((f) => /location|degree|upload/i.test(f.label)), JSON.stringify(r.needsInput));
+    } finally {
+      await ext.evaluate(async (p) => chrome.storage.local.set({ profile: p }), saved);
+    }
   });
 
   await check('bridge: fillField answers a custom question', async () => {

@@ -75,9 +75,10 @@
     { key: 'timeZone', re: /\btime ?zone\b/ },
     { key: 'howDidYouHear', re: /^(source|candidate source|job source|recruiting source|referral source)$/ },
     { key: 'howDidYouHear', re: /\b(how did you (hear|find|learn)|where did you (hear|find|learn)|(referral|application|candidate) source|source of (application|referral)|how you heard)\b/, q: true },
-    { key: 'sexualOrientation', re: /\b(sexual orientation|lgbtq?)\b/, q: true },
+    { key: 'transgender', re: /\b(transgender|trans experience|gender identity (is|matches|differs)|cisgender)\b/, q: true },
+    { key: 'sexualOrientation', re: /\b(sexual orientation|lgbtq?\+?)\b/, q: true },
     { key: 'hispanicLatino', re: /\b(hispanic|latin[oax]|latine)\b/, q: true },
-    { key: 'race', re: /\b(race|racial|ethnicity|ethnic)\b/, q: true },
+    { key: 'race', re: /\b(races?|racial|ethnicit(y|ies)|ethnic|ethnic origin|ethnic background)\b/, q: true },
     { key: 'gender', re: /\b(gender|sex)\b/, q: true },
     { key: 'veteran', re: /\b(veteran|military|armed forces|protected veteran)\b/, q: true },
     { key: 'disability', re: /\bdisabilit/, q: true },
@@ -325,6 +326,41 @@
     return out.filter(Boolean);
   }
 
+  /** "English (native), Hindi (fluent), Telugu" -> [{ language, native, level }] */
+  function parseLanguages(text) {
+    return String(text || '')
+      .split(/[,;\n]+/)
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .slice(0, 6)
+      .map((s) => {
+        const m = s.match(/^(.+?)\s*(?:\(([^)]*)\)|[-–:]\s*(.+))?$/);
+        const language = (m ? m[1] : s).trim();
+        const lvl = ((m && (m[2] || m[3])) || '').trim().toLowerCase();
+        const native = /native|mother|first language/.test(lvl);
+        const level = native ? 'native' : /fluent|full|bilingual|professional/.test(lvl) ? 'fluent' : /advanced|proficient/.test(lvl) ? 'advanced' : /intermediate|conversational|working/.test(lvl) ? 'intermediate' : /basic|beginner|elementary|limited/.test(lvl) ? 'beginner' : '';
+        return { language, native, level };
+      });
+  }
+
+  /** How proficiency levels are offered: "5 - Fluent", "Native", "Advanced"… best first. */
+  function levelCandidates(level) {
+    switch (level) {
+      case 'native':
+        return ['Native', 'Native or Bilingual', 'Fluent', 'Expert', 'Advanced'];
+      case 'fluent':
+        return ['Fluent', 'Full Professional', 'Native or Bilingual', 'Expert', 'Advanced'];
+      case 'advanced':
+        return ['Advanced', 'Professional Working', 'Proficient', 'Fluent'];
+      case 'intermediate':
+        return ['Intermediate', 'Conversational', 'Limited Working', 'Working'];
+      case 'beginner':
+        return ['Beginner', 'Elementary', 'Basic', 'Classroom Study'];
+      default:
+        return [];
+    }
+  }
+
   function classifyField(f) {
     const type = (f.type || '').toLowerCase();
     if (['hidden', 'submit', 'button', 'reset', 'image', 'password', 'search'].includes(type)) return null;
@@ -427,10 +463,15 @@
         return timeZoneGuess();
       case 'howDidYouHearDetail':
         return profile.howDidYouHear || '';
-      default:
-        return get(profile, key);
+      default: {
+        const v = get(profile, key);
+        // Diversity questions left empty in the profile: decline, never guess.
+        if (!v && EEO_DEFAULT_DECLINE.has(key)) return JC.DECLINE || 'Decline to self-identify';
+        return v;
+      }
     }
   }
+  const EEO_DEFAULT_DECLINE = new Set(['gender', 'race', 'hispanicLatino', 'veteran', 'disability', 'sexualOrientation', 'transgender']);
 
   const YES = /^(yes|y|true|i am|i do|i have|i will|i can|i identify)\b(?!\s+not)/;
   const NO = /^(no|n|false|i am not|i'm not|i do not|i don't|i will not|i won't|not)\b/;
@@ -597,7 +638,7 @@
   // ------------------------------------------------------------ answer memory
   // Profile keys whose answers must never be remembered from a form (they live in the profile
   // already, are sensitive, or go stale).
-  const NEVER_REMEMBER = new Set(['consent', 'resume', 'coverLetter', 'gender', 'race', 'hispanicLatino', 'veteran', 'disability', 'sexualOrientation', 'desiredPay', 'currentPay', 'desiredSalary', 'desiredHourlyRate']);
+  const NEVER_REMEMBER = new Set(['consent', 'resume', 'coverLetter', 'transgender', 'gender', 'race', 'hispanicLatino', 'veteran', 'disability', 'sexualOrientation', 'desiredPay', 'currentPay', 'desiredSalary', 'desiredHourlyRate']);
 
   /** Values that look like personal identifiers or secrets: never stored. */
   function looksSensitive(v) {
@@ -695,7 +736,7 @@
     }
   }
 
-  JC.rules = { degreeCandidates, formerEmployerOf, formerEmployerAnswer, choosePhoneCode, dialCode, evidenceAnswer, experienceTerms, chooseResumeSource, sameValue, timeZoneCandidates, classifyField, valueForKey, chooseOption, matchSavedAnswer, mergeAnswers, isCompanySpecific, looksSensitive, NEVER_REMEMBER, humanize, norm, payPeriod, amounts, parseAmount, toNumberValue, emptyReason, LONG_LABEL };
+  JC.rules = { parseLanguages, levelCandidates, degreeCandidates, formerEmployerOf, formerEmployerAnswer, choosePhoneCode, dialCode, evidenceAnswer, experienceTerms, chooseResumeSource, sameValue, timeZoneCandidates, classifyField, valueForKey, chooseOption, matchSavedAnswer, mergeAnswers, isCompanySpecific, looksSensitive, NEVER_REMEMBER, humanize, norm, payPeriod, amounts, parseAmount, toNumberValue, emptyReason, LONG_LABEL };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = JC;
 })(typeof globalThis !== 'undefined' ? globalThis : self);

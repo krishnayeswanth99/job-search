@@ -12,7 +12,7 @@
   const JC = (root.JC = root.JC || {});
 
   const SKIP_TYPES = new Set(['file', 'password', 'hidden']);
-  const NEVER_ASK = new Set(['consent', 'gender', 'race', 'hispanicLatino', 'veteran', 'disability', 'sexualOrientation']);
+  const NEVER_ASK = new Set(['consent', 'transgender', 'gender', 'race', 'hispanicLatino', 'veteran', 'disability', 'sexualOrientation']);
 
   function questionsFrom(fields) {
     return (fields || [])

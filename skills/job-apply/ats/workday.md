@@ -40,6 +40,9 @@
   Location, I currently work here, From/To (typed into the month/year boxes), Role Description, School, Degree
   (matched to Workday's wording, e.g. "M.S." -> "Master's Degree"), Field of Study, and adds up to 10 skills to the
   Skills picker. Blocks that already have values are left alone.
+- **Languages:** from the profile's `work.languages` ("English (native), Spanish (intermediate)"): Add, Language,
+  the native box, and Comprehension / Overall / Reading / Speaking / Writing matched to Workday's "1 - Beginner" … "5 -
+  Fluent". Degree options such as "Masters" / "Bachelors" are matched from "M.S." / "B.Tech".
 - `jobCopilot.nextStep()` clicks **Save and Continue**. It never submits. In tabs opened from a job board (or after
   you clicked Apply), it's clicked automatically once a page is filled and nothing required is left for you.
 

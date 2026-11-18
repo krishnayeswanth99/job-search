@@ -28,7 +28,8 @@ Same shape as `extension/src/shared/profile-schema.js`. Top-level sections are `
 `education`, `authorization`, and `eeo`, plus `howDidYouHear`, `summary`, and `answers: [{ question, answer }]`.
 Work history and schools, newest first, for applications with repeatable sections (Workday "My Experience"):
 `experience: [{ title, company, location, start: "YYYY-MM", end: "YYYY-MM" or "", current, description }]` and
-`educationHistory: [{ school, degree, fieldOfStudy, start: "YYYY-MM", end: "YYYY-MM", gpa }]`.
+`educationHistory: [{ school, degree, fieldOfStudy, start: "YYYY-MM", end: "YYYY-MM", gpa }]`. Languages are
+`work.languages`, a comma-separated list such as `English (native), Hindi (fluent)`.
 EEO fields default to `"Decline to self-identify"`. A template is at `setup/assets/profile.template.json`.
 
 Pay: `work.desiredSalary` is **annual** and `work.desiredHourlyRate` is **hourly**. Both are plain numbers, in

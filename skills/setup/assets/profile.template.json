@@ -32,7 +32,8 @@
     "desiredSalary": "",
     "desiredHourlyRate": "",
     "salaryCurrency": "",
-    "skills": ""
+    "skills": "",
+    "languages": ""
   },
   "education": {
     "school": "",

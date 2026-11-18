@@ -250,7 +250,15 @@
     // An upload box with no readable label that takes PDF / Word files, on a form with no other
     // resume upload: the resume (a second unlabelled one is left alone, it may be a cover letter).
     if (!fields.some((f) => f.key === 'resume')) {
-      const docs = fields.filter((f) => f.type === 'file' && !f.key && /pdf|msword|wordprocessingml|\.docx?/i.test((f.el && f.el.accept) || ''));
+      // "Upload a file (5MB max)" under a "Resume/CV" heading (Workday My Experience) counts too.
+      const nearResume = (el) => {
+        for (let a = el && el.parentElement, up = 0; a && up < 6; a = a.parentElement, up++) {
+          const t = (a.getAttribute('aria-label') || '') + ' ' + (a.getAttribute('data-automation-id') || '') + ' ' + precedingText(a);
+          if (/\b(resume|résumé|cv|curriculum vitae)\b/i.test(t) && !/cover/i.test(t)) return true;
+        }
+        return false;
+      };
+      const docs = fields.filter((f) => f.type === 'file' && !f.key && (/pdf|msword|wordprocessingml|\.docx?/i.test((f.el && f.el.accept) || '') || nearResume(f.el)));
       if (docs.length && !/cover|letter|transcript|portfolio|writing sample/i.test(docs[0].label || '')) docs[0].key = 'resume';
     }
     for (let i = 1; i < fields.length; i++) {

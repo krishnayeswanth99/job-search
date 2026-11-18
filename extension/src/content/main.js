@@ -196,7 +196,7 @@
         case 'showField': {
           // The side panel's "Show" button: scroll to a field and flash it.
           const target = payload.selector && document.querySelector(payload.selector);
-          if (!target) return null;
+          if (!target) return isTop ? { ok: false, frame: location.href, error: 'That field is no longer on the page (the page changed). Click Autofill to refresh the list.' } : null;
           target.scrollIntoView({ block: 'center', behavior: 'smooth' });
           const old = target.style.boxShadow;
           target.style.boxShadow = '0 0 0 4px rgba(124,58,237,.6)';

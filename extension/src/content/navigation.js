@@ -70,18 +70,25 @@
     }
   }
 
-  function candidates(scope) {
+  function candidates(scope, forStart) {
     const rootEl = (scope && document.querySelector(scope)) || document;
     const els = [...rootEl.querySelectorAll('a[href], button, [role="button"], input[type="submit"], input[type="button"]')];
     return els.filter((el) => {
       const t = label(el);
       const aria = clean(el.getAttribute('aria-label') || '');
-      return ((t && t.length < 70 && APPLY_RE.test(t)) || (aria && /^(easy )?apply\b/i.test(aria))) && isVisible(el) && !el.closest('[aria-hidden="true"]');
+      if (!(((t && t.length < 70 && APPLY_RE.test(t)) || (aria && /^(easy )?apply\b/i.test(aria))) && isVisible(el) && !el.closest('[aria-hidden="true"]'))) return false;
+      // A form's own submit ("Apply", "Apply and save" under a form already on the page) would
+      // send the application: never a way in.
+      // (Only an application form counts: old sites wrap the whole page, search boxes and all, in one form.)
+      if (!forStart) return true;
+      const form = el.closest('form');
+      if (form && form.querySelector('input[type="file"], textarea, input[type="email"], input[type="tel"]') && form.querySelectorAll('input:not([type="hidden"]), textarea, select').length >= 3) return false;
+      return true;
     });
   }
 
-  function applyInfo(scope) {
-    const list = candidates(scope);
+  function applyInfo(scope, forStart) {
+    const list = candidates(scope, forStart);
     if (!list.length) {
       if (document.querySelector('#indeedApplyButton, .indeed-apply-button')) return { text: 'Apply now', kind: 'easy-apply', href: '', target: '', newTab: false, selector: ref(document.querySelector('#indeedApplyButton, .indeed-apply-button')) };
       return null;
@@ -446,7 +453,7 @@
       markApplying();
       return { ok: true, already: true, form: true, steps: trace };
     }
-    const a = applyInfo();
+    const a = applyInfo(null, true); // never a form's own submit
     if (!a) {
       note('no Apply button on this page');
       return { ok: false, reason: 'No Apply button found on this page.', steps: trace };
@@ -576,7 +583,7 @@
         if (JC.fields.looksLikeApplication()) return; // a button inside the form itself
         // The form's own submit button ("Apply" at the bottom of a filled form) isn't a start.
         const form = b.closest('form');
-        if ((b.type === 'submit' || form) && form && form.querySelectorAll('input:not([type="hidden"]), textarea, select').length >= 3) return;
+        if (form && form.querySelector('input[type="file"], textarea, input[type="email"], input[type="tel"]') && form.querySelectorAll('input:not([type="hidden"]), textarea, select').length >= 3) return;
         try {
           const { settings } = await chrome.storage.local.get('settings');
           if (settings && (settings.autoContinue === false || settings.autoFillOpened === false)) return;

@@ -18,7 +18,7 @@
     work: ['currentTitle', 'currentCompany'],
     education: ['school', 'degree', 'fieldOfStudy'],
   };
-  const SENSITIVE = /(gender|sex|race|ethnic|hispanic|latin|veteran|military|disabilit|orientation|pronoun|birth|dob|age\b|ssn|social security|national id|passport|password|salary|compensation|pay\b|religion|citizenship|criminal|convict)/i;
+  const SENSITIVE = /(transgender|gender|sex|race|ethnic|hispanic|latin|veteran|military|disabilit|orientation|pronoun|birth|dob|age\b|ssn|social security|national id|passport|password|salary|compensation|pay\b|religion|citizenship|criminal|convict)/i;
 
   let profile = null;
   let learned = {};

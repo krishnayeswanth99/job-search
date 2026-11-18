@@ -1,0 +1,66 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Apply</title>
+<style>#deg-list{height:96px;overflow-y:auto;position:relative;border:1px solid #ccc}#deg-list li{height:24px;position:absolute;left:0;right:0;list-style:none}</style></head>
+<body>
+<form id="app">
+  <label for="fn">First Name</label><input id="fn" name="first_name">
+  <label for="em">Email</label><input id="em" type="email" name="email">
+  <div class="field"><label id="loc-l" for="loc">Location (City)</label>
+    <input id="loc" role="combobox" aria-autocomplete="list" aria-labelledby="loc-l" aria-expanded="false"></div>
+  <!-- Another question's menu that is already open on the page -->
+  <div class="field"><label>Are you open to working onsite?</label>
+    <div role="listbox" id="onsite"><div role="option">Yes</div><div role="option">No</div><div role="option">N/A - Within Commuting Distance</div></div></div>
+  <div class="field"><label id="deg-l">Degree</label><button type="button" id="deg" aria-haspopup="listbox" aria-labelledby="deg-l">Select One</button><div id="deg-pop"></div></div>
+  <h3>Resume/CV</h3>
+  <div data-automation-id="formField-resume"><label for="up">Upload a file (5MB max)</label><input type="file" id="up"></div>
+</form>
+<div id="portal"></div>
+<script>
+  // Location: type to search; the menu is a portal at the end of the page and closes on pick.
+  const loc = document.getElementById('loc');
+  const PLACES = ['London, England, United Kingdom', 'Londonderry, New Hampshire, United States', 'Jersey City, New Jersey, United States'];
+  function menu(q) {
+    const portal = document.getElementById('portal');
+    portal.innerHTML = '';
+    const hits = PLACES.filter((p) => p.toLowerCase().includes(q.toLowerCase().split(',')[0]));
+    if (!hits.length) return;
+    const m = document.createElement('div');
+    m.className = 'select__menu';
+    for (const h of hits) {
+      const o = document.createElement('div');
+      o.setAttribute('role', 'option');
+      o.className = 'select__option';
+      o.textContent = h;
+      o.addEventListener('click', () => { window.__locLog.push('pick:' + h); loc.value = h; portal.innerHTML = ''; });
+      m.appendChild(o);
+    }
+    portal.appendChild(m);
+  }
+  window.__locLog = [];
+  loc.addEventListener('input', () => { window.__locLog.push('input:' + loc.value); menu(loc.value); });
+  loc.addEventListener('focus', () => window.__locLog.push('focus'));
+  loc.addEventListener('click', () => loc.value && menu(loc.value));
+  // Degree: a virtual list that only renders the options in view.
+  const DEG = ['Select One'].concat(Array.from({ length: 30 }, (_, i) => `Certificate ${i + 1}`), ["Bachelor's Degree", "Master's Degree", 'Doctorate']);
+  const btn = document.getElementById('deg');
+  btn.addEventListener('click', () => {
+    const pop = document.getElementById('deg-pop');
+    pop.innerHTML = '<ul role="listbox" id="deg-list"><div style="height:' + DEG.length * 24 + 'px"></div></ul>';
+    const list = document.getElementById('deg-list');
+    const draw = () => {
+      list.querySelectorAll('li').forEach((li) => li.remove());
+      const first = Math.floor(list.scrollTop / 24);
+      for (let i = first; i < Math.min(DEG.length, first + 5); i++) {
+        const li = document.createElement('li');
+        li.setAttribute('role', 'option');
+        li.style.top = i * 24 + 'px';
+        li.textContent = DEG[i];
+        li.addEventListener('click', () => { btn.textContent = DEG[i]; pop.innerHTML = ''; });
+        list.appendChild(li);
+      }
+    };
+    list.addEventListener('scroll', draw);
+    draw();
+  });
+</script>
+</body></html>

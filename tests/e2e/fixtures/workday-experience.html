@@ -13,6 +13,11 @@
   <div id="ed-list"></div>
   <button type="button" data-automation-id="add-button" id="ed-add">Add</button>
 </div>
+<div role="group" aria-labelledby="la-h">
+  <h3 id="la-h">Languages</h3>
+  <div id="la-list"></div>
+  <button type="button" data-automation-id="add-button" id="la-add">Add</button>
+</div>
 <div role="group">
   <h3>Skills</h3>
   <div data-automation-id="formField-skills">
@@ -51,7 +56,31 @@
     d.querySelectorAll('[role="spinbutton"]').forEach(spin);
     document.getElementById('we-add').textContent = 'Add Another';
   });
-  const DEGREES = ['Select One', 'High School Diploma', "Associate's Degree", "Bachelor's Degree", "Master's Degree", 'Doctorate'];
+  const DEGREES = ['Select One', 'GED', 'High School', 'Associates', 'Bachelors', 'Masters', 'Doctorate'];
+  // Languages (Workday): language, native box, and five proficiency dropdowns.
+  function listbox(d, btn, items) {
+    btn.addEventListener('click', () => {
+      const pop = btn.nextElementSibling;
+      pop.innerHTML = '<ul role="listbox">' + items.map((t) => `<li role="option">${t}</li>`).join('') + '</ul>';
+      pop.querySelectorAll('li').forEach((li) => li.addEventListener('click', () => { btn.textContent = li.textContent; pop.innerHTML = ''; }));
+    });
+  }
+  const LEVELS = ['Select One', '1 - Beginner', '2 - Classroom Study', '3 - Intermediate', '4 - Advanced', '5 - Fluent'];
+  document.getElementById('la-add').addEventListener('click', () => {
+    const id = 'language-' + (n += 5);
+    const d = document.createElement('div');
+    d.className = 'lang';
+    const lv = (name, hex) => `<div data-automation-id="formField-${hex}"><label id="${id}-${hex}-l">${name}</label><button type="button" aria-haspopup="listbox" id="${id}--${hex}" aria-labelledby="${id}-${hex}-l">Select One</button><div class="pop"></div></div>`;
+    d.innerHTML = `<h4>Language ${document.querySelectorAll('#la-list > div').length + 1}</h4>
+      <div data-automation-id="formField-language"><label id="${id}-ll">Language</label><button type="button" aria-haspopup="listbox" id="${id}--language" aria-labelledby="${id}-ll">Select One</button><div class="pop"></div></div>
+      <div data-automation-id="formField-native"><label for="${id}--native">I am fluent in this language (native)</label><input type="checkbox" id="${id}--native"></div>
+      ${lv('Comprehension', '6362a1')}${lv('Overall', '6362a2')}${lv('Reading', '6362a3')}${lv('Speaking', '6362a4')}${lv('Writing', '6362a5')}`;
+    document.getElementById('la-list').appendChild(d);
+    const btns = d.querySelectorAll('button');
+    listbox(d, btns[0], ['Select One', 'Afrikaans', 'English', 'Hindi', 'Spanish', 'Telugu']);
+    for (const b of [...btns].slice(1)) listbox(d, b, LEVELS);
+    document.getElementById('la-add').textContent = 'Add Another';
+  });
   document.getElementById('ed-add').addEventListener('click', () => {
     const id = 'education-' + (n += 3);
     const d = document.createElement('div');

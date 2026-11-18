@@ -55,6 +55,7 @@
         ['desiredHourlyRate', 'Desired hourly rate (plain number, e.g. 75)'],
         ['salaryCurrency', 'Salary currency (e.g. USD)'],
         ['skills', 'Key skills (comma-separated)'],
+        ['languages', 'Languages you speak (e.g. English (native), Hindi (fluent), Spanish (intermediate))'],
       ],
     },
     {

@@ -92,7 +92,9 @@
       ? [value].concat(HEAR_FALLBACKS)
       : key === 'timeZone'
         ? R.timeZoneCandidates(value, new Date().getTimezoneOffset())
-        : [value];
+        : key === 'degree'
+          ? R.degreeCandidates(value)
+          : [value];
   let overrideSource = null; // 'ai' when the on-device AI's answers are filled
   let userCountry = ''; // set per autofill run: picks between countries sharing a dialing code
   function chooseFrom(opts, desiredList, key) {
@@ -308,6 +310,8 @@
       } catch (e) {
         res = { ok: false, seen: [], error: e.message };
       }
+      // Let go of the field, so the next dropdown can't mistake it for its search box.
+      if (document.activeElement && document.activeElement !== document.body && document.activeElement.blur) document.activeElement.blur();
       if (res.ok) filled.push(Object.assign(d, { source: r.source, profileKey: f.key, chosen: res.chosen }));
       else
         needsInput.push(
@@ -368,7 +372,7 @@
       // work-history blocks): the on-device AI checks each against your data and flags doubtful ones.
       verify: filled
         .filter((f) => f.selector && f.type !== 'file' && !CONSTANT_KEYS.has(f.profileKey) && !EEO_KEYS.has(f.profileKey))
-        .filter((f) => f.source !== 'profile' || f.chosen || (f.options && f.options.length) || /^(work experience|education)$/.test(f.profileKey || ''))
+        .filter((f) => f.source !== 'profile' || f.chosen || (f.options && f.options.length) || /^(work experience|education|language)$/.test(f.profileKey || ''))
         .map((f) => ({ selector: f.selector, label: f.label, type: f.type, options: (f.options || []).slice(0, 25), value: String(f.chosen || f.value || '').slice(0, 400), source: f.source }))
         .filter((f) => f.value)
         .slice(0, 25),
@@ -376,7 +380,7 @@
   }
 
   // Keys whose value doesn't come from the applicant's data (nothing for a model to check).
-  const EEO_KEYS = new Set(['gender', 'race', 'hispanicLatino', 'veteran', 'disability', 'sexualOrientation', 'pronouns', 'consent']);
+  const EEO_KEYS = new Set(['transgender', 'gender', 'race', 'hispanicLatino', 'veteran', 'disability', 'sexualOrientation', 'pronouns', 'consent']);
   const CONSTANT_KEYS = new Set(['resumeSource', 'phoneType', 'timeZone', 'todayDate', 'todayMonth', 'todayDay', 'todayYear', 'howDidYouHear', 'howDidYouHearDetail']);
   function reviewItem(f, d) {
     return { ref: d.ref, selector: d.selector, label: d.label, type: d.type, options: d.options, maxLength: d.maxLength, profileKey: f.key, weak: !!(f.learned || f.via === 'attribute') };
@@ -584,7 +588,11 @@
       return all.filter((o) => !all.some((x) => x !== o && o.contains(x) && JC.dom.clean(x.innerText) === JC.dom.clean(o.innerText)));
     };
     let opts = collect();
-    const search = (el.tagName === 'INPUT' && !el.readOnly && el.type !== 'hidden' ? el : null) || document.querySelector('.select2-search__field, input[role="searchbox"], input[aria-autocomplete="list"]:focus, [class*="dropdown" i] input[type="text"]:not([readonly])');
+    // The dropdown's own search box: the field itself, or one that opened with its menu. Never
+    // another form field that happens to have focus (that would type into the wrong question).
+    const ownSearch = (x) => x && x !== el && !(x.hasAttribute('data-jc-ref') && x.getAttribute('data-jc-ref') !== el.getAttribute('data-jc-ref') && !x.closest('[role="listbox"], [class*="menu" i], [class*="dropdown" i], .select2-container'));
+    const fallback = document.querySelector('.select2-search__field, input[role="searchbox"], input[aria-autocomplete="list"]:focus, [class*="dropdown" i] input[type="text"]:not([readonly])');
+    const search = (el.tagName === 'INPUT' && !el.readOnly && el.type !== 'hidden' ? el : null) || (ownSearch(fallback) ? fallback : null);
     const texts = () => opts.map((o) => ({ text: JC.dom.clean(o.innerText), value: o.getAttribute('data-value') || o.getAttribute('id') || '' }));
     const canSearch = () => search && JC.dom.isVisible(search);
     // 1) The exact value (e.g. "LinkedIn"), on screen or found by typing it. Typing searches every
@@ -618,6 +626,22 @@
         i = chooseFrom(texts(), desiredList, key);
       }
     }
+    // Long lists that only render what's in view (Workday's Degree, country lists): scroll through.
+    const opened = opts.filter((o) => !before.has(o));
+    if (i < 0 && opened.length) {
+      let box = opened[opened.length - 1].parentElement;
+      while (box && box !== document.body && !(box.scrollHeight > box.clientHeight + 8 && /(auto|scroll)/.test(getComputedStyle(box).overflowY))) box = box.parentElement;
+      if (box && box !== document.body) {
+        for (let step = 0; step < 25 && i < 0; step++) {
+          const before = box.scrollTop;
+          box.scrollTop += Math.max(80, box.clientHeight * 0.8);
+          await sleep(160);
+          opts = collect();
+          i = chooseFrom(texts(), desiredList, key);
+          if (box.scrollTop === before) break; // at the bottom
+        }
+      }
+    }
     const seen = texts().map((t) => t.text).filter(Boolean);
     const escape = () => {
       // Inside a modal, Escape or a click outside closes the modal itself ("Are you sure you want
@@ -643,9 +667,14 @@
       for (let level = 0; level < 3; level++) {
         const prev = new Set(texts().map((t) => t.text));
         path.push(JC.dom.clean(opts[idx].innerText));
+        // Where this menu lives: after the pick, only options there can be its next level (another
+        // question's open menu elsewhere on the page doesn't count).
+        const chain = [];
+        for (let a = opts[idx].parentElement; a && a !== document.body && chain.length < 8; a = a.parentElement) chain.push(a);
         fireMouse(opts[idx]);
         await sleep(level ? 350 : 450);
-        opts = collect();
+        const scope = chain.find((a) => a.isConnected);
+        opts = scope ? collect().filter((o) => scope.contains(o)) : [];
         const now = texts();
         const added = now.filter((t) => t.text && !prev.has(t.text));
         if (!now.length || added.length < Math.max(1, now.length / 2)) {

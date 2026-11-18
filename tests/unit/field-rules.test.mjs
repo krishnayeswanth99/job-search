@@ -269,3 +269,23 @@ test('degree candidates match how dropdowns name degrees', () => {
   assert.ok(c('MBA').includes('Master of Business Administration'));
   assert.equal(c('B.S.')[0], 'B.S.');
 });
+
+test('diversity questions: transgender and "ethnicities" are recognised; empty answers decline', () => {
+  assert.equal(key({ label: 'Are you a person of transgender experience?', type: 'radio' }), 'transgender');
+  assert.equal(key({ label: 'Please select up to 2 ethnicities that you most closely identify with.', type: 'checkbox' }), 'race');
+  const p = JC.normalizeProfile({ eeo: { sexualOrientation: '' } });
+  assert.equal(valueForKey(p, 'sexualOrientation'), 'Decline to self-identify');
+  assert.equal(valueForKey(p, 'transgender'), 'Decline to self-identify');
+});
+
+test('languages and Workday-style degree / level wording', () => {
+  assert.equal(JSON.stringify(JC.rules.parseLanguages('English (native), Hindi (fluent), Telugu').map((l) => [l.language, l.native, l.level])), JSON.stringify([['English', true, 'native'], ['Hindi', false, 'fluent'], ['Telugu', false, '']]));
+  const o = (...t) => t.map((x) => ({ text: x, value: x }));
+  const pick = (opts, list) => list.map((d) => chooseOption(opts, d)).find((i) => i >= 0);
+  const wdDeg = o('Select One', 'GED', 'High School', 'Associates', 'Bachelors', 'Masters', 'Doctorate');
+  assert.equal(wdDeg[pick(wdDeg, JC.rules.degreeCandidates('Master of Science'))].text, 'Masters');
+  assert.equal(wdDeg[pick(wdDeg, JC.rules.degreeCandidates('B.Tech'))].text, 'Bachelors');
+  const lv = o('Select One', '1 - Beginner', '2 - Classroom Study', '3 - Intermediate', '4 - Advanced', '5 - Fluent');
+  assert.equal(lv[pick(lv, JC.rules.levelCandidates('native'))].text, '5 - Fluent');
+  assert.equal(lv[pick(lv, JC.rules.levelCandidates('intermediate'))].text, '3 - Intermediate');
+});

@@ -21,8 +21,10 @@
 
   // Ready-made settings for common servers (the model is a suggestion; use any you have).
   const PRESETS = {
-    ollama: { label: 'Ollama (this computer)', baseUrl: 'http://localhost:11434/v1', model: 'qwen2.5:7b-instruct' },
+    'ollama-small': { label: 'Ollama, small model (8 GB laptops)', baseUrl: 'http://localhost:11434/v1', model: 'qwen2.5:3b-instruct' },
+    ollama: { label: 'Ollama (16 GB or more)', baseUrl: 'http://localhost:11434/v1', model: 'qwen2.5:7b-instruct' },
     lmstudio: { label: 'LM Studio (this computer)', baseUrl: 'http://localhost:1234/v1', model: 'qwen2.5-7b-instruct' },
+    gemini: { label: 'Google Gemini API (free tier, key from aistudio.google.com)', baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai', model: 'gemini-2.5-flash' },
     openrouter: { label: 'OpenRouter', baseUrl: 'https://openrouter.ai/api/v1', model: 'meta-llama/llama-3.1-8b-instruct' },
     groq: { label: 'Groq', baseUrl: 'https://api.groq.com/openai/v1', model: 'llama-3.1-8b-instant' },
     openai: { label: 'OpenAI', baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },

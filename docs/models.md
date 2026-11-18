@@ -17,12 +17,34 @@ Pick the model in **Options → AI model**. **Test the model** sends a one-line 
 |---|---|---|---|---|
 | **Chrome's on-device AI (Gemini Nano)** (default) | free | never leaves your computer | fine for checks and short answers, weak for tailoring | none (Chrome downloads it once) |
 | **Ollama / LM Studio** on your computer | free | never leaves your computer | good with a 7-8B instruct model | install + one setting (below) |
-| **OpenRouter, Groq, OpenAI…** | per use | sent to that service | good to excellent | API key |
+| **Google Gemini API, Groq, OpenRouter** | free tiers available | sent to that service | good to excellent | API key |
+| **OpenAI and other paid APIs** | per use | sent to that service | good to excellent | API key |
 | **Claude** (Anthropic API) | per use | sent to Anthropic | excellent, especially for tailoring | API key |
 
 Never sent to any model: diversity answers (gender, race, veteran, disability, orientation), signatures, passwords.
 Sent: your profile (name, contact, links, work history and details, schools, skills, languages, saved answers), the
 resume lines relevant to the questions, and the job description.
+
+## Small laptops (8 GB, e.g. MacBook Air M2 8 GB)
+
+Memory is shared by macOS, Chrome and the model, so:
+
+- **Gemini Nano** may not be offered on 8 GB machines. Check `chrome://on-device-internals`: it shows whether the model
+  is ready, downloading or not supported on this device.
+- **Ollama:** use a ~3B model; 7-8B models need ~5 GB and make an 8 GB Mac swap while Chrome is open.
+
+  | Model | Memory | Good for |
+  |---|---|---|
+  | `qwen2.5:3b-instruct` (preset "Ollama, small model") | ~2 GB | yes/no and short answers, checks |
+  | `llama3.2:3b` | ~2 GB | similar |
+  | `phi3.5` | ~2.3 GB | a bit better reasoning, slower |
+
+  Fine for answering and checking; tailored resumes and cover letters are noticeably better with a cloud model.
+- **Cloud with no load on your Mac:** the *Google Gemini API* preset (free tier, key from aistudio.google.com), Groq
+  (free tier), OpenRouter models ending in `:free`, or Claude Haiku (cents per day). These receive your profile, the
+  relevant resume lines and the job description.
+- A good split: a small local model day to day, and switch to a cloud model when you click **Tailor resume & cover
+  letter**.
 
 ## Chrome's on-device AI (Gemini Nano)
 

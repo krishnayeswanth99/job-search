@@ -46,3 +46,10 @@ forms.
 - When **you** click Apply on an employer page yourself, the tab becomes an application tab: the same choices are
   taken, and each step is autofilled as it appears. A tab the site opens right after (an ATS in a new tab) counts too.
 
+## Forms without linked labels (Gem, custom career sites)
+- Label text that sits above the box with no `<label for>`, id, name or aria-label is used as the label (the nearest
+  short text before the field's wrapper).
+- Radio buttons without a `name` are grouped by the wrapper they share, and the question above them is the label.
+- An unlabelled upload box that takes PDF/Word files is the resume when the form has no other resume upload.
+- The form's own submit button (for example "Apply" at the bottom) is never taken for "start the application".
+

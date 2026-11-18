@@ -40,6 +40,7 @@ const ROUTES = {
   'https://acme.wd5.myworkdayjobs.com/en-US/careers/job/New-York-NY/ML-Engineer_123/apply/questions?v=2': fx('workday-prompt.html'),
   'https://careers.acme-robotics.example/jobs/data-scientist': fx('employer-apply-modal.html'),
   'https://careers.acme-robotics.example/apply/multi-step': fx('multi-step.html'),
+  'https://jobs.gem.com/acme/test-job': fx('gem-form.html'),
   'https://careers.acme-robotics.example/apply/ai-questions': fx('ai-questions.html'),
   'https://www.ziprecruiter.com/jobs/v2/test-1click': fx('ziprecruiter-1click.html'),
   'https://acme.wd5.myworkdayjobs.com/en-US/careers/job/New-York-NY/ML-Engineer_123/apply/myExperience': fx('workday-experience.html'),
@@ -509,6 +510,26 @@ try {
     } finally {
       await ext.evaluate(async (s) => { await chrome.storage.local.remove('__testNanoReply'); await chrome.storage.local.set({ resumeText: s.resumeText || '' }); }, saved);
     }
+  });
+
+  await check('Gem-style form: labels that are just text above the box, name-less radios, unlabelled resume drop zone', async () => {
+    const p = await open('https://jobs.gem.com/acme/test-job');
+    const d = await bridge(p, () => window.jobCopilot.detect());
+    assert.equal(d.pageType, 'application', JSON.stringify(d));
+    const scan = await bridge(p, () => window.jobCopilot.scanForm());
+    const labels = scan.fields.map((f) => [f.label, f.profileKey || null, f.type]);
+    assert.ok(labels.some(([l, k]) => l === 'First name' && k === 'firstName'), JSON.stringify(labels));
+    const auth = scan.fields.find((f) => /authorized/i.test(f.label));
+    assert.ok(auth && auth.type === 'radio' && auth.options.join('|') === 'Yes|No', JSON.stringify(labels));
+    // Plain autofill (the popup's): the bridge only writes on known job sites.
+    const tid = await ext.evaluate(async (url) => (await chrome.tabs.query({ url })).at(0)?.id, p.url());
+    const r = await ext.evaluate(async (tabId) => chrome.runtime.sendMessage({ type: 'jc:popup', tabId, cmd: 'autofill', payload: {} }), tid);
+    const v = await p.evaluate(() => {
+      const q = (t) => document.querySelector(`[data-t="${t}"]`);
+      return { fn: q('fn').value, ln: q('ln').value, em: q('em').value, ph: q('ph').value, li: q('li').value, cv: q('cv').files.length, yes: document.getElementById('r-yes').checked, submitted: window.__submitted };
+    });
+    assert.deepEqual(v, { fn: 'Ada', ln: 'Lovelace', em: 'ada@example.com', ph: '+1 555 0100', li: 'https://www.linkedin.com/in/ada', cv: 1, yes: true, submitted: false }, JSON.stringify(r.needsInput));
+    assert.ok(r.needsInput.some((f) => /motivated/i.test(f.label)));
   });
 
   await check('bridge: fillField answers a custom question', async () => {

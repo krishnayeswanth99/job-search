@@ -7,7 +7,7 @@
 (function (root) {
   const JC = (root.JC = root.JC || {});
 
-  JC.VERSION = '0.31.0';
+  JC.VERSION = '0.32.0';
   JC.BRIDGE_CHANNEL = 'job-copilot';
 
   /**
@@ -47,7 +47,7 @@
     'smartrecruiters.com', 'icims.com', 'jobvite.com', 'workable.com', 'bamboohr.com',
     'recruitee.com', 'breezy.hr', 'teamtailor.com', 'personio.de', 'personio.com',
     'successfactors.com', 'successfactors.eu', 'taleo.net', 'oraclecloud.com', 'dover.com',
-    'rippling-ats.com', 'ats.rippling.com', 'jazzhr.com', 'applytojob.com', 'paylocity.com',
+    'rippling-ats.com', 'ats.rippling.com', 'jobs.gem.com', 'jazzhr.com', 'applytojob.com', 'paylocity.com',
   ];
 
   JC.DEFAULT_SETTINGS = {

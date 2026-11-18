@@ -574,6 +574,9 @@
         if (portal && (portal.aggregator || BOARDS.has(portal.id))) return;
         if (!b || !APPLY_RE.test(label(b)) || EASY_RE.test(label(b)) || /^submit/i.test(label(b))) return;
         if (JC.fields.looksLikeApplication()) return; // a button inside the form itself
+        // The form's own submit button ("Apply" at the bottom of a filled form) isn't a start.
+        const form = b.closest('form');
+        if ((b.type === 'submit' || form) && form && form.querySelectorAll('input:not([type="hidden"]), textarea, select').length >= 3) return;
         try {
           const { settings } = await chrome.storage.local.get('settings');
           if (settings && (settings.autoContinue === false || settings.autoFillOpened === false)) return;

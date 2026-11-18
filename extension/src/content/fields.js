@@ -74,11 +74,34 @@
         break;
       }
     }
+    // Labels that are just text above the field, not linked to it (Gem, many custom forms):
+    // the nearest short text before the field's wrapper.
+    if (!tries.length) {
+      const t = precedingText(el);
+      if (t) tries.push(t);
+    }
     if (el.placeholder) tries.push(clean(el.placeholder));
     const best = tries
       .map((t) => t.replace(/\s+(select one|select|choose one)(\s+required)?\s*$/i, '').replace(/\s*\*\s*$/, '').trim())
       .find((t) => t && t.length <= 300);
     return best || '';
+  }
+
+  /**
+   * The nearest short text that comes before `node`: a previous sibling of the node or of one of its
+   * wrappers (up to five levels up) that holds no form controls itself.
+   */
+  function precedingText(node) {
+    let a = node;
+    for (let up = 0; up < 6 && a && a !== document.body; up++, a = a.parentElement) {
+      let prev = a.previousElementSibling;
+      for (let i = 0; i < 3 && prev; i++, prev = prev.previousElementSibling) {
+        if (prev.matches('input, select, textarea, button') || prev.querySelector('input:not([type="hidden"]), select, textarea')) break;
+        const t = textOf(prev);
+        if (t && t.length >= 2 && t.length <= 200) return t;
+      }
+    }
+    return '';
   }
 
   function isRequired(el, label) {
@@ -115,6 +138,23 @@
         if (!vis || !isVisible(vis)) continue;
       }
 
+      // Radios without a name (Gem and other custom forms): grouped by the wrapper they share.
+      if (type === 'radio' && !el.name) {
+        let c = el.parentElement;
+        for (let up = 0; up < 6 && c && c.querySelectorAll('input[type="radio"]').length < 2; up++) c = c.parentElement;
+        if (c && c.querySelectorAll('input[type="radio"]').length >= 2) {
+          const k = 'box|' + ref(c) + '|radio';
+          const g = groups.get(k);
+          if (g) {
+            g.els.push(el);
+            continue;
+          }
+          const entry = { type, tag: 'input', name: '', els: [el], el, box: c };
+          groups.set(k, entry);
+          out.push(entry);
+          continue;
+        }
+      }
       if ((type === 'radio' || type === 'checkbox') && el.name) {
         const g = groups.get(el.name + '|' + type);
         if (g) {
@@ -156,6 +196,7 @@
         const container = el.closest('.field, .application-question, [data-automation-id^="formField"], [class*="fieldEntry"], .form-group, .question, [role="radiogroup"], [role="group"]');
         f.label =
           (fs && textOf(fs.querySelector('legend'))) ||
+          (f.box && !fs && precedingText(f.box)) ||
           (container && textOf(container.querySelector('label:not(:has(input)), legend, .application-label, [class*="label" i], p'))) ||
           (el.closest('[role="radiogroup"], [role="group"]') && clean(el.closest('[role="radiogroup"], [role="group"]').getAttribute('aria-label'))) ||
           labelFor(el);
@@ -206,6 +247,12 @@
 
   /** Labels that only make sense next to the field before them: "Type" after a phone number. */
   function contextKeys(fields) {
+    // An upload box with no readable label that takes PDF / Word files, on a form with no other
+    // resume upload: the resume (a second unlabelled one is left alone, it may be a cover letter).
+    if (!fields.some((f) => f.key === 'resume')) {
+      const docs = fields.filter((f) => f.type === 'file' && !f.key && /pdf|msword|wordprocessingml|\.docx?/i.test((f.el && f.el.accept) || ''));
+      if (docs.length && !/cover|letter|transcript|portfolio|writing sample/i.test(docs[0].label || '')) docs[0].key = 'resume';
+    }
     for (let i = 1; i < fields.length; i++) {
       const f = fields[i];
       const prev = fields[i - 1];

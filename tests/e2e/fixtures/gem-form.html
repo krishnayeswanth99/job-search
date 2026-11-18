@@ -1,0 +1,41 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Machine Learning Engineer (All Levels)</title></head>
+<body>
+<div class="formContainer-25"><div class="container-37"><div class="formLayout-43">
+<form class="form-38" id="gem" novalidate>
+  <div class="flex-30"><span class="bodyImportant-47">First name<span class="requiredAsterisk-76"> *</span></span>
+    <div class="textField-77"><div class="inputWrapper-80"><div class="inputElementAndIconWrapper-81"><input class="input-84" type="text" data-t="fn"></div></div></div></div>
+  <div class="flex-30"><span class="bodyImportant-47">Last name<span class="requiredAsterisk-76"> *</span></span>
+    <div class="textField-77"><div class="inputWrapper-80"><div class="inputElementAndIconWrapper-81"><input class="input-84" type="text" data-t="ln"></div></div></div></div>
+  <div class="flex-30"><span class="bodyImportant-47">Email<span class="requiredAsterisk-76"> *</span></span>
+    <div class="textField-77"><div class="inputWrapper-80"><div class="inputElementAndIconWrapper-81"><input class="input-84" type="text" data-t="em"></div></div></div></div>
+  <div class="flex-30"><span class="bodyImportant-47">Phone number<span class="requiredAsterisk-76"> *</span></span>
+    <div class="textField-77"><div class="inputWrapper-80"><div class="inputElementAndIconWrapper-81"><input class="input-84" type="text" data-t="ph"></div></div></div></div>
+  <div class="flex-30"><span class="bodyImportant-47">LinkedIn profile</span>
+    <div class="textField-77"><div class="inputWrapper-80"><div class="inputElementAndIconWrapper-81"><input class="input-84" type="text" data-t="li"></div></div></div></div>
+  <div class="flex-30"><span class="bodyImportant-47">Resume<span class="requiredAsterisk-76"> *</span></span>
+    <div><div><div class="container-105" role="presentation" tabindex="0"><input accept="application/pdf,.pdf,application/msword,.doc,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.docx" tabindex="-1" type="file" style="display: none;" data-t="cv"><div class="promptContainer-107"><span class="promptText-108">Click to upload or drag and drop here</span></div></div></div></div></div>
+  <div class="flex-30"><span class="bodyImportant-47">What motivated you to apply to Casap?<span class="requiredAsterisk-111"> *</span></span>
+    <div class="textareaField-112"><div class="growWrap-113"><textarea class="textarea-114" data-t="why"></textarea></div></div></div>
+  <div class="flex-30"><div class="flex-30"><span class="bodyImportant-47">Are you legally authorized to work in the United States?<span> *</span></span>
+    <div class="flex-30">
+      <div><input class="radioInput-119" id="r-yes" type="radio"><label for="r-yes" class="label-120"><span class="outerCircle-122"></span><div class="body-48">Yes</div></label></div>
+      <div><input class="radioInput-119" id="r-no" type="radio"><label for="r-no" class="label-120"><span class="outerCircle-122"></span><div class="body-48">No</div></label></div>
+    </div></div></div>
+  <div class="flex-30"><div class="flex-30"><span class="bodyImportant-47">Which office would you work from?<span> *</span></span>
+    <div class="flex-30">
+      <div><input class="radioInput-119" id="o-sf" type="radio"><label for="o-sf" class="label-120"><div class="body-48">San Francisco</div></label></div>
+      <div><input class="radioInput-119" id="o-ny" type="radio"><label for="o-ny" class="label-120"><div class="body-48">New York</div></label></div>
+    </div></div></div>
+  <button type="submit" class="button-135">Apply</button>
+</form>
+</div></div></div>
+<script>
+  window.__submitted = false;
+  document.getElementById('gem').addEventListener('submit', (e) => { e.preventDefault(); window.__submitted = true; });
+  // Like Gem: radios without a name, so the page keeps one choice per question itself.
+  for (const box of document.querySelectorAll('.flex-30 > .flex-30 > .flex-30')) {
+    box.addEventListener('change', (e) => box.querySelectorAll('input[type=radio]').forEach((r) => r !== e.target && (r.checked = false)));
+  }
+</script>
+</body></html>
